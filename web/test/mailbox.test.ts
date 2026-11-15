@@ -217,6 +217,21 @@ async function open(path = "/", width = 1280): Promise<Session> {
 const row = (s: Session, id: string) => s.page.locator(`[data-message-row="${id}"]`);
 
 describe("mailbox end to end", () => {
+  test("loads the app without any third-party request and with its own font", async () => {
+    const s = await open();
+    await s.page.evaluate(() => document.fonts.ready);
+    expect(s.remote).toEqual([]);
+    expect(await s.page.evaluate(() => document.fonts.check('16px "Figtree"'))).toBe(true);
+    const fontRequests = await s.page.evaluate(() =>
+      performance
+        .getEntriesByType("resource")
+        .map((e) => e.name)
+        .filter((n) => n.includes("figtree")),
+    );
+    expect(fontRequests.length).toBeGreaterThan(0);
+    for (const url of fontRequests) expect(url).toStartWith(`${origin}/assets/`);
+  });
+
   test("renders hostile HTML only in the sandboxed frame and loads nothing remote", async () => {
     const s = await open();
     await row(s, "hostile").click();
@@ -232,8 +247,7 @@ describe("mailbox end to end", () => {
     const inner = s.page.frameLocator("iframe").locator("#greeting");
     expect(await inner.textContent()).toBe("Hello");
     await s.page.waitForTimeout(300);
-    // The app shell itself loads a web font (recorded in docs/STATE.md); the mail frame loads nothing.
-    expect(s.remoteFromFrames).toEqual([]);
+    expect(s.remote).toEqual([]);
     expect(await s.page.evaluate(() => (window as unknown as { posted: string[] }).posted)).toEqual(
       [],
     );

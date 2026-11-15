@@ -1,0 +1,9 @@
+/*
+ * Figtree for the neutral theme, served from this origin (@fontsource/figtree, OFL-1.1). The
+ * theme's own fonts.css imports it from fonts.googleapis.com, which would send every visitor's IP
+ * to a third party; vite.config.ts points that import here instead.
+ */
+@import "@fontsource/figtree/400.css";
+@import "@fontsource/figtree/500.css";
+@import "@fontsource/figtree/600.css";
+@import "@fontsource/figtree/700.css";
