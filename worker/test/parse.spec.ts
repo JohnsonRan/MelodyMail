@@ -85,11 +85,42 @@ describe("bounded parse in workerd", () => {
   });
 
   it("parses no more than the first 256 KB", async () => {
-    const tail = "Subject: Hidden\r\n";
-    const raw = encode(`Subject: Seen\r\n\r\n${"x".repeat(SLICE_BYTES)}\r\n${tail}`);
-    const parsed = await parseSlice(raw);
-    expect(parsed.text.length).toBe(8 * 1024);
-    expect(parsed.text).not.toContain("Hidden");
+    // The text part starts after 312 KB of attachment, outside the slice.
+    const parsed = await parseSlice(attachmentFirst(4000));
+    expect(parsed.subject).toBe("Attachment first");
+    expect(parsed.text).toBe("");
+  });
+
+  it("flags an attachment outside multipart/mixed but not an inline image", async () => {
+    const pdf = await parseSlice(
+      encode(
+        "Subject: Scan\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=a.pdf\r\nContent-Transfer-Encoding: base64\r\n\r\nJVBERi0=\r\n",
+      ),
+    );
+    expect(pdf.hasAttachments).toBe(true);
+    const related = await parseSlice(
+      encode(
+        [
+          "Subject: Inline",
+          'Content-Type: multipart/related; boundary="r"',
+          "",
+          "--r",
+          "Content-Type: text/html",
+          "",
+          '<p>Logo <img src="cid:logo@x"></p>',
+          "--r",
+          "Content-Type: image/png",
+          "Content-ID: <logo@x>",
+          "Content-Transfer-Encoding: base64",
+          "",
+          "iVBORw0K",
+          "--r--",
+          "",
+        ].join("\r\n"),
+      ),
+    );
+    expect(related.hasAttachments).toBe(false);
+    expect(related.text).toBe("Logo");
   });
 
   it("caps the search text at 8 KB and the snippet at 200 characters", async () => {

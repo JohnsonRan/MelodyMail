@@ -26,6 +26,8 @@ async function waitParsed() {
 
 afterEach(async () => {
   await env.DB.exec("DROP TRIGGER IF EXISTS fail_message_insert");
+  await env.DB.exec("DROP TRIGGER IF EXISTS fail_audit");
+  await env.DB.exec("DROP TRIGGER IF EXISTS fail_forward_record");
 });
 
 describe("recipient", () => {
@@ -183,6 +185,46 @@ describe("email() forwards", () => {
 });
 
 describe("email() failures", () => {
+  it("never throws once a forward went out, even when the writes after it fail", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    await env.DB.exec(
+      "CREATE TRIGGER fail_audit BEFORE INSERT ON audit_log BEGIN SELECT RAISE(ABORT, 'D1 down'); END",
+    );
+    await env.DB.exec(
+      "CREATE TRIGGER fail_forward_record BEFORE UPDATE OF forward_failed ON messages BEGIN SELECT RAISE(ABORT, 'D1 down'); END",
+    );
+    await addAddress("fwd", { forwardOnly: true, targets: ["a@dest.example"] });
+    const forwardOnly = inbound("fwd@example.com");
+    await expect(handleEmail(asMessage(forwardOnly), env)).resolves.toBeUndefined();
+    expect(forwardOnly.forward).toHaveBeenCalledOnce();
+
+    await addAddress("shop", { targets: ["a@dest.example"] });
+    const kept = inbound("shop@example.com");
+    kept.forward.mockRejectedValue(new Error("destination address not verified"));
+    await expect(handleEmail(asMessage(kept), env)).resolves.toBeUndefined();
+    expect(kept.forward).toHaveBeenCalledOnce();
+    const logged = error.mock.calls.join(" ");
+    expect(logged).toContain("mail_audit_failed");
+    expect(logged).toContain("mail_forward_record_failed");
+  });
+
+  it("logs a failed forward without the addresses in the error", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const id = await addAddress("shop", { targets: ["a@dest.example"] });
+    const message = inbound("shop@example.com");
+    message.forward.mockRejectedValue(new Error("a@dest.example is not a verified destination"));
+    await handleEmail(asMessage(message), env);
+    const line = warn.mock.calls
+      .map((c) => String(c[0]))
+      .find((l) => l.includes("mail_forward_failed"));
+    expect(JSON.parse(line ?? "{}")).toEqual({
+      level: "warn",
+      event: "mail_forward_failed",
+      addressId: id,
+      error: "… is not a verified destination",
+    });
+  });
+
   it("throws before any forward when R2 fails, and stores no row", async () => {
     await addAddress("shop", { targets: ["a@dest.example"] });
     const message = inbound("shop@example.com");

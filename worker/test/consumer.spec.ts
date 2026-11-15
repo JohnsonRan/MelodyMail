@@ -92,11 +92,27 @@ describe("queue consumer", () => {
     await storeRow("m", fixture("plain"));
     await handleQueue(batch("m").batch, env);
     const first = await row("m");
+    const get = vi.spyOn(env.MAIL, "get");
     const again = batch("m", "m");
     await handleQueue(again.batch, env);
     for (const m of again.messages) expect(m.ack).toHaveBeenCalledOnce();
+    expect(get).not.toHaveBeenCalled();
     expect(await row("m")).toEqual(first);
     expect(await ftsRows("m")).toHaveLength(1);
+  });
+
+  it("writes one FTS row when two deliveries of a job run at once", async () => {
+    await storeRow("c", fixture("plain"));
+    await Promise.all([handleQueue(batch("c").batch, env), handleQueue(batch("c").batch, env)]);
+    expect(await ftsRows("c")).toHaveLength(1);
+    expect((await row("c"))?.status).toBe("parsed");
+  });
+
+  it("indexes the envelope sender when the message has no From header", async () => {
+    await storeRow("nofrom", "Subject: Anonymous\r\n\r\nNo sender header.\r\n");
+    await handleQueue(batch("nofrom").batch, env);
+    expect(await ftsRows("nofrom")).toMatchObject([{ sender: "env@example.org" }]);
+    expect((await row("nofrom"))?.from_hdr).toBeNull();
   });
 
   it("acks a job whose row is gone", async () => {
