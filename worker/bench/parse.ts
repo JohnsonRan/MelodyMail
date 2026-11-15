@@ -1,16 +1,21 @@
 #!/usr/bin/env bun
 /**
- * JS time of the bounded inbound parse over the first 256 KB of each fixture, plus a 20 MiB
- * message generated in memory. workerd does not advance performance.now() during computation,
- * so the budget is measured here with the same code under Bun (docs/PLAN.md, section 2,
- * "CPU budget"). Exits 1 when the p95 of a fixture or of the 20 MiB message reaches the 3 ms
- * budget. A slice with no text part is the parse's known worst case (both passes run); it is
- * reported but not gated, see docs/STATE.md, M3 open questions.
+ * JS time of the bounded inbound parse over the first 256 KB of each fixture, a 20 MiB message
+ * and six adversarial HTML bodies, all generated in memory except the fixtures. workerd does not
+ * advance performance.now() during computation, so the budget is measured here with the same
+ * code under Bun (docs/PLAN.md, section 2, "CPU budget"). Exits 1 when the p95 of any of those
+ * reaches the 3 ms budget. A slice with no text part is the parse's known worst case (both
+ * passes run); it is reported but not gated, see docs/STATE.md, M3 open questions.
  *
  * Usage: bun bench/parse.ts [iterations]
  */
 import { parseSlice, SLICE_BYTES } from "../src/mail/parse";
-import { attachmentFirst, FIXTURE_NAMES, largeMessage } from "../test/fixtures/generated";
+import {
+  adversarialHtml,
+  attachmentFirst,
+  FIXTURE_NAMES,
+  largeMessage,
+} from "../test/fixtures/generated";
 
 const ITERATIONS = Number(process.argv[2] ?? 200);
 const BUDGET_MS = 3;
@@ -24,6 +29,7 @@ inputs.push(
   ["20 MiB attachment (generated)", largeMessage().subarray(0, SLICE_BYTES), true],
   ["no text in slice (not gated)", attachmentFirst(4000).subarray(0, SLICE_BYTES), false],
 );
+for (const [name, message] of adversarialHtml()) inputs.push([`html: ${name}`, message, true]);
 
 let over = false;
 const all: number[] = [];
@@ -41,7 +47,7 @@ for (const [name, bytes, gated] of inputs) {
   if (gated) all.push(...samples);
   if (gated && at(0.95) >= BUDGET_MS) over = true;
   console.log(
-    `${name.padEnd(32)} median ${at(0.5).toFixed(3)} ms, p95 ${at(0.95).toFixed(3)} ms, max ${at(1).toFixed(3)} ms`,
+    `${name.padEnd(40)} median ${at(0.5).toFixed(3)} ms, p95 ${at(0.95).toFixed(3)} ms, max ${at(1).toFixed(3)} ms`,
   );
 }
 all.sort((a, b) => a - b);

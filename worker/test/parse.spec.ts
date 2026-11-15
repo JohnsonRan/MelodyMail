@@ -8,7 +8,13 @@ import {
   threadKey,
 } from "../src/mail/parse";
 import { fixture, fixtureNames } from "./fixtures";
-import { attachmentFirst, deeplyNested, FIXTURE_NAMES, largeMessage } from "./fixtures/generated";
+import {
+  adversarialHtml,
+  attachmentFirst,
+  deeplyNested,
+  FIXTURE_NAMES,
+  largeMessage,
+} from "./fixtures/generated";
 
 // Expected subject, the start of the search text, and the attachment flag for each fixture.
 const CASES: [string, string | null, string, boolean][] = [
@@ -127,6 +133,33 @@ describe("bounded parse in workerd", () => {
     const parsed = await parseSlice(encode(`Subject: Long\r\n\r\n${"word ".repeat(5000)}`));
     expect(parsed.text.length).toBe(8 * 1024);
     expect(parsed.snippet.length).toBe(200);
+  });
+
+  it.each(adversarialHtml())("reduces adversarial HTML: %s", async (_name, message, text) => {
+    expect((await parseSlice(message)).text).toBe(text);
+  });
+
+  it("drops comments, scripts and styles from HTML, a '>' inside a comment included", async () => {
+    const html =
+      "<p>one</p><!-- a > b --><SCRIPT type=x>if (a > b) {}</script ><style>p{}</style>two &lt;3 &#x263A;";
+    const parsed = await parseSlice(
+      encode(`Subject: h
+Content-Type: text/html
+
+${html}`),
+    );
+    expect(parsed.text).toBe("one two <3 ☺");
+  });
+
+  it("finds text after thousands of empty tags", async () => {
+    const html = `${"<b>".repeat(20000)}tail text`;
+    const parsed = await parseSlice(
+      encode(`Subject: h
+Content-Type: text/html
+
+${html}`),
+    );
+    expect(parsed.text).toBe("tail text");
   });
 
   it("rejects a message nested deeper than the limit", async () => {

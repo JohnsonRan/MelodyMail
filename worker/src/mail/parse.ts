@@ -64,17 +64,45 @@ const ENTITIES: Record<string, string> = {
   nbsp: " ",
 };
 
-/** A rough HTML-to-text reduction for search and the snippet; never rendered. */
-function htmlToText(html: string): string {
-  return html
-    .replace(/<(script|style|head)\b[\s\S]*?<\/\1\s*>/gi, " ")
-    .replace(/<[^>]*>/g, " ")
-    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
-      if (e[0] !== "#") return ENTITIES[e.toLowerCase()] ?? m;
-      const code =
-        e[1] === "x" || e[1] === "X" ? Number.parseInt(e.slice(2), 16) : Number(e.slice(1));
-      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
-    });
+const SKIPPED_ELEMENTS = /^<(script|style|head)[\s>/]/;
+
+/**
+ * A rough HTML-to-text reduction for search and the snippet; never rendered. The HTML comes
+ * from the sender, so this is one forward scan with indexOf and no backtracking regex: each
+ * search either moves past what it found or ends the scan. An unterminated tag, comment or
+ * script, style or head element drops the rest of the input.
+ */
+function htmlToText(html: string, max: number): string {
+  const lower = html.toLowerCase();
+  let out = "";
+  let i = 0;
+  while (i < html.length && out.length < max) {
+    const lt = html.indexOf("<", i);
+    if (lt === -1) {
+      out += html.slice(i);
+      break;
+    }
+    out += html.slice(i, lt);
+    if (!out.endsWith(" ")) out += " ";
+    let end: number;
+    if (lower.startsWith("<!--", lt)) {
+      end = lower.indexOf("-->", lt + 4);
+      if (end !== -1) end += 3;
+    } else {
+      const name = SKIPPED_ELEMENTS.exec(lower.slice(lt, lt + 8))?.[1];
+      const close = name ? lower.indexOf(`</${name}`, lt + 1) : lt;
+      end = close === -1 ? -1 : lower.indexOf(">", close + 1);
+      if (end !== -1) end += 1;
+    }
+    if (end === -1) break;
+    i = end;
+  }
+  return out.slice(0, max).replace(/&(#x[0-9a-f]{1,6}|#\d{1,7}|[a-z]{1,8});/gi, (m, e: string) => {
+    if (e[0] !== "#") return ENTITIES[e.toLowerCase()] ?? m;
+    const code =
+      e[1] === "x" || e[1] === "X" ? Number.parseInt(e.slice(2), 16) : Number(e.slice(1));
+    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
+  });
 }
 
 /** The first message id in a References or In-Reply-To value. */
@@ -93,7 +121,7 @@ export async function parseSlice(slice: Uint8Array): Promise<ParsedHeaders> {
     bytes.byteLength > FIRST_PASS_BYTES ? await parse(bytes.subarray(0, FIRST_PASS_BYTES)) : null;
   if (!email?.text && !email?.html) email = await parse(bytes);
   const contentType = email.headers.find((h) => h.key === "content-type")?.value ?? "";
-  const source = email.text ?? (email.html ? htmlToText(email.html.slice(0, TEXT_MAX * 8)) : "");
+  const source = email.text ?? (email.html ? htmlToText(email.html, TEXT_MAX * 2) : "");
   const text = source
     .slice(0, TEXT_MAX * 2)
     .replace(/\s+/g, " ")
