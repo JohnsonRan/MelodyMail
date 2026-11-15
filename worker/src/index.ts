@@ -8,6 +8,7 @@ import type { AppEnv, Env } from "./env";
 import { fail, log } from "./http";
 import { handleQueue, handleScheduled } from "./mail/consumer";
 import { handleEmail } from "./mail/inbound";
+import { registerMailboxRoutes, registerMessageRoutes } from "./mail/routes";
 import { publicRoute, requireAuthorization, requireSameOrigin } from "./routing";
 
 export type { Env };
@@ -28,6 +29,10 @@ registerAccountRoutes(auth);
 registerDomainRoutes(app.basePath("/domains"));
 registerAddressRoutes(app.basePath("/addresses"));
 registerTargetRoutes(app.basePath("/forward-targets"));
+
+// The mailbox: none of these is public.
+registerMessageRoutes(app.basePath("/messages"));
+registerMailboxRoutes(app);
 
 app.notFound((c) => fail(c, 404, "not_found"));
 app.onError((err, c) => {
