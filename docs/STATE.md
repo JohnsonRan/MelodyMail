@@ -528,6 +528,9 @@ merged; waits for the independent review the risk class asks for.
 - `b2dd4d2` `worker/bench/parse.ts` and its REQUIREMENTS number; its "Not yet enforced" row is
   gone.
 - `9e16a97` linear HTML-to-text reduction (review of 2c9e9c4, item 1).
+- Owner rulings: `830f76d` forward instead of bouncing, `e594fad` attempt counter (migration
+  0006), `b44a34a` one 64 KB pass with tighter limits, `30ea82b` search builder, `a7a4f0b`
+  concurrent gate (see Owner rulings).
 - `a062220` drops a target dedupe that could not trigger; `d52e3c1` adds the ablation gap
   tests (see Ablation). README section "Inbound mail":
   migration 0005 right after deploy, the queue create command, the catch-all rule.
@@ -696,47 +699,68 @@ merging test files).
 - Production `cpuTime` of `email()`, the consumer and the cron run.
 - Queue retry timing and the 24-hour retention on the Free plan: tests call the consumer
   directly for retries; only the immediate delivery runs in workerd.
+- `forward()` after a failed R2 write that read part of `message.raw` (the forward-instead
+  path of ruling 1): the docs show a forward after a full read only.
+
+### Owner rulings (2026-11-16, reply "同意" to the M3 open questions)
+
+1. **Storage failure forwards instead** (was open question 1, `830f76d`). An R2 or D1 failure in
+   `email()` for an address with targets (and no loop header) forwards to them, writes the
+   audit row `mail_forwarded_unstored` (address id, counts, and the key of an R2 object already
+   written, for the M7 sweep) and returns; nothing is stored, so nothing forwards twice. It
+   throws, so the sender gets the bounce, when no forward goes out: no targets, the loop header,
+   a forward-only address whose forwards all failed, or every fallback forward failing. Tests:
+   R2 failure with targets; D1 insert failure with targets (orphan named); no fallback forward
+   going out; no targets (R2 and D1); loop header; forward-only with all forwards failing.
+   Ablation: 7 hunks; the "no targets" condition survived (the fallback already rethrows with
+   no targets) and was removed; the rest red.
+2. **Attempt counter** (was open question 2, `e594fad`, migration 0006 `attempts` default 0).
+   The consumer increments it in its own write before reading R2 or parsing. A failing fifth
+   try sets `parse_failed` and acks; a delivery past 5 sets `parse_failed` without parsing; the
+   cron sets `parse_failed` on stuck rows that used 5 tries and re-enqueues only the rest.
+   Tests: 5 failed tries end `parse_failed` with the raw object kept; a success on try 3 ends
+   `parsed`; a killed fifth try gives up on the next delivery without reading R2; the cron skips
+   `parse_failed` and used-up rows. Ablation: 5 hunks, all red. `db:migrate:local` applied 0006
+   on the local database with rows; a second run reported nothing to apply.
+3. **Second pass at 128 KB**: replaced by ruling 9 before it was built.
+4. **Short search terms** (was open question 4, `30ea82b`). `buildSearch` in
+   `worker/src/mail/search.ts`: terms of 3 or more characters form one `MATCH` of quoted
+   phrases; shorter terms each add an escaped `LIKE` over subject, sender and body; every term
+   must match; no route until M4. Tests: 1-, 2- and 3-or-more-character Chinese, Japanese and
+   Latin terms; every term required; `%`, `_`, `"`, `\`, column filters, `OR`, `NEAR`, `*` and
+   an unbalanced quote taken literally. Ablation: 9 hunks; the sender column first survived and
+   got a test (`张三`); all red.
+5. **Concurrent gate** (was open question 8, `a7a4f0b`). `scripts/check.ts` runs the seven
+   steps at once with `Bun.spawn`, prints each step's output and exit code, exits 1 when any
+   fails; CI still calls `bun run check`. A planted lint violation made it exit 1 naming `lint`.
+   Slowest test package limit 9 s (owner approval); merge gate limit stays 10 s.
+6. **Settled as recorded**: the 20 MiB raw message fixture (was question 5), the header-only
+   loop guard (question 7), and the parse benchmark checked by hand and in review rather than in
+   the merge gate (question 6).
+7. **Parse only the first 64 KB** (was open question 9, option A; replaces ruling 3,
+   `b44a34a`). One postal-mime pass over 64 KB (the R2 range read is 64 KB); at most 50 parts
+   and 64 KB of headers, over either the message becomes `parse_failed`; the second pass, its
+   tests and its benchmark case are gone. A message whose text starts after 64 KB is `parsed`
+   with an empty snippet and no search text; `has_attachments` comes from what the slice shows.
+   Tests: more than 50 parts and more than 64 KB of headers are refused (parse level) and end
+   `parse_failed` (consumer level); text after 64 KB gives `parsed` with an empty snippet; the
+   15 fixtures are unchanged. Ablation: 4 hunks, all red. Benchmark, 3 runs of 200 per input,
+   CPU load 2-6%: worst p95 1.20-1.61 ms over 36 inputs (15 fixtures, the 20 MiB message, text
+   after 64 KB, the 13 crafted MIME shapes, the 6 adversarial HTML bodies); all inputs together
+   median 0.07 ms, p95 0.52-0.57 ms. Every input is gated.
+
+Verified after the rulings: `bun run check` green at every commit (each checked with the rest of
+the tree stashed); 206 worker tests. Merge gate (concurrent), 3 runs at `a7a4f0b`: 6.52, 7.27,
+7.78 s wall, worker suite 5.48, 6.12, 6.62 s, CPU load 14%, 9%, 10%. Both under their limits
+(10 s, 9 s).
 
 ### Open questions for the owner
 
-1. **A thrown error most likely bounces.** If the R2 or D1 write in `email()` fails, the
-   handler throws; by the community reports the sender gets a permanent 521 and does not retry.
-   The sender is told, nothing is stored and nothing was forwarded, so no copy goes out twice;
-   the message is not delivered. Alternative: for an address with targets, forward instead of
-   throwing (the targets get it, MelodyMail keeps no copy). Kept as designed until the owner
-   decides.
-2. **A message the consumer can never finish loops.** A job that throws every time (for
-   example `EXCEEDED_CPU` on a pathological message, or a lasting D1 error) is retried 5 times,
-   dropped from the queue, and re-enqueued by the cron every 15 minutes for good: up to 96 rounds
-   a day of 1 write and 6 deliveries, near 1,900 of the 10,000 daily queue operations per stuck
-   message. Options: an attempt counter (additive column) that moves the row to `parse_failed`
-   after N rounds, or a maximum age in the cron query. Not built: the design has neither.
-3. **Parse worst case over budget.** A 256 KB slice with no text part runs both passes: median
-   1.9-2.0 ms, p95 3.0-3.3 ms under Bun, over the 3 ms budget; at the PLAN's assumed 3x slower
-   production CPU that is near the 10 ms cap (and feeds question 2). The bench prints it but
-   gates only the fixtures, as the design's limit reads. Options: accept; or skip the full pass
-   and mark such a message `parse_failed` (its text, when it starts after 64 KB, is then not
-   searchable).
-4. **Trigram tokenizer.** Chosen so Chinese and Japanese text is searchable without word
-   breaks. A `MATCH` term needs at least 3 characters (a 2-character Chinese word needs another
-   query form in M4), and the index is larger than with the default tokenizer. Changing it later
-   means rebuilding `messages_fts`.
-5. **The 20 MiB fixture** is a 20 MiB raw message (attachment about 20 MiB in base64), not a
-   20 MiB decoded attachment: that encodes to about 26.7 MiB, over Email Routing's 25 MiB
-   inbound limit, so it cannot arrive.
-6. **Benchmark enforcement.** The REQUIREMENTS row first named the merge gate; it is now run by
-   hand and checked in review like the auth benchmark, because a timing check on shared CI hosts
-   would make the gate flaky.
-7. **Loop guard by header only**, as the design says. `docs/PLAN.md`, section 4 also asks that
-   the message come from the owner's own domain; any sender can add the header, and the message
-   is then kept instead of forwarded (never dropped).
-8. **Gate and suite timing** over both limits (table above).
-9. **Tighter postal-mime limits.** Lower `maxPartCount` to 50 and `maxHeadersSize` to 64 KB
-   (measurements under "Review of 2c9e9c4", item 2)? Not changed until the owner decides.
+None open from M3.
 
 ### Deferred
 
 - R2 objects without a row (a failed D1 insert after the R2 write) stay until the M7 sweep.
 - The Durable Object notification after a parse arrives with the mail UI (M4).
-- `has_attachments` is decided from the first 64 KB when that prefix has a text part, so an
-  attachment part that starts later is seen only through a `multipart/mixed` top-level type.
+- `has_attachments` is decided from the first 64 KB, so an attachment part that starts later is
+  seen only through a `multipart/mixed` top-level type (ruling 7).

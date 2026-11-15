@@ -119,3 +119,6 @@ bun run wrangler queues create melodymail-inbound
 4. An address with forwarding targets forwards every message to each of them, with the header
    `X-MelodyMail-Forwarded: 1`; a message that already carries it is kept and not forwarded
    again. A forward-only address keeps no copy, unless every forward fails.
+5. If a message cannot be stored, an address with forwarding targets forwards it to them instead
+   (recorded in the audit log); an address without targets refuses it, and the sender gets a
+   bounce.
