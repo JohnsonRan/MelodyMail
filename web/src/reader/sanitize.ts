@@ -1,0 +1,141 @@
+import DOMPurify from "dompurify";
+import type { MailPart } from "./types";
+
+// Sender HTML is rendered only inside a sandboxed srcdoc frame (docs/M4-mailbox.md, "Reading
+// mail"). Three layers, each enough on its own against scripts, and the CSP enough on its own
+// against remote loads:
+//   1. the sandbox: no scripts, no same-origin, no forms, no top navigation;
+//   2. a CSP <meta> first in <head>: nothing loads but inline styles and data: images and fonts;
+//   3. DOMPurify, before the HTML becomes srcdoc.
+// `allow-same-origin` must never be added: with it the frame would share the app's origin.
+
+export const SANDBOX = "allow-popups allow-popups-to-escape-sandbox";
+
+/** Inline images above this size show a placeholder instead of a data: URL. */
+export const INLINE_IMAGE_MAX = 2 * 1024 * 1024;
+
+export function frameCsp(remoteImages: boolean): string {
+  const img = remoteImages ? "data: https:" : "data:";
+  return `default-src 'none'; style-src 'unsafe-inline'; img-src ${img}; font-src data:`;
+}
+
+// Elements that can run code, load or embed another document, submit data or change how the
+// frame resolves URLs and navigates. <meta> goes entirely: http-equiv refresh could navigate the
+// frame and a second CSP could only add confusion.
+const FORBID_TAGS = [
+  "script",
+  "noscript",
+  "iframe",
+  "frame",
+  "frameset",
+  "object",
+  "embed",
+  "applet",
+  "portal",
+  "form",
+  "input",
+  "button",
+  "select",
+  "option",
+  "textarea",
+  "base",
+  "meta",
+  "link",
+  "audio",
+  "video",
+  "source",
+  "track",
+];
+
+const REMOTE_CSS = /url\s*\(|@import/i;
+
+export type SanitizedMail = {
+  html: string;
+  /** The message asks for remote images or styles, which stay blocked until the owner allows. */
+  hasRemoteContent: boolean;
+  /** Content-IDs the HTML showed inline, so the attachment list can leave them out. */
+  usedContentIds: Set<string>;
+};
+
+export type SanitizeOptions = {
+  parts: MailPart[];
+  remoteImages: boolean;
+  /** Alt text for an inline image too large to show. */
+  tooLargeLabel: string;
+};
+
+function base64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
+const isRemote = (url: string) => !/^\s*(data|cid):/i.test(url);
+
+/** Sanitizes sender HTML for the frame body and rewrites cid: images to data: URLs. */
+export function sanitizeMailHtml(dirty: string, options: SanitizeOptions): SanitizedMail {
+  const byCid = new Map(options.parts.filter((p) => p.contentId).map((p) => [p.contentId, p]));
+  const usedContentIds = new Set<string>();
+  let hasRemoteContent = false;
+  const purify = DOMPurify(window);
+
+  purify.addHook("afterSanitizeAttributes", (node) => {
+    if (!(node instanceof Element)) return;
+    if (node.tagName === "A" || node.tagName === "AREA") {
+      node.setAttribute("target", "_blank");
+      node.setAttribute("rel", "noopener noreferrer");
+    }
+    const src = node.getAttribute("src");
+    if (node.tagName === "IMG" && src !== null && /^\s*cid:/i.test(src)) {
+      const id = decodeURIComponent(src.trim().slice(4)).toLowerCase();
+      const part = byCid.get(id);
+      if (part && part.content.byteLength <= INLINE_IMAGE_MAX) {
+        node.setAttribute(
+          "src",
+          `data:${part.mimeType};base64,${base64(new Uint8Array(part.content))}`,
+        );
+      } else {
+        node.removeAttribute("src");
+        node.setAttribute("alt", options.tooLargeLabel);
+      }
+      if (part) usedContentIds.add(id);
+    }
+    for (const attr of ["src", "srcset", "background", "poster"]) {
+      const value = node.getAttribute(attr);
+      if (value === null || (attr !== "srcset" && !isRemote(value))) continue;
+      hasRemoteContent = true;
+      if (!options.remoteImages) node.removeAttribute(attr);
+    }
+    if (REMOTE_CSS.test(node.getAttribute("style") ?? "")) hasRemoteContent = true;
+  });
+  purify.addHook("uponSanitizeElement", (node, data) => {
+    if (data.tagName === "style" && REMOTE_CSS.test(node.textContent ?? "")) {
+      hasRemoteContent = true;
+    }
+  });
+
+  const html = purify.sanitize(dirty, {
+    FORCE_BODY: true,
+    FORBID_TAGS,
+    RETURN_TRUSTED_TYPE: false,
+  });
+  return { html, hasRemoteContent, usedContentIds };
+}
+
+/**
+ * The frame document: the CSP first, then no referrer, then a light page whatever the app
+ * theme is, because senders design mail for a white background.
+ */
+export function frameSrcdoc(body: string, remoteImages: boolean): string {
+  return [
+    "<!doctype html><html><head>",
+    `<meta http-equiv="Content-Security-Policy" content="${frameCsp(remoteImages)}">`,
+    '<meta name="referrer" content="no-referrer">',
+    '<meta charset="utf-8">',
+    "<style>:root{color-scheme:light}body{margin:0;padding:1em;background:white;color:black;",
+    "font-family:system-ui,sans-serif;overflow-wrap:anywhere}img{max-width:100%;height:auto}</style>",
+    `</head><body>${body}</body></html>`,
+  ].join("");
+}
