@@ -7,10 +7,12 @@ import { registerDomainRoutes } from "./domains/routes";
 import type { AppEnv, Env } from "./env";
 import { fail, log } from "./http";
 import { handleQueue, handleScheduled } from "./mail/consumer";
+import { registerEventRoutes } from "./mail/hub";
 import { handleEmail } from "./mail/inbound";
 import { registerMailboxRoutes, registerMessageRoutes } from "./mail/routes";
 import { publicRoute, requireAuthorization, requireSameOrigin } from "./routing";
 
+export { Hub } from "./mail/hub";
 export type { Env };
 
 export const app = new Hono<AppEnv>().basePath("/api");
@@ -33,6 +35,7 @@ registerTargetRoutes(app.basePath("/forward-targets"));
 // The mailbox: none of these is public.
 registerMessageRoutes(app.basePath("/messages"));
 registerMailboxRoutes(app);
+registerEventRoutes(app);
 
 app.notFound((c) => fail(c, 404, "not_found"));
 app.onError((err, c) => {

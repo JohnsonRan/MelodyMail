@@ -48,6 +48,7 @@ const GUARDED = [
   "DELETE /api/messages/:id",
   "GET /api/search",
   "GET /api/counts",
+  "GET /api/events",
 ];
 
 describe("authorization", () => {

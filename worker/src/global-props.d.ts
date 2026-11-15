@@ -13,6 +13,8 @@ declare namespace Cloudflare {
     MAIL: R2Bucket;
     /** Producer for melodymail-inbound; the body is { id } of a stored message. */
     INBOUND: Queue<InboundJob>;
+    /** The real-time push hub; one object named "hub". */
+    HUB: DurableObjectNamespace<import("./mail/hub").Hub>;
     /** Worker secret for first-run setup; setup is refused while it is unset or too short. */
     SETUP_TOKEN?: string;
     /** DNS-over-HTTPS JSON API used by the domain DNS check. */

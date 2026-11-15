@@ -1,6 +1,7 @@
 import type { Hono } from "hono";
 import type { AppEnv } from "../env";
 import { fail, readJson } from "../http";
+import { closeHubSessions } from "../mail/hub";
 import { checkAssertion, counterUpdate } from "./assertion";
 import { saveChallenge, takeChallenge } from "./challenge";
 import { clearSessionCookie, requireFreshAuth, SESSION_IDLE_MS } from "./session";
@@ -58,6 +59,7 @@ export function registerAccountRoutes(auth: Hono<AppEnv>): void {
       audit(c, "logout", now),
     ]);
     clearSessionCookie(c);
+    await closeHubSessions(c.env, [c.get("sessionId")]);
     return c.json({ ok: true });
   });
 
@@ -146,9 +148,14 @@ export function registerAccountRoutes(auth: Hono<AppEnv>): void {
     const now = Date.now();
     const db = c.env.DB;
     const [deleted] = await db.batch([
-      db.prepare("DELETE FROM sessions WHERE id != ?").bind(c.get("sessionId")),
+      db.prepare("DELETE FROM sessions WHERE id != ? RETURNING id").bind(c.get("sessionId")),
       audit(c, "sessions_revoked", now),
     ]);
-    return c.json({ revoked: deleted?.meta.changes ?? 0 });
+    const ended = (deleted?.results ?? []) as { id: string }[];
+    await closeHubSessions(
+      c.env,
+      ended.map((s) => s.id),
+    );
+    return c.json({ revoked: ended.length });
   });
 }
