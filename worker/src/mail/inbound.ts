@@ -66,7 +66,9 @@ async function findAddress(db: D1Database, r: Recipient): Promise<Address | null
   return {
     id: first.id,
     forwardOnly: Boolean(first.forward_only),
-    targets: [...new Set(results.flatMap((row) => (row.target ? [row.target] : [])))],
+    // address_forwards (address, target) is the primary key and target emails are unique, so
+    // no target repeats.
+    targets: results.flatMap((row) => (row.target ? [row.target] : [])),
   };
 }
 
