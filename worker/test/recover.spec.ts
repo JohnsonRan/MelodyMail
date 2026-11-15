@@ -77,6 +77,10 @@ describe("recovery", () => {
     expect(badCode.res.status).toBe(401);
     expect(wrongKey.body).toEqual(badCode.body);
     expect(await attempts()).toBe(2);
+    const failed = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM audit_log WHERE event = 'recover_failed'",
+    ).first("n");
+    expect(failed).toBe(2);
   });
 
   it("locks after 5 failures in 15 minutes, even for the right credentials", async () => {
