@@ -12,18 +12,19 @@ export const LOCKOUT_WINDOW_MS = 15 * 60_000;
  */
 export async function reserveAttempt(db: D1Database, scope: string, now: number) {
   const since = now - LOCKOUT_WINDOW_MS;
+  // The delete keeps only the window's rows, so the count below is the count in the window.
   const [, reserved] = await db.batch([
     db.prepare("DELETE FROM login_attempts WHERE scope = ? AND created_at <= ?").bind(scope, since),
     db
       .prepare(
-        "INSERT INTO login_attempts (scope, created_at) SELECT ?, ? WHERE (SELECT COUNT(*) FROM login_attempts WHERE scope = ? AND created_at > ?) < ?",
+        "INSERT INTO login_attempts (scope, created_at) SELECT ?, ? WHERE (SELECT COUNT(*) FROM login_attempts WHERE scope = ?) < ?",
       )
-      .bind(scope, now, scope, since, LOCKOUT_FAILURES),
+      .bind(scope, now, scope, LOCKOUT_FAILURES),
   ]);
   if (reserved?.meta.changes === 1) return 0;
   const oldest = await db
-    .prepare("SELECT MIN(created_at) AS t FROM login_attempts WHERE scope = ? AND created_at > ?")
-    .bind(scope, since)
+    .prepare("SELECT MIN(created_at) AS t FROM login_attempts WHERE scope = ?")
+    .bind(scope)
     .first<number | null>("t");
   return Math.max(1, Math.ceil(((oldest ?? now) + LOCKOUT_WINDOW_MS - now) / 1000));
 }
