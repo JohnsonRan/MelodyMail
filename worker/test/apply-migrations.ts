@@ -7,6 +7,8 @@ await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 // Storage lives as long as the test file, so each test starts from empty tables.
 // Children before parents: D1 enforces foreign keys.
 const TABLES = [
+  "messages_fts",
+  "messages",
   "address_forwards",
   "addresses",
   "forward_targets",
@@ -20,8 +22,8 @@ const TABLES = [
 ];
 beforeEach(async () => {
   await env.DB.batch(TABLES.map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
-  // No test may reach a real upstream (AGENTS.md, hard limits). Tests that need an outbound
-  // answer, such as the ip.sb lookup, replace this with their own mock.
+  // No test may reach a real upstream (AGENTS.md, hard limits). A test that needs an outbound
+  // answer replaces this with its own mock.
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("outbound fetch is off in tests"));
 });
 afterEach(() => {

@@ -149,3 +149,48 @@ export const addressForwards = sqliteTable(
     index("address_forwards_target_id").on(t.targetId),
   ],
 );
+
+// M3: inbound mail. The body text for search lives only in messages_fts (a virtual table that
+// drizzle-kit cannot describe; created by hand at the end of migration 0005).
+
+export const messages = sqliteTable(
+  "messages",
+  {
+    // crypto.randomUUID(); also names the raw object in R2.
+    id: text("id").primaryKey(),
+    // No foreign key: a message outlives the address it arrived on.
+    addressId: integer("address_id").notNull(),
+    direction: text("direction", { enum: ["in", "out"] }).notNull(),
+    status: text("status", { enum: ["stored", "parsed", "parse_failed"] }).notNull(),
+    envelopeFrom: text("envelope_from").notNull(),
+    envelopeTo: text("envelope_to").notNull(),
+    subaddressTag: text("subaddress_tag"),
+    // Filled by the queue consumer from the first 256 KB of the raw message.
+    messageIdHdr: text("message_id_hdr"),
+    inReplyTo: text("in_reply_to"),
+    referencesHdr: text("references_hdr"),
+    threadKey: text("thread_key"),
+    subject: text("subject"),
+    fromHdr: text("from_hdr"),
+    toHdr: text("to_hdr"),
+    ccHdr: text("cc_hdr"),
+    dateHdr: text("date_hdr"),
+    snippet: text("snippet"),
+    rawSize: integer("raw_size").notNull(),
+    hasAttachments: integer("has_attachments", { mode: "boolean" }).notNull().default(false),
+    r2Key: text("r2_key").notNull(),
+    // Forwards that failed after the message was stored (the copy is kept).
+    forwardFailed: integer("forward_failed").notNull().default(0),
+    read: integer("read", { mode: "boolean" }).notNull().default(false),
+    starred: integer("starred", { mode: "boolean" }).notNull().default(false),
+    archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+    trashed: integer("trashed", { mode: "boolean" }).notNull().default(false),
+    receivedAt: integer("received_at").notNull(),
+  },
+  (t) => [
+    index("messages_address_received").on(t.addressId, sql`${t.receivedAt} DESC`),
+    // The cron step finds messages still waiting for the parser.
+    index("messages_status_received").on(t.status, t.receivedAt),
+    index("messages_thread_key").on(t.threadKey),
+  ],
+);
