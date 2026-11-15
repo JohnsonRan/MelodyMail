@@ -5,7 +5,7 @@ import { handleQueue, MAX_ATTEMPTS, RETRY_DELAY_SECONDS } from "../src/mail/cons
 import { handleEmail } from "../src/mail/inbound";
 import { SLICE_BYTES } from "../src/mail/parse";
 import { fixture } from "./fixtures";
-import { deeplyNested, largeMessage } from "./fixtures/generated";
+import { attachmentFirst, craftedMessages, deeplyNested, largeMessage } from "./fixtures/generated";
 import { addAddress, asMessage, inbound, messageRows } from "./mail-helpers";
 
 /** A stored message as email() leaves it, without a queue job. */
@@ -192,7 +192,28 @@ describe("queue consumer", () => {
     expect(await row("k")).toMatchObject({ status: "parse_failed", attempts: MAX_ATTEMPTS + 1 });
   });
 
-  it("reads only the first 256 KB of a 20 MiB message, end to end", async () => {
+  it("parses a message whose text starts after 64 KB with an empty snippet", async () => {
+    await storeRow("late", attachmentFirst());
+    await handleQueue(batch("late").batch, env);
+    expect(await row("late")).toMatchObject({
+      status: "parsed",
+      subject: "Attachment first",
+      snippet: "",
+      has_attachments: 1,
+    });
+  });
+
+  it("marks a message over the part or header limit as parse_failed", async () => {
+    const [, parts] = craftedMessages().find(([n]) => n === "5000 parts of 1 byte") ?? [];
+    const [, headers] = craftedMessages().find(([n]) => n === "5000 X- headers") ?? [];
+    await storeRow("parts", parts ?? null);
+    await storeRow("headers", headers ?? null);
+    await handleQueue(batch("parts", "headers").batch, env);
+    expect((await row("parts"))?.status).toBe("parse_failed");
+    expect((await row("headers"))?.status).toBe("parse_failed");
+  });
+
+  it("reads only the first 64 KB of a 20 MiB message, end to end", async () => {
     await addAddress("shop");
     const raw = largeMessage();
     expect(raw.byteLength).toBeGreaterThan(20 * 1024 * 1024 - 100);

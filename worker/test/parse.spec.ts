@@ -1,12 +1,5 @@
-import PostalMime from "postal-mime";
-import { describe, expect, it, vi } from "vitest";
-import {
-  FIRST_PASS_BYTES,
-  type ParsedHeaders,
-  parseSlice,
-  SLICE_BYTES,
-  threadKey,
-} from "../src/mail/parse";
+import { describe, expect, it } from "vitest";
+import { type ParsedHeaders, parseSlice, SLICE_BYTES, threadKey } from "../src/mail/parse";
 import { fixture, fixtureNames } from "./fixtures";
 import {
   adversarialHtml,
@@ -75,26 +68,35 @@ describe("bounded parse in workerd", () => {
     expect(parsed.text).toBe("The archive is attached.");
   });
 
-  it("stops after the first 64 KB when they hold a text part", async () => {
-    const parse = vi.spyOn(PostalMime, "parse");
-    await parseSlice(largeMessage(SLICE_BYTES * 2).subarray(0, SLICE_BYTES));
-    expect(parse).toHaveBeenCalledOnce();
-    expect(parse.mock.calls[0]?.[0]).toHaveLength(FIRST_PASS_BYTES);
+  it("parses no more than the first 64 KB: later text gives an empty snippet", async () => {
+    // The text part starts after 78 KB of attachment, outside the slice.
+    expect(await parseSlice(attachmentFirst())).toMatchObject({
+      subject: "Attachment first",
+      text: "",
+      snippet: "",
+      hasAttachments: true,
+    });
+    // The same message with the text inside the slice.
+    expect((await parseSlice(attachmentFirst(700))).text).toBe("The text after the attachment.");
   });
 
-  it("parses the whole slice when the first 64 KB hold no text part", async () => {
-    const parse = vi.spyOn(PostalMime, "parse");
-    const parsed = await parseSlice(attachmentFirst());
-    expect(parse).toHaveBeenCalledTimes(2);
-    expect(parsed.text).toBe("The text after the attachment.");
-    expect(parsed.hasAttachments).toBe(true);
+  it("rejects more than 50 MIME parts", async () => {
+    const part = "--b\r\nContent-Type: text/plain\r\n\r\nx\r\n";
+    const raw = (n: number) =>
+      encode(
+        `Subject: p\r\nContent-Type: multipart/mixed; boundary="b"\r\n\r\n${part.repeat(n)}--b--\r\n`,
+      );
+    await expect(parseSlice(raw(48))).resolves.toMatchObject({ subject: "p" });
+    await expect(parseSlice(raw(60))).rejects.toThrow();
   });
 
-  it("parses no more than the first 256 KB", async () => {
-    // The text part starts after 312 KB of attachment, outside the slice.
-    const parsed = await parseSlice(attachmentFirst(4000));
-    expect(parsed.subject).toBe("Attachment first");
-    expect(parsed.text).toBe("");
+  it("rejects more than 64 KB of headers", async () => {
+    const raw = (n: number) => {
+      const headers = Array.from({ length: n }, (_, i) => `X-H${i}: ${"v".repeat(40)}`);
+      return encode(`${headers.join("\r\n")}\r\nSubject: s\r\n\r\nbody\r\n`);
+    };
+    await expect(parseSlice(raw(100))).resolves.toMatchObject({ subject: "s" });
+    await expect(parseSlice(raw(1100))).rejects.toThrow();
   });
 
   it("flags an attachment outside multipart/mixed but not an inline image", async () => {

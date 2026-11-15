@@ -69,11 +69,10 @@ export function deeplyNested(depth: number): string {
 }
 
 /**
- * An attachment of `lines` base64 lines (78 bytes each) before the text part. With 2500 lines
- * the text starts after the first 64 KB but inside the 256 KB slice; with 4000 lines the slice
- * holds no text at all, the bounded parse's worst case (both passes run over attachment data).
+ * An attachment of `lines` base64 lines (78 bytes each) before the text part; with the default
+ * the text starts just after the first 64 KB, outside the parsed slice.
  */
-export function attachmentFirst(lines = 2500): Uint8Array {
+export function attachmentFirst(lines = 1000): Uint8Array {
   const body = `${"QUJDRA".repeat(12)}QUJD\r\n`.repeat(lines);
   return encoder.encode(
     [
@@ -117,4 +116,53 @@ export function adversarialHtml(): [name: string, message: Uint8Array, text: str
     ),
     text,
   ]);
+}
+
+/**
+ * MIME shapes that make postal-mime work hard (review of 2c9e9c4, item 2), each built to about
+ * 256 KB; the parse sees only the first 64 KB.
+ */
+export function craftedMessages(): [name: string, message: Uint8Array][] {
+  const size = 256 * 1024;
+  const h = "From: a@example.org\r\nTo: shop@example.com\r\nMIME-Version: 1.0\r\n";
+  const mixed = `${h}Subject: parts\r\nContent-Type: multipart/mixed; boundary="b"\r\n\r\n`;
+  const tiny = "--b\r\nContent-Type: text/plain\r\n\r\nx\r\n";
+  const image = `--b\r\nContent-Type: image/png\r\nContent-Transfer-Encoding: base64\r\n\r\n${"QUJDRA".repeat(80)}\r\n`;
+  const folded = (unit: string) =>
+    Array.from({ length: Math.ceil(size / (unit.length + 3)) }, () => unit).join("\r\n ");
+  const xHeaders = Array.from({ length: 5000 }, (_, i) => `X-H${i}: ${"v".repeat(40)}`);
+  const cases: [string, string][] = [
+    ["499 parts of 1 byte", `${mixed}${tiny.repeat(499)}--b--\r\n`],
+    ["5000 parts of 1 byte", `${mixed}${tiny.repeat(5000)}--b--\r\n`],
+    ["499 base64 parts of 500 bytes, no text", `${mixed}${image.repeat(499)}--b--\r\n`],
+    ["nesting depth 31", deeplyNested(31)],
+    ["nesting depth 2000", deeplyNested(2000)],
+    ["one 256 KB folded Subject", `${h}Subject: ${folded("a".repeat(70))}\r\n\r\nbody\r\n`],
+    ["5000 X- headers", `${h}${xHeaders.join("\r\n")}\r\nSubject: s\r\n\r\nbody\r\n`],
+    [
+      "Subject of B encoded words",
+      `${h}Subject: ${folded("=?UTF-8?B?5L2g5aW95LiW55WM?=")}\r\n\r\nb\r\n`,
+    ],
+    [
+      "Subject of Q encoded words (GBK)",
+      `${h}Subject: ${folded("=?GBK?Q?=C4=E3=BA=C3?=")}\r\n\r\nb\r\n`,
+    ],
+    [
+      "boundary never closed, text part",
+      `${mixed}--b\r\nContent-Type: text/plain\r\n\r\n${"line of text\r\n".repeat(20000)}`,
+    ],
+    [
+      "boundary never closed, base64 part, no text",
+      `${mixed}--b\r\nContent-Type: application/zip\r\nContent-Transfer-Encoding: base64\r\n\r\n${`${"QUJDRA".repeat(12)}QUJD\r\n`.repeat(4000)}`,
+    ],
+    [
+      "one 256 KB line without CRLF",
+      `${h}Subject: line\r\nContent-Type: text/plain\r\n\r\n${"x".repeat(size)}`,
+    ],
+    [
+      "256 KB of bare CR",
+      `${h}Subject: cr\r\nContent-Type: text/plain\r\n\r\n${"\r".repeat(size)}`,
+    ],
+  ];
+  return cases.map(([name, raw]) => [name, encoder.encode(raw).subarray(0, size)]);
 }

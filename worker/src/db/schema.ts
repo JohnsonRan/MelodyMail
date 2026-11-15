@@ -165,7 +165,7 @@ export const messages = sqliteTable(
     envelopeFrom: text("envelope_from").notNull(),
     envelopeTo: text("envelope_to").notNull(),
     subaddressTag: text("subaddress_tag"),
-    // Filled by the queue consumer from the first 256 KB of the raw message.
+    // Filled by the queue consumer from the first 64 KB of the raw message.
     messageIdHdr: text("message_id_hdr"),
     inReplyTo: text("in_reply_to"),
     referencesHdr: text("references_hdr"),

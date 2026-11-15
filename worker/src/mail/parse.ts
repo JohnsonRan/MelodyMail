@@ -1,28 +1,24 @@
-import PostalMime, { type Address, type Email } from "postal-mime";
+import PostalMime, { type Address } from "postal-mime";
 
 /**
  * The bounded server-side parse (docs/PLAN.md, section 2, "CPU budget"): it only ever sees the
  * first SLICE_BYTES of a message, so its work does not grow with the message size. The browser
- * parses the full raw message (M4).
+ * parses the full raw message (M4). Owner ruling (2026-11-16): one pass over 64 KB; a message
+ * whose text starts later is parsed with an empty snippet and no search text.
  */
-export const SLICE_BYTES = 256 * 1024;
-/**
- * Most messages carry their headers and first text part well inside this prefix. Parsing it
- * first costs about a quarter of a full pass over the slice (bench/parse.ts); the full slice is
- * parsed only when the prefix shows no text or HTML part.
- */
-export const FIRST_PASS_BYTES = 64 * 1024;
+export const SLICE_BYTES = 64 * 1024;
 export const TEXT_MAX = 8 * 1024;
 export const SNIPPET_MAX = 200;
 const HEADER_MAX = 998;
 const ADDRESS_LIST_MAX = 2000;
 
-// Limits on the parser's own work inside the slice. A message over them fails the parse and
-// becomes parse_failed; the browser still reads it from the raw object.
+// Limits on the parser's own work inside the slice (owner ruling 2026-11-16): hundreds of parts
+// or tens of KB of headers cost postal-mime more than the 3 ms budget. A message over them fails
+// the parse and becomes parse_failed; the browser still reads it from the raw object.
 const PARSER_OPTIONS = {
   maxNestingDepth: 32,
-  maxPartCount: 500,
-  maxHeadersSize: SLICE_BYTES,
+  maxPartCount: 50,
+  maxHeadersSize: 64 * 1024,
   maxRfc822NestingDepth: 2,
 };
 
@@ -110,16 +106,12 @@ export function firstMessageId(value: string | null): string | null {
   return value?.match(/<[^<>\s]+>/)?.[0] ?? value?.trim().split(/\s+/)[0] ?? null;
 }
 
-function parse(bytes: Uint8Array): Promise<Email> {
-  return PostalMime.parse(bytes, { ...PARSER_OPTIONS, attachmentEncoding: "arraybuffer" });
-}
-
 /** Parses the first SLICE_BYTES of a raw message. A truncated slice parses; limits throw. */
 export async function parseSlice(slice: Uint8Array): Promise<ParsedHeaders> {
-  const bytes = slice.subarray(0, SLICE_BYTES);
-  let email =
-    bytes.byteLength > FIRST_PASS_BYTES ? await parse(bytes.subarray(0, FIRST_PASS_BYTES)) : null;
-  if (!email?.text && !email?.html) email = await parse(bytes);
+  const email = await PostalMime.parse(slice.subarray(0, SLICE_BYTES), {
+    ...PARSER_OPTIONS,
+    attachmentEncoding: "arraybuffer",
+  });
   const contentType = email.headers.find((h) => h.key === "content-type")?.value ?? "";
   const source = email.text ?? (email.html ? htmlToText(email.html, TEXT_MAX * 2) : "");
   const text = source
