@@ -14,6 +14,7 @@
 - 界面三语：简体中文（zh-CN）、英语（en）、日语（ja-JP）。
 - 前端设计系统用 Astryx（`@astryxdesign/core`）。
 - 只有面板中添加的地址前缀能收信，其余拒收。
+- 自动转发是必做功能，走 Cloudflare Email Routing 的 `forward()`，不占 Resend 额度。
 - 所有 Node 相关操作只用 Bun；wrangler 例外，在 Node 下运行。
 
 不做：
@@ -87,12 +88,14 @@ CPU 无法在 workerd 测试里直接测量：workerd 为防侧信道攻击，�
 ```text
 入站：外部 MTA → Email Routing(catch-all) → email()
         ├─ 地址未添加或已停用 → setReject()，不落盘
+        ├─ 匹配转发规则（只看信封和头部）→ message.forward(目标)，原生调用，不占 JS CPU
+        ├─ 地址设为"只转发不保存" → 到此结束，不落盘
         ├─ 原始邮件流式写入 R2  raw/{yyyy}/{mm}/{id}.eml（原生管道）
         ├─ D1 写一行 status=stored
         └─ Queue: inbound（只放 id）
       inbound 消费者 → R2 范围读取前 256 KB → 有上限的解析
         → D1 写头部、摘要、FTS 文本、has_attachments，status=parsed
-        → 匹配规则 → Durable Object 通知在线页面
+        → 匹配整理规则（标记、归档、删除）→ Durable Object 通知在线页面
       Cron → 把 status=stored 超过 15 分钟的邮件重新入队（防止队列消息 24 小时过期后丢失）
 
 阅读：浏览器 → GET /api/messages/:id/raw → Worker 鉴权后把 R2 对象体直接作为响应返回
@@ -115,6 +118,15 @@ CPU 无法在 workerd 测试里直接测量：workerd 为防侧信道攻击，�
 - 前缀不区分大小写。
 - 子地址：`shop+github@example.com` 默认按 `shop` 匹配，标签记入邮件；可在设置中关闭。
 - Email Routing 配置为 catch-all 交给 Worker，由 Worker 判断收不收，不受每个域名 200 条规则的上限限制。
+
+自动转发（负责人 2026-11-15 决定，必做）：
+
+- 用 Email Routing 的 `message.forward(目标, 附加头部)`。它只能在 `email()` 处理器里、对正在投递的这封邮件调用，所以转发判断放在 `email()` 中，不放进队列。
+- 转发目标必须是 Cloudflare 账号里已验证的目标地址（账号上限 200 个，在 Cloudflare 面板 Email Routing → Destination addresses 中添加，对方点验证邮件确认）。面板里填写目标时提示这一点；未验证的目标 `forward()` 会失败，失败记日志和审计，不影响本地保存。
+- 两种配置：按地址设置默认转发目标（可多个）；按规则转发（条件只能用信封发件人、收件人和邮件头，如主题，因为 `email()` 里不解析正文）。
+- 每个地址可选"保存并转发"（默认）或"只转发不保存"。
+- 防循环：转发时加 `X-MelodyMail-Forwarded` 头；带有此头且来自自身域名的邮件不再转发。
+- 一封邮件对同一目标只转发一次。转发结果记入 `messages` 的转发状态（只转发不保存时只记审计日志）。
 
 ## 5. 目录结构
 
@@ -152,7 +164,9 @@ MelodyMail/
 - `messages`：地址、方向（in/out）、状态（stored/parsed/sent/delivered/bounced/failed）、Message-ID、线程键、发件人、收件人、主题、摘要、大小、has_attachments、标志（已读、星标、归档、回收站）、R2 键、子地址标签、幂等键。
 - `messages_fts`：FTS5 虚表，索引主题、发件人、正文开头的文本（上限 8 KB）。
 - `uploads`：待发附件的 R2 键、文件名、MIME、大小、过期时间。
-- `rules`：条件（地址、发件人、主题）→ 动作（标记、归档、删除）。不做自动转发：Email Routing 的 `forward()` 只能发往已验证地址；改走 Resend 又会占用每天 100 封的额度。
+- `rules`：条件（地址、信封发件人、主题等头部）→ 动作（转发到目标、标记、归档、删除）。转发动作在 `email()` 中执行，其余动作在解析后执行。
+- `forward_targets`：转发目标地址、备注。目标须先在 Cloudflare 完成验证。
+- `address_forwards`：地址到转发目标的多对多关系；`addresses` 增加"只转发不保存"开关。
 - `api_keys`：只存哈希和前缀。
 - `settings`：系统设置，读取时经 KV 缓存。
 - `audit_log`：登录与敏感操作。
@@ -165,11 +179,11 @@ MelodyMail/
 | --- | --- | --- |
 | M0 | 仓库骨架、门禁、CI、Astryx 与三语外框、免费计划调研 | 已完成（2026-11-15） |
 | M1 | 认证：首次运行凭 `SETUP_TOKEN` 初始化所有者并注册第一个 Passkey；Passkey 登录；恢复密钥 + TOTP 备用登录；会话；登录失败锁定（D1）与限流绑定 | 集成测试：未登录访问每个非公开端点都返回 401；初始化只能执行一次；锁定后有恢复途径。Bun 基准：每个认证请求的 JS 计算低于预算 |
-| M2 | 域名与地址：添加域名、DNS 记录指引（MX、SPF、DKIM、DMARC）、添加 / 停用 / 删除地址、备注 | |
-| M3 | 收信：`email()` 落盘与拒收、队列、有上限的解析、FTS、Cron 重新入队 | 真实 `.eml` 样本（多种编码、25 MiB 大附件、畸形 MIME）：解析基准每封低于 3 ms；未添加的地址拒收且不落盘 |
+| M2 | 域名与地址：添加域名、DNS 记录指引（MX、SPF、DKIM、DMARC）、添加 / 停用 / 删除地址、备注；转发目标管理与按地址转发设置 | |
+| M3 | 收信：`email()` 拒收、自动转发（按地址和按规则、只转发不保存、防循环）、落盘、队列、有上限的解析、FTS、Cron 重新入队 | 真实 `.eml` 样本（多种编码、25 MiB 大附件、畸形 MIME）：解析基准每封低于 3 ms；未添加的地址拒收且不落盘；转发到配置的目标恰好一次；只转发不保存时 R2 无对象；带防循环头的邮件不再转发 |
 | M4 | Web 邮箱：列表、会话线程、浏览器端解析与阅读（沙箱 iframe，默认拦截远程图片）、附件下载、搜索、标记、实时推送 | Playwright 截图：手机和桌面宽度、亮暗主题、三种语言 |
 | M5 | 发信：撰写、回复 / 转发（线程头）、附件上传、草稿、幂等发送、Resend Webhook、发信额度显示 | 重复提交和并发提交都只发出一封 |
-| M6 | 规则与 API：收信规则、REST API + API Key、OpenAPI 文档 | |
+| M6 | 规则与 API：规则编辑界面（转发、标记、归档、删除）、REST API + API Key、OpenAPI 文档 | |
 | M7 | 运维：备份（D1 Time Travel 7 天 + 定期导出到 R2）与恢复手册、部署文档、README（中英日） | 在空白 Cloudflare 账号上按 README 从零部署一遍 |
 
 ## 8. 安全要点
