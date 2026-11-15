@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `recovery_fresh_until` integer;

@@ -1,0 +1,10 @@
+export type Env = Cloudflare.Env;
+
+export type AppEnv = {
+  Bindings: Env;
+  Variables: {
+    sessionId: string;
+    reauthAt: number | null;
+    recoveryFreshUntil: number | null;
+  };
+};

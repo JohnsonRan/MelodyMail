@@ -12,5 +12,14 @@
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
-  }
+  },
+  // No database_id: wrangler provisions the database on the first deploy.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "melodymail", "migrations_dir": "migrations" }
+  ],
+  // Abuse guard only: counts are approximate and per location. The strict recovery lockout is
+  // counted in D1 (login_attempts). namespace_id is chosen here, not issued by an account.
+  "ratelimits": [
+    { "name": "AUTH_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }
+  ]
 }

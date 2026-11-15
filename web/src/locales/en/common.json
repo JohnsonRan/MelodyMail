@@ -1,6 +1,13 @@
 {
-  "app": { "name": "MelodyMail" },
-  "nav": { "main": "Main navigation", "mail": "Mail", "manage": "Manage", "settings": "Settings" },
+  "app": {
+    "name": "MelodyMail"
+  },
+  "nav": {
+    "main": "Main navigation",
+    "mail": "Mail",
+    "manage": "Manage",
+    "security": "Security"
+  },
   "folder": {
     "inbox": "Inbox",
     "sent": "Sent",
@@ -12,7 +19,119 @@
     "emptyTitle": "No mail yet",
     "emptyDescription": "Mail sent to the addresses you add appears here."
   },
-  "settings": { "language": "Language", "theme": "Theme" },
-  "language": { "zh-CN": "简体中文", "en": "English", "ja-JP": "日本語" },
-  "theme": { "system": "System", "light": "Light", "dark": "Dark" }
+  "settings": {
+    "language": "Language",
+    "theme": "Theme"
+  },
+  "language": {
+    "zh-CN": "简体中文",
+    "en": "English",
+    "ja-JP": "日本語"
+  },
+  "theme": {
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "passkeyDefaultLabel": "Passkey",
+  "setup": {
+    "title": "Set up MelodyMail",
+    "progress": "Setup progress",
+    "stepToken": "Token",
+    "stepPasskey": "Passkey",
+    "stepTotp": "Authenticator",
+    "stepRecovery": "Recovery key",
+    "tokenDescription": "Enter the SETUP_TOKEN secret you set for this Worker.",
+    "tokenLabel": "Setup token",
+    "continue": "Continue",
+    "passkeyDescription": "Create a passkey on this device. You use it to sign in.",
+    "createPasskey": "Create a passkey",
+    "totpDescription": "Scan the QR code with an authenticator app, or enter the secret key by hand. Then enter the 6-digit code the app shows.",
+    "qrLabel": "QR code for your authenticator app",
+    "totpSecretLabel": "Secret key",
+    "codeLabel": "6-digit code",
+    "finish": "Finish setup",
+    "startOver": "Start over"
+  },
+  "login": {
+    "title": "Sign in",
+    "description": "Use the passkey you created during setup.",
+    "signIn": "Sign in with a passkey",
+    "recoverLink": "Can't use your passkey? Use your recovery key"
+  },
+  "recover": {
+    "title": "Recover access",
+    "description": "Enter your recovery key and a code from your authenticator app.",
+    "keyLabel": "Recovery key",
+    "codeLabel": "6-digit code",
+    "submit": "Recover access",
+    "backToLogin": "Back to sign in",
+    "newKeyTitle": "Save your new recovery key",
+    "continue": "Continue",
+    "addPasskeyTitle": "Add a passkey",
+    "addPasskeyDescription": "Register a passkey on this device so you can sign in without your recovery key.",
+    "addPasskey": "Add a passkey",
+    "skip": "Not now",
+    "newKeyNotice": "Your old recovery key no longer works. Store this one somewhere safe. Then add a new passkey within 30 minutes; after that, adding one asks you to confirm with a passkey you may no longer have."
+  },
+  "recoveryKey": {
+    "shownOnce": "This key is shown only once",
+    "setupNotice": "With a code from your authenticator app, it lets you sign in if you lose your passkeys. Store it somewhere safe.",
+    "rotatedNotice": "Your old recovery key no longer works. Store this one somewhere safe.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "confirm": "I have saved my recovery key",
+    "continue": "Go to MelodyMail"
+  },
+  "security": {
+    "title": "Security",
+    "passkeys": "Passkeys",
+    "passkeysDescription": "Passkeys sign you in to MelodyMail.",
+    "created": "Created {{date}}",
+    "lastUsed": "Last used {{date}}",
+    "neverUsed": "Never used",
+    "remove": "Remove",
+    "lastPasskey": "This is your only passkey. Add another one before you remove it.",
+    "addPasskey": "Add a passkey",
+    "passkeyAdded": "Passkey added",
+    "passkeyRemoved": "Passkey removed",
+    "removeTitle": "Remove {{label}}?",
+    "removeDescription": "You can no longer sign in with this passkey.",
+    "sessions": "Sessions",
+    "sessionsDescription": "Browsers that are signed in to MelodyMail.",
+    "unknownDevice": "Unknown browser",
+    "lastSeen": "Active {{date}}",
+    "thisDevice": "This device",
+    "signOutOthers": "Sign out other sessions",
+    "signOutOthersTitle": "Sign out other sessions?",
+    "signOutOthersDescription": "Every browser except this one is signed out.",
+    "signedOutOthers": "Other sessions signed out",
+    "signOut": "Sign out",
+    "signOutDescription": "End the session in this browser.",
+    "cancel": "Cancel",
+    "loadFailed": "Security settings could not be loaded. Reload the page to try again.",
+    "recoveryKey": "Recovery key",
+    "recoveryKeyDescription": "With a code from your authenticator app, it signs you in if you lose your passkeys.",
+    "regenerateKey": "Regenerate recovery key",
+    "regenerateKeyTitle": "Regenerate your recovery key?",
+    "regenerateKeyDescription": "Your current recovery key stops working. The new key is shown once.",
+    "recoveryKeySaved": "Done",
+    "ipAddress": "IP address {{ip}}",
+    "localNetwork": "This device or local network"
+  },
+  "errors": {
+    "generic": "Something went wrong. Try again.",
+    "network": "MelodyMail could not be reached. Check your connection and try again.",
+    "passkeyCancelled": "The passkey request was cancelled or timed out. Try again.",
+    "passkeyUnsupported": "This browser does not support passkeys. Use a current browser.",
+    "already_initialized": "MelodyMail is already set up. Sign in instead.",
+    "invalid_setup_token": "The setup token is wrong. Check the SETUP_TOKEN secret and try again.",
+    "setup_disabled": "Setup is turned off. Set a SETUP_TOKEN secret of at least 32 characters, then try again.",
+    "verification_failed": "That did not work. Check what you entered and try again.",
+    "locked": "Too many failed attempts. Try again in {{minutes}} min.",
+    "rate_limited": "Too many requests. Wait a minute and try again.",
+    "last_passkey": "You cannot remove your only passkey. Add another one first.",
+    "passkey_exists": "This passkey is already registered.",
+    "reauth_required": "Confirm with your passkey to continue."
+  }
 }

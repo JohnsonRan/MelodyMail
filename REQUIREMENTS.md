@@ -33,7 +33,7 @@ as the baseline; then the limit, as the baseline plus a margin (start at 20%).
 | Tier | Command | Runs (where, when) | Wall-time limit | Baseline (date, host, load) |
 | --- | --- | --- | --- | --- |
 | Pre-commit | `bun run lint` | locally, before each commit (no hook yet) | 1 s | 0.34 s, 3 runs 0.34–0.46 s (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load ~80%) |
-| Merge gate | `bun run check` | CI on every pull request and push to main; locally before push | 6.2 s | 5.1 s, 3 runs 4.6–5.9 s (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load ~80%) |
+| Merge gate | `bun run check` | CI on every pull request and push to main; locally before push | 10 s | 8.1 s, 3 runs 7.9–8.2 s, CPU load 55–67%; a 4th run 8.9 s (2026-11-15, dev workstation, Ryzen 9 9950X3D) |
 | Scheduled run on main | | | | |
 | Release | | | | |
 
@@ -50,9 +50,10 @@ meanwhile.
 | Page frame width; readable column width | | | e2e page-width check |
 | Supported widths (phone, laptop, wide) | | | screenshots |
 | Full end-to-end run, wall time | | | |
-| Slowest test package | 2 s | 1.2 s, worker suite (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load ~80%) | review |
-| Frontend entry chunk, gzip | 270 kB | 224 kB (2026-11-15, vite build, gzip -6) | review |
-| Frontend total JS + CSS, gzip | 460 kB | 381 kB (2026-11-15, vite build, gzip -6) | review |
+| Slowest test package | 6 s | 4.7 s, worker suite (vitest Duration), 3 runs 4.54–4.91 s, of which about 2 s is fixed workerd startup (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load 67–70%) | review |
+| Frontend entry chunk, gzip | 270 kB | 14 kB (2026-11-15, vite build, gzip -6) | review |
+| Frontend first paint (sign-in page), JS + CSS gzip | 370 kB | 309 kB (2026-11-15, vite build, gzip -6) | review |
+| Frontend total JS + CSS, gzip | 610 kB | 508 kB; Astryx core about 890 kB minified is most of it (2026-11-15, vite build, gzip -6) | review |
 | Source file size, p90 of this repository (pass bar) | 314 lines | 314 lines over 15 .ts/.tsx/.py files (2026-11-15) | review |
 | Wait timeout before a stuck step is recorded and left | 30 min | a setting, not measured | agent |
 | Context handoff limit (share of the model's window) | 60% | a setting, not measured | orchestrator |
@@ -60,6 +61,8 @@ meanwhile.
 | Commit subject length | 72 characters | a setting, not measured | commit hook |
 | CPU time per Worker invocation, production | | | Workers Logs cpuTime, review |
 | Inbound header parse, JS time per message (Bun benchmark) | | | parse benchmark in the merge gate |
+| Passkey assertion verification, JS time per login (Bun benchmark) | 3 ms p95 | median 0.19–0.20 ms, p95 0.44–0.70 ms, 3 runs of 200 (2026-11-15, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4, CPU load ~68%) | `bun worker/bench/auth.ts`, review |
+| TOTP check (3 HMAC-SHA-1 steps), JS time per recovery (Bun benchmark) | 3 ms p95 | median 0.07–0.08 ms, p95 0.17–0.32 ms, 3 runs of 200 (2026-11-15, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4, CPU load ~68%) | `bun worker/bench/auth.ts`, review |
 
 ## Enforcement
 

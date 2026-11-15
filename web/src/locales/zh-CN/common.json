@@ -1,6 +1,13 @@
 {
-  "app": { "name": "MelodyMail" },
-  "nav": { "main": "主导航", "mail": "邮件", "manage": "管理", "settings": "设置" },
+  "app": {
+    "name": "MelodyMail"
+  },
+  "nav": {
+    "main": "主导航",
+    "mail": "邮件",
+    "manage": "管理",
+    "security": "安全"
+  },
   "folder": {
     "inbox": "收件箱",
     "sent": "已发送",
@@ -12,7 +19,119 @@
     "emptyTitle": "还没有邮件",
     "emptyDescription": "发送到你所添加地址的邮件会显示在这里。"
   },
-  "settings": { "language": "语言", "theme": "主题" },
-  "language": { "zh-CN": "简体中文", "en": "English", "ja-JP": "日本語" },
-  "theme": { "system": "跟随系统", "light": "浅色", "dark": "深色" }
+  "settings": {
+    "language": "语言",
+    "theme": "主题"
+  },
+  "language": {
+    "zh-CN": "简体中文",
+    "en": "English",
+    "ja-JP": "日本語"
+  },
+  "theme": {
+    "system": "跟随系统",
+    "light": "浅色",
+    "dark": "深色"
+  },
+  "passkeyDefaultLabel": "通行密钥",
+  "setup": {
+    "title": "设置 MelodyMail",
+    "progress": "设置进度",
+    "stepToken": "令牌",
+    "stepPasskey": "通行密钥",
+    "stepTotp": "身份验证器",
+    "stepRecovery": "恢复密钥",
+    "tokenDescription": "输入你为此 Worker 设置的 SETUP_TOKEN 机密。",
+    "tokenLabel": "设置令牌",
+    "continue": "继续",
+    "passkeyDescription": "在此设备上创建一个通行密钥，之后用它登录。",
+    "createPasskey": "创建通行密钥",
+    "totpDescription": "用身份验证器应用扫描二维码，或手动输入密钥，然后输入应用显示的 6 位验证码。",
+    "qrLabel": "供身份验证器应用扫描的二维码",
+    "totpSecretLabel": "密钥",
+    "codeLabel": "6 位验证码",
+    "finish": "完成设置",
+    "startOver": "重新开始"
+  },
+  "login": {
+    "title": "登录",
+    "description": "使用你在设置时创建的通行密钥。",
+    "signIn": "使用通行密钥登录",
+    "recoverLink": "无法使用通行密钥？改用恢复密钥"
+  },
+  "recover": {
+    "title": "恢复访问",
+    "description": "输入恢复密钥和身份验证器应用中的验证码。",
+    "keyLabel": "恢复密钥",
+    "codeLabel": "6 位验证码",
+    "submit": "恢复访问",
+    "backToLogin": "返回登录",
+    "newKeyTitle": "保存新的恢复密钥",
+    "continue": "继续",
+    "addPasskeyTitle": "添加通行密钥",
+    "addPasskeyDescription": "在此设备上注册一个通行密钥，以后无需恢复密钥即可登录。",
+    "addPasskey": "添加通行密钥",
+    "skip": "以后再说",
+    "newKeyNotice": "旧的恢复密钥已失效。请妥善保存这个新密钥。然后请在 30 分钟内添加新的通行密钥；超过 30 分钟后，添加时需要用现有的通行密钥确认，而你可能已无法使用它。"
+  },
+  "recoveryKey": {
+    "shownOnce": "此密钥只显示一次",
+    "setupNotice": "丢失所有通行密钥时，可以用它加上身份验证器应用中的验证码登录。请妥善保存。",
+    "rotatedNotice": "旧的恢复密钥已失效。请妥善保存这个新密钥。",
+    "copy": "复制",
+    "copied": "已复制",
+    "confirm": "我已保存恢复密钥",
+    "continue": "进入 MelodyMail"
+  },
+  "security": {
+    "title": "安全",
+    "passkeys": "通行密钥",
+    "passkeysDescription": "用于登录 MelodyMail 的通行密钥。",
+    "created": "创建于 {{date}}",
+    "lastUsed": "上次使用 {{date}}",
+    "neverUsed": "从未使用",
+    "remove": "删除",
+    "lastPasskey": "这是你唯一的通行密钥。请先添加另一个，再删除它。",
+    "addPasskey": "添加通行密钥",
+    "passkeyAdded": "已添加通行密钥",
+    "passkeyRemoved": "已删除通行密钥",
+    "removeTitle": "删除“{{label}}”？",
+    "removeDescription": "删除后将无法再用这个通行密钥登录。",
+    "sessions": "会话",
+    "sessionsDescription": "已登录 MelodyMail 的浏览器。",
+    "unknownDevice": "未知浏览器",
+    "lastSeen": "活动于 {{date}}",
+    "thisDevice": "此设备",
+    "signOutOthers": "注销其他会话",
+    "signOutOthersTitle": "注销其他会话？",
+    "signOutOthersDescription": "除当前浏览器外，其他浏览器都会被注销。",
+    "signedOutOthers": "已注销其他会话",
+    "signOut": "注销",
+    "signOutDescription": "结束此浏览器中的会话。",
+    "cancel": "取消",
+    "loadFailed": "无法加载安全设置。请刷新页面重试。",
+    "recoveryKey": "恢复密钥",
+    "recoveryKeyDescription": "丢失所有通行密钥时，可以用它加上身份验证器应用中的验证码登录。",
+    "regenerateKey": "重新生成恢复密钥",
+    "regenerateKeyTitle": "重新生成恢复密钥？",
+    "regenerateKeyDescription": "当前的恢复密钥将失效。新密钥只显示一次。",
+    "recoveryKeySaved": "完成",
+    "ipAddress": "IP 地址 {{ip}}",
+    "localNetwork": "本机或本地网络"
+  },
+  "errors": {
+    "generic": "出现问题。请重试。",
+    "network": "无法连接到 MelodyMail。请检查网络连接后重试。",
+    "passkeyCancelled": "通行密钥请求已取消或超时。请重试。",
+    "passkeyUnsupported": "此浏览器不支持通行密钥。请使用新版浏览器。",
+    "already_initialized": "MelodyMail 已完成设置。请直接登录。",
+    "invalid_setup_token": "设置令牌不正确。请检查 SETUP_TOKEN 机密后重试。",
+    "setup_disabled": "设置已关闭。请设置至少 32 个字符的 SETUP_TOKEN 机密后重试。",
+    "verification_failed": "验证未通过。请检查输入的内容后重试。",
+    "locked": "失败次数过多。请在 {{minutes}} 分钟后重试。",
+    "rate_limited": "请求过于频繁。请等待一分钟后重试。",
+    "last_passkey": "不能删除唯一的通行密钥。请先添加另一个。",
+    "passkey_exists": "此通行密钥已注册。",
+    "reauth_required": "请使用通行密钥确认后继续。"
+  }
 }

@@ -3,11 +3,14 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@simplewebauthn/server": "^14.1.0",
     "hono": "^4.13.18"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.8.2",
     "@cloudflare/workers-types": "^5.20261115.1",
+    "drizzle-kit": "^0.31.11",
+    "drizzle-orm": "^0.45.4",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0",
     "wrangler": "^4.162.0"
@@ -16,6 +19,10 @@
     "typecheck": "bun --bun tsc -p . && bun --bun tsc -p test",
     "test": "bun --bun vitest run",
     "dev": "wrangler dev",
-    "deploy": "bun run --cwd ../web build && wrangler deploy"
+    "deploy": "bun run --cwd ../web build && wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply melodymail --local",
+    "db:migrate:remote": "wrangler d1 migrations apply melodymail --remote",
+    "bench:auth": "bun bench/auth.ts",
+    "wrangler": "wrangler"
   }
 }
