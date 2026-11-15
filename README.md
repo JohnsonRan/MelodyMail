@@ -12,7 +12,8 @@ bun install
 bun run check
 ```
 
-`bun run check` is the merge gate: lint, typecheck, tests, i18n check, build and requirements check.
+`bun run check` is the merge gate: lint, typecheck, tests, i18n check, build and requirements check,
+run at the same time by `scripts/check.ts`; each step prints its output and exit code when it ends.
 
 ## Run locally
 

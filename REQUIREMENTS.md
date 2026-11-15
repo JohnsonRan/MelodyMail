@@ -33,7 +33,7 @@ as the baseline; then the limit, as the baseline plus a margin (start at 20%).
 | Tier | Command | Runs (where, when) | Wall-time limit | Baseline (date, host, load) |
 | --- | --- | --- | --- | --- |
 | Pre-commit | `bun run lint` | locally, before each commit (no hook yet) | 1 s | 0.34 s, 3 runs 0.34–0.46 s (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load ~80%) |
-| Merge gate | `bun run check` | CI on every pull request and push to main; locally before push | 10 s | 8.1 s, 3 runs 7.9–8.2 s, CPU load 55–67%; a 4th run 8.9 s (2026-11-15, dev workstation, Ryzen 9 9950X3D) |
+| Merge gate | `bun run check` | CI on every pull request and push to main; locally before push | 10 s | 7.2 s, 3 runs 6.5–7.8 s with the steps run concurrently by `scripts/check.ts`, CPU load 9–14% (2026-11-16, dev workstation, Ryzen 9 9950X3D); sequential before: 10.6–11.1 s |
 | Scheduled run on main | | | | |
 | Release | | | | |
 
@@ -50,7 +50,7 @@ meanwhile.
 | Page frame width; readable column width | | | e2e page-width check |
 | Supported widths (phone, laptop, wide) | phone 390 px, laptop 1280 px, wide 1920 px; tables stack below Astryx's sm breakpoint (640 px) | a setting, not measured (owner ruling 2026-11-16) | screenshots |
 | Full end-to-end run, wall time | | | |
-| Slowest test package | 6 s | 4.7 s, worker suite (vitest Duration), 3 runs 4.54–4.91 s, of which about 2 s is fixed workerd startup (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load 67–70%) | review |
+| Slowest test package | 9 s (owner approval 2026-11-16) | 6.1 s, worker suite (vitest Duration) inside the concurrent gate, 3 runs 5.48–6.62 s, CPU load 9–14% (2026-11-16, dev workstation, Ryzen 9 9950X3D); about 80% of it is transform | review |
 | Frontend entry chunk, gzip | 270 kB | 14 kB (2026-11-15, vite build, gzip -6) | review |
 | Frontend first paint (sign-in page), JS + CSS gzip | 370 kB | 309 kB (2026-11-15, vite build, gzip -6) | review |
 | Frontend total JS + CSS, gzip | 610 kB | 508 kB; Astryx core about 890 kB minified is most of it (2026-11-15, vite build, gzip -6) | review |
