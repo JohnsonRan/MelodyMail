@@ -36,10 +36,11 @@ limits and the CPU budget: no JS work proportional to mail size in the Worker, m
 browser, a bounded 256 KB header parse server-side, and no user-chosen password (slow hashes break
 the 10 ms CPU cap).
 
-## M1: authentication (review fixes and owner rulings done, waiting for review)
+## M1: authentication (done 2026-11-16)
 
-Design: `docs/M1-auth.md`, updated 2026-11-15 to match the code and the owner rulings below. Work
-is on branch `m1-auth`; it merges only after the owner reviews it. Not pushed; no pull request.
+Design: `docs/M1-auth.md`, matching the code and the owner rulings below. Merged through pull
+request #1 as `8f55f86` after a final review PASS on `6de6520`, the owner's walkthrough in a real
+browser, and CI green.
 
 ### Owner rulings (2026-11-15)
 
@@ -164,15 +165,12 @@ Where the time and bytes go, and what getting under would take:
 
 ### Not verified
 
-- No real browser or authenticator has run the flows; only the software authenticator in the
-  tests. Screenshots (phone and desktop, light and dark, three locales) are for the orchestrator.
-- The re-authentication prompt and the regenerate dialog in a browser.
+- The owner ran setup and sign-in in Chrome with a real Passkey (2026-11-15) and checked the
+  signed-in pages; the phone-width shots of the signed-in pages were not taken.
 - `vite dev` behind its `/api` proxy (Origin and RP ID come from the request URL).
 - Rate Limiting binding on the real Free plan; production `cpuTime`.
 - `cf-connecting-ip` is set by Cloudflare in production; in `wrangler dev` and tests it comes
   from the request, so the per-IP counter falls back to the key `unknown` when it is missing.
-- Port 8787 on this machine is held by an older `wrangler dev` (not started in this work) with
-  the M0 config; restart it before screenshots.
 
 ### Open questions for the owner
 
@@ -263,3 +261,19 @@ mocked to reject in every test.
 
 Not verified: `request.cf` values in production (in `wrangler dev` the client IP is loopback, so
 sessions show "this device or local network").
+
+### Deferred after merge (final review of 6de6520, PASS)
+
+1. `worker/test/apply-migrations.ts:11-12` comment still names the removed ip.sb lookup as an
+   example; drop the example, keep the reject-by-default fetch mock.
+2. `GET /sessions` types rows as `{ id } & Record<string, unknown>`; restore column types when the
+   file is next touched.
+3. Hypothesis: on a loaded host (CPU 88%) the reviewer measured `bun run check` at 10.7-11.6 s and
+   the worker suite at 6.02 s, over the 10 s and 6 s limits. Settle with three runs on an idle host.
+4. Hypothesis: a full IPv6 address may wrap mid-value in the session row at phone width. Settle with
+   a phone-width screenshot of `/settings/security` showing such a session.
+5. Earlier deferrals stand: the `4820d98` locale re-wrap.
+
+## Next: M2 (domains, addresses, forwarding targets)
+
+See `docs/PLAN.md`, section 7.
