@@ -1023,3 +1023,20 @@ runs 16.81–17.62 s, CPU load 1–5%. Screenshots re-taken (all 54, Playwright 
 18 combinations); zh-CN light and dark at 1280 px checked by eye: one sender line, Figtree
 rendering.
 
+
+### Re-review of e97407d ("FIX FIRST", two items)
+
+1. **Scheme-relative links (Medium)** — `817b5f2`. `LINK_SCHEME` accepted `https:/api/x`,
+   `http:api` and `http:\evil.example/h`, which resolve against the srcdoc base (the app's page).
+   An http(s) link now needs `//` after the scheme: `/^\s*(https?:\/\/|mailto:|tel:)/i`. New
+   corpus test with those three forms and `HTTPS:/x`, each as an HTML `href` and an SVG
+   `xlink:href`: red before (the first form survived), green after. The reviewer's
+   `bypass.test.ts` (20 forms, HTML and SVG each) against the fix: only absolute
+   `https://`/`HTTPS://`, a leading-space and an entity-encoded `https://` link, `mailto:` and
+   `tel:` keep their href; scheme-relative, backslash, protocol-relative, relative, query, hash,
+   `blob:`, `data:`, `javascript:` and tab, newline or control characters inside the scheme lose
+   it; the `http:/api/...` click opens no popup.
+2. **`senderAddress` regex (Low)** — `a680ce5`. `>s*$` became `>\s*$`; `web/test/sender.test.ts`
+   covers trailing whitespace (red with the old pattern, green now).
+
+Verified: `bun run check` green at both commits; `bun run test:browser` 38 tests green.
