@@ -67,3 +67,23 @@ bun run wrangler d1 execute melodymail --remote --command "DELETE FROM login_att
 
 Use `--local` instead of `--remote` for the `wrangler dev` database. The command deletes only the
 failure counts; it does not change any credential.
+
+## Domains and addresses
+
+Apply the new migration before using these pages on a deployed Worker:
+
+```sh
+bun run --cwd worker db:migrate:remote
+```
+
+1. The domain must use Cloudflare DNS with Email Routing turned on.
+2. In Settings > Domains, add the domain. Its "DNS records" page lists the Email Routing MX, SPF
+   and DMARC records; "Check DNS" asks Cloudflare's DNS-over-HTTPS resolver
+   (`DOH_URL` in `worker/wrangler.jsonc`) and marks each record found, missing or different.
+3. In Settings > Addresses, add each address that may receive mail. A prefix holds a-z, 0-9,
+   `.`, `_` and `-`; `+` is reserved for tags such as `shop+news`.
+4. In Settings > Forwarding, add the addresses mail may be forwarded to. Each must first be a
+   verified destination address in the Cloudflare dashboard (Email Routing > Destination
+   addresses, at most 200 per account).
+
+Inbound mail is still refused for every address; receiving and forwarding arrive in M3.

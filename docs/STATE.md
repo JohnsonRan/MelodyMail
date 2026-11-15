@@ -357,3 +357,84 @@ validation, uniqueness, case-insensitivity, `+` refused, domain delete refused a
 target detach, DNS check found / missing / different and DoH failure with `fetch` mocked); the
 route walk in `test/authz.spec.ts` lists every new route as guarded; ablation of each behaviour
 hunk; gate timed 3 times with the load recorded. Gate before M2: 9.1 s (one run).
+
+### Done
+
+- `e0f0ed4` migration `0004_domains.sql` (tables above, `audit_log.detail`), generated with
+  `bun --bun drizzle-kit generate --name domains`.
+- `d9e6668` domain routes, DNS guidance and the DoH check (`worker/src/domains/`); `DOH_URL`
+  in `wrangler.jsonc` `vars`.
+- `31e2c7a` address and forwarding-target routes (`worker/src/addresses/`).
+- `8003ab1` web: Settings > Domains, Domains > DNS records, Addresses, Forwarding; shared
+  `PageFrame`, `DataTable` (Astryx `Table`, stacked list rows at 640 px and below),
+  `FormDialog`, `useSettingsPage`; side navigation items; copy in zh-CN, en, ja-JP.
+- `a082b3e` tests for the hunks the first ablation pass missed.
+- README section "Domains and addresses".
+- Not done: the diff review in a fresh context that the Medium risk class asks for.
+
+Usability references: Fastmail keeps domains (with DNS checks) and addresses in separate settings
+pages ([custom domains](https://fastmail.help/hc/en-us/articles/360058753394-Custom-domains-with-Fastmail),
+[aliases](https://fastmail.help/hc/en-us/articles/360060591073-How-to-set-up-aliases)); MelodyMail
+follows that split. Forwarding targets get their own page because Cloudflare keeps destination
+addresses as an account-level list, verified once and shared by every address.
+
+### Verified, with the command
+
+- `bun run check` green at every commit; intermediate commits checked with the rest of the tree
+  stashed (`git stash push --keep-index -u`).
+- `bun --bun vitest run` in `worker/`: 128 tests (27 new in `domains.spec.ts`,
+  `dns-check.spec.ts`, `addresses.spec.ts`, `forward-targets.spec.ts`; the route walk in
+  `authz.spec.ts` lists the 13 new routes as guarded and answers 401 on each without a session).
+- `fetch` stays mocked to reject by default; the DNS tests replace it with a fake DoH zone and
+  assert the request goes to `DOH_URL` with `accept: application/dns-json`.
+- Ablation (`AGENTS.md`, Tests): a script removes or inverts one behaviour hunk at a time in
+  `worker/src` (validation, every route guard and status, audit writes, the delete guards, the
+  force and detach parameters, the DoH request, status and parsing, each found / missing /
+  different rule, boolean mapping, the audit detail) and runs the four M2 test files plus the
+  route walk. First pass: 91 hunks, 85 red, 6 survived. Five got a test (`a082b3e`): strict path
+  id (`5.0` named address 5), DoH HTTP status with a parseable body, the answer type filter (a
+  CNAME in an MX answer), the malformed domain on address create, and the PATCH field check; each
+  is red now. Survivor kept: sorting `targetIds` in the address response. SQLite returns them in
+  primary-key order already, so no test can tell; the sort keeps the order a contract rather
+  than an accident of the index.
+- Merge gate `bun run check` on an idle host, 3 runs: 6.75 s, 6.34 s, 6.72 s (CPU load 0-1%
+  before each run; Ryzen 9 9950X3D). Worker suite vitest Duration 3.85 s. This also settles M1
+  deferred item 3 (idle-host timing): under both limits (10 s, 6 s).
+- Bundle after M2 (vite build, gzip -6): total JS + CSS 566 kB (limit 610 kB, was 508 kB),
+  first paint 312 kB (limit 370 kB), entry chunk 15 kB (limit 270 kB).
+- `bun run --cwd worker db:migrate:local`: 0004 applied on the local database that already held
+  the M1 owner and a session; a second run reported "No migrations to apply".
+- `bun run astryx -- doctor --built src`: no failure; its four warnings are in files M2 did not
+  touch (`AuthFrame`, `MailShell` inline styles, `QrCode` raw svg, theme font proof).
+
+### Not verified
+
+- No screenshot of any new page: this run had no browser tools. `web/AGENTS.md` asks for phone
+  and desktop shots in both themes with real data before review; the owner should see them before
+  merge.
+- Real DoH answers from `cloudflare-dns.com` (tests use a fake zone only; no test traffic to a
+  real upstream).
+- The stacked layout at 640 px and below, and that `Value` (no wrapping) never overflows: a value
+  longer than the phone width (for example a 64-character prefix) would overflow its row.
+
+### Open questions for the owner
+
+1. Removing a domain together with its addresses, deleting an address and detaching a target
+   are confirmed in the UI but need no step-up re-authentication (owner ruling B covers only
+   Passkeys, sessions and the recovery key). Should the forced domain delete need it?
+2. Forwarding targets are stored lowercase in full, so `Me@x.test` and `me@x.test` are one
+   target. The local part is case-sensitive by RFC 5321, but providers treat it as
+   case-insensitive in practice.
+3. The 640 px stacking breakpoint was chosen here; `REQUIREMENTS.md` "Supported widths" is still
+   open (due 2027-01-31).
+4. The DNS check does not look up the Email Routing DKIM record (`cf2024-1._domainkey`), which
+   Cloudflare adds itself; one more subrequest would cover it.
+5. For M3: a forward-only address whose last target was detached has no target; M3 should keep
+   the copy then rather than drop the message.
+
+### Deferred
+
+- `SecurityPage` still draws its own `Layout` and loading code; move it onto `PageFrame` and
+  `useSettingsPage` when it is next touched (source: M2, consistency).
+- Resend domain verification state (`domains` column) waits for M5, which owns its shape.
+- The send switch is stored but has no effect until M5.
