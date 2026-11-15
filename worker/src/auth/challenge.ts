@@ -4,7 +4,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { AppEnv } from "../env";
 import { randomBytes } from "./crypto";
 
-export type Purpose = "setup" | "login" | "add-passkey";
+export type Purpose = "setup" | "login" | "add-passkey" | "reauth";
 
 const CHALLENGE_COOKIE = "mm_challenge";
 const CHALLENGE_TTL_MS = 5 * 60_000;

@@ -29,9 +29,10 @@ export const requireAuthorization: MiddlewareHandler<AppEnv> = async (c, next) =
     .filter((r) => r.method !== "ALL")
     .at(-1);
   if (!endpoint || isPublicHandler(endpoint.handler)) return next();
-  const sessionId = await readSession(c);
-  if (!sessionId) return fail(c, 401, "unauthorized");
-  c.set("sessionId", sessionId);
+  const session = await readSession(c);
+  if (!session) return fail(c, 401, "unauthorized");
+  c.set("sessionId", session.id);
+  c.set("reauthAt", session.reauthAt);
   return next();
 };
 

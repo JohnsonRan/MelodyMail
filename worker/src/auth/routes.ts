@@ -2,23 +2,21 @@ import type { Context, Hono, MiddlewareHandler } from "hono";
 import type { AppEnv } from "../env";
 import { fail, readJson, str } from "../http";
 import { publicRoute } from "../routing";
-import { clearChallengeCookie, findChallenge, saveChallenge, takeChallenge } from "./challenge";
-import { base32Encode, randomBytes, secretsEqual, sha256Hex } from "./crypto";
+import { checkAssertion, counterUpdate } from "./assertion";
+import { clearChallengeCookie, findChallenge, saveChallenge } from "./challenge";
+import { secretsEqual } from "./crypto";
 import { clearFailures, reserveAttempt } from "./lockout";
 import { readSession, setSessionCookie, startSession } from "./session";
-import { audit, passkeyInsert, passkeyLabel } from "./store";
+import { audit, hashRecoveryKey, newRecoveryKey, passkeyInsert, passkeyLabel } from "./store";
 import { newTotpSecret, totpUri, verifyTotp } from "./totp";
 import {
   authenticationOptions,
   registrationOptions,
   relyingParty,
-  type StoredPasskey,
-  verifyAuthentication,
   verifyRegistration,
 } from "./webauthn";
 
 const MIN_SETUP_TOKEN_LENGTH = 32;
-const MAX_CREDENTIAL_ID = 1024;
 
 type Ctx = Context<AppEnv>;
 
@@ -43,15 +41,6 @@ async function checkSetupToken(c: Ctx, given: unknown): Promise<Response | null>
     return fail(c, 401, "invalid_setup_token");
   }
   return null;
-}
-
-/** 160 random bits as 8 groups of 4 base32 characters. */
-function newRecoveryKey(): string {
-  return (base32Encode(randomBytes(20)).match(/.{4}/g) ?? []).join("-");
-}
-
-function hashRecoveryKey(key: string): Promise<string> {
-  return sha256Hex(key.replace(/[^0-9a-z]/gi, "").toUpperCase());
 }
 
 export function registerAuthRoutes(auth: Hono<AppEnv>): void {
@@ -123,28 +112,14 @@ export function registerAuthRoutes(auth: Hono<AppEnv>): void {
   });
 
   publicRoute(auth, "POST", "/login/verify", rateLimit, async (c) => {
-    const body = await readJson(c);
-    const credential = body?.credential as { id?: unknown } | undefined;
-    const credentialId = str(credential?.id, MAX_CREDENTIAL_ID);
-    if (!credentialId) return fail(c, 400, "bad_request");
     const now = Date.now();
-    const challenge = await takeChallenge(c, "login", now);
-    if (!challenge) return fail(c, 401, "verification_failed");
-    const passkey = await c.env.DB.prepare(
-      "SELECT id, public_key AS publicKey, counter, transports FROM passkeys WHERE id = ?",
-    )
-      .bind(credentialId)
-      .first<StoredPasskey>();
-    if (!passkey) return fail(c, 401, "verification_failed");
-    const counter = await verifyAuthentication(c, credential, challenge, passkey);
-    if (counter === null) return fail(c, 401, "verification_failed");
+    const assertion = await checkAssertion(c, "login", now);
+    if (assertion instanceof Response) return assertion;
 
     const session = await startSession(c, now);
     const db = c.env.DB;
     await db.batch([
-      db
-        .prepare("UPDATE passkeys SET counter = ?, last_used_at = ? WHERE id = ?")
-        .bind(counter, now, passkey.id),
+      counterUpdate(c, assertion.passkeyId, assertion.counter, now),
       db.prepare("DELETE FROM sessions WHERE expires_at <= ?").bind(now),
       session.insert,
       audit(c, "login", now),

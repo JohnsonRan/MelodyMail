@@ -38,13 +38,15 @@ export const sessions = sqliteTable(
     expiresAt: integer("expires_at").notNull(),
     lastSeenAt: integer("last_seen_at").notNull(),
     userAgent: text("user_agent").notNull().default(""),
+    // Last Passkey assertion or recovery on this session; sensitive actions need it recent.
+    reauthAt: integer("reauth_at"),
   },
   (t) => [index("sessions_expires_at").on(t.expiresAt)],
 );
 
 export const authChallenges = sqliteTable("auth_challenges", {
   id: text("id").primaryKey(),
-  purpose: text("purpose", { enum: ["setup", "login", "add-passkey"] }).notNull(),
+  purpose: text("purpose", { enum: ["setup", "login", "add-passkey", "reauth"] }).notNull(),
   challenge: text("challenge").notNull(),
   // Only for purpose "setup": the TOTP secret offered with the registration options.
   totpSecret: text("totp_secret"),

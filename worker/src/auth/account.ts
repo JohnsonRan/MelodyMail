@@ -1,13 +1,54 @@
 import type { Hono } from "hono";
 import type { AppEnv } from "../env";
 import { fail, readJson } from "../http";
+import { checkAssertion, counterUpdate } from "./assertion";
 import { saveChallenge, takeChallenge } from "./challenge";
-import { clearSessionCookie, SESSION_IDLE_MS } from "./session";
-import { audit, passkeyInsert, passkeyLabel } from "./store";
-import { registrationOptions, type StoredPasskey, verifyRegistration } from "./webauthn";
+import { clearSessionCookie, requireFreshAuth, SESSION_IDLE_MS } from "./session";
+import { audit, hashRecoveryKey, newRecoveryKey, passkeyInsert, passkeyLabel } from "./store";
+import {
+  authenticationOptions,
+  registrationOptions,
+  type StoredPasskey,
+  verifyRegistration,
+} from "./webauthn";
 
-/** Routes for the signed-in owner. None is public; the session middleware guards them all. */
+/**
+ * Routes for the signed-in owner. None is public; the session middleware guards them all.
+ * Sensitive actions also pass requireFreshAuth (a Passkey assertion in the last 5 minutes).
+ */
 export function registerAccountRoutes(auth: Hono<AppEnv>): void {
+  auth.post("/reauth/options", async (c) => {
+    const options = await authenticationOptions(c);
+    await saveChallenge(c, "reauth", options.challenge, Date.now());
+    return c.json({ options });
+  });
+
+  auth.post("/reauth/verify", async (c) => {
+    const now = Date.now();
+    const assertion = await checkAssertion(c, "reauth", now);
+    if (assertion instanceof Response) return assertion;
+    const db = c.env.DB;
+    await db.batch([
+      counterUpdate(c, assertion.passkeyId, assertion.counter, now),
+      db.prepare("UPDATE sessions SET reauth_at = ? WHERE id = ?").bind(now, c.get("sessionId")),
+      audit(c, "reauth", now),
+    ]);
+    return c.json({ ok: true });
+  });
+
+  auth.post("/recovery-key", requireFreshAuth, async (c) => {
+    const now = Date.now();
+    const recoveryKey = newRecoveryKey();
+    const db = c.env.DB;
+    await db.batch([
+      db
+        .prepare("UPDATE owner SET recovery_key_hash = ? WHERE id = 1")
+        .bind(await hashRecoveryKey(recoveryKey)),
+      audit(c, "recovery_key_regenerated", now),
+    ]);
+    return c.json({ recoveryKey });
+  });
+
   auth.post("/logout", async (c) => {
     const now = Date.now();
     const db = c.env.DB;
@@ -26,7 +67,7 @@ export function registerAccountRoutes(auth: Hono<AppEnv>): void {
     return c.json({ passkeys: results });
   });
 
-  auth.post("/passkeys/options", async (c) => {
+  auth.post("/passkeys/options", requireFreshAuth, async (c) => {
     const { results } = await c.env.DB.prepare(
       "SELECT id, public_key AS publicKey, counter, transports FROM passkeys",
     ).all<StoredPasskey>();
@@ -35,7 +76,7 @@ export function registerAccountRoutes(auth: Hono<AppEnv>): void {
     return c.json({ options });
   });
 
-  auth.post("/passkeys/verify", async (c) => {
+  auth.post("/passkeys/verify", requireFreshAuth, async (c) => {
     const body = await readJson(c);
     if (!body) return fail(c, 400, "bad_request");
     const now = Date.now();
@@ -62,7 +103,7 @@ export function registerAccountRoutes(auth: Hono<AppEnv>): void {
     return c.json({ ok: true });
   });
 
-  auth.delete("/passkeys/:id", async (c) => {
+  auth.delete("/passkeys/:id", requireFreshAuth, async (c) => {
     const id = c.req.param("id");
     const db = c.env.DB;
     const now = Date.now();
@@ -92,7 +133,7 @@ export function registerAccountRoutes(auth: Hono<AppEnv>): void {
     });
   });
 
-  auth.delete("/sessions/others", async (c) => {
+  auth.delete("/sessions/others", requireFreshAuth, async (c) => {
     const now = Date.now();
     const db = c.env.DB;
     const [deleted] = await db.batch([

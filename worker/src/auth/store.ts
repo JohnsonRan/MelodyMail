@@ -2,6 +2,7 @@ import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import type { Context } from "hono";
 import type { AppEnv } from "../env";
 import { clientInfo, str } from "../http";
+import { base32Encode, randomBytes, sha256Hex } from "./crypto";
 
 // Writes shared by the public auth routes and the signed-in account routes.
 
@@ -36,4 +37,13 @@ export function passkeyInsert(c: Ctx, credential: NewPasskey, label: string, now
 
 export function passkeyLabel(value: unknown): string {
   return str(typeof value === "string" ? value.trim() : value, 64) ?? "Passkey";
+}
+
+/** 160 random bits as 8 groups of 4 base32 characters. */
+export function newRecoveryKey(): string {
+  return (base32Encode(randomBytes(20)).match(/.{4}/g) ?? []).join("-");
+}
+
+export function hashRecoveryKey(key: string): Promise<string> {
+  return sha256Hex(key.replace(/[^0-9a-z]/gi, "").toUpperCase());
 }

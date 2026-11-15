@@ -23,6 +23,9 @@ const GUARDED = [
   "DELETE /api/auth/passkeys/:id",
   "GET /api/auth/sessions",
   "DELETE /api/auth/sessions/others",
+  "POST /api/auth/reauth/options",
+  "POST /api/auth/reauth/verify",
+  "POST /api/auth/recovery-key",
 ];
 
 describe("authorization", () => {
