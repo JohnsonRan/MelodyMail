@@ -115,7 +115,7 @@ export function RecoverPage() {
       {stage === "newKey" && (
         <RecoveryKeyPanel
           recoveryKey={newKey}
-          notice={t("recoveryKey.rotatedNotice")}
+          notice={t("recover.newKeyNotice")}
           continueLabel={t("recover.continue")}
           onContinue={() => setStage("addPasskey")}
         />
