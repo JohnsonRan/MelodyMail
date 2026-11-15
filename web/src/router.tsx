@@ -7,10 +7,10 @@ import {
 } from "@tanstack/react-router";
 import { RootLayout } from "./App";
 import { getAuthState } from "./api";
-import { MailShell } from "./components/MailShell";
 import type { AstryxMessages, Locale } from "./i18n";
 
-// Each page is its own chunk, so the first paint loads only the page it shows.
+// Each page and the signed-in shell are their own chunks, so the first paint loads only what
+// the page it shows needs; the sign-in pages do not download the app shell.
 export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessages) {
   const rootRoute = createRootRoute({
     component: () => <RootLayout initialLocale={initialLocale} initialMessages={initialMessages} />,
@@ -20,7 +20,7 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
   const shellRoute = createRoute({
     getParentRoute: () => rootRoute,
     id: "shell",
-    component: MailShell,
+    component: lazyRouteComponent(() => import("./components/MailShell"), "MailShell"),
     beforeLoad: async () => {
       const state = await getAuthState();
       if (!state.initialized) throw redirect({ to: "/setup" });
