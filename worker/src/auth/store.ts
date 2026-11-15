@@ -16,10 +16,22 @@ export type NewPasskey = {
 };
 
 export function audit(c: Ctx, event: string, now: number, detail?: string): D1PreparedStatement {
-  const { ip, userAgent } = clientInfo(c);
-  return c.env.DB.prepare(
-    "INSERT INTO audit_log (event, created_at, ip, user_agent, detail) VALUES (?, ?, ?, ?, ?)",
-  ).bind(event, now, ip, userAgent, detail ?? null);
+  return auditRow(c.env.DB, event, now, detail, clientInfo(c));
+}
+
+/** An audit row without a request, for example from the email() handler. */
+export function auditRow(
+  db: D1Database,
+  event: string,
+  now: number,
+  detail?: string,
+  client = { ip: "", userAgent: "" },
+): D1PreparedStatement {
+  return db
+    .prepare(
+      "INSERT INTO audit_log (event, created_at, ip, user_agent, detail) VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(event, now, client.ip, client.userAgent, detail ?? null);
 }
 
 export function passkeyInsert(c: Ctx, credential: NewPasskey, label: string, now: number) {

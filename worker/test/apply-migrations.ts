@@ -22,6 +22,8 @@ const TABLES = [
 ];
 beforeEach(async () => {
   await env.DB.batch(TABLES.map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
+  const objects = (await env.MAIL.list()).objects.map((o) => o.key);
+  if (objects.length > 0) await env.MAIL.delete(objects);
   // No test may reach a real upstream (AGENTS.md, hard limits). A test that needs an outbound
   // answer replaces this with its own mock.
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("outbound fetch is off in tests"));

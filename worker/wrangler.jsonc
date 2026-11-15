@@ -19,6 +19,15 @@
   ],
   // DNS-over-HTTPS JSON endpoint for the domain DNS check (Settings > Domains).
   "vars": { "DOH_URL": "https://cloudflare-dns.com/dns-query" },
+  // Raw inbound mail (raw/{yyyy}/{mm}/{id}.eml). wrangler deploy creates the bucket when it is
+  // missing (automatic provisioning, wrangler 4.45 and later).
+  "r2_buckets": [{ "binding": "MAIL", "bucket_name": "melodymail-mail" }],
+  // Inbound parse jobs carry only { id }. wrangler 4.162 creates a missing queue on deploy
+  // (https://developers.cloudflare.com/workers/wrangler/configuration/#automatic-provisioning
+  // lists Queues); README has the manual create command.
+  "queues": {
+    "producers": [{ "binding": "INBOUND", "queue": "melodymail-inbound" }]
+  },
   // Abuse guard only: counts are approximate and per location. The strict recovery lockout is
   // counted in D1 (login_attempts). namespace_id is chosen here, not issued by an account.
   "ratelimits": [

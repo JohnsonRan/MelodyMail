@@ -33,3 +33,8 @@ export function clientInfo(c: Context<AppEnv>) {
 export function log(level: "debug" | "info" | "warn" | "error", event: string, fields = {}) {
   console[level](JSON.stringify({ level, event, ...fields }));
 }
+
+/** An error's message for a log line, with anything that looks like an email address removed. */
+export function errorText(err: unknown): string {
+  return (err instanceof Error ? err.message : String(err)).replace(/[^\s<>"'@]+@[^\s<>"']+/g, "…");
+}
