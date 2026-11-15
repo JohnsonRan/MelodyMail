@@ -1,6 +1,9 @@
 import { Hono } from "hono";
+import { registerAddressRoutes } from "./addresses/routes";
+import { registerTargetRoutes } from "./addresses/targets";
 import { registerAccountRoutes } from "./auth/account";
 import { registerAuthRoutes } from "./auth/routes";
+import { registerDomainRoutes } from "./domains/routes";
 import type { AppEnv, Env } from "./env";
 import { fail, log } from "./http";
 import { publicRoute, requireAuthorization, requireSameOrigin } from "./routing";
@@ -18,6 +21,11 @@ publicRoute(app, "GET", "/health", (c) => c.json({ ok: true }));
 const auth = app.basePath("/auth");
 registerAuthRoutes(auth);
 registerAccountRoutes(auth);
+
+// Settings: none of these is public.
+registerDomainRoutes(app.basePath("/domains"));
+registerAddressRoutes(app.basePath("/addresses"));
+registerTargetRoutes(app.basePath("/forward-targets"));
 
 app.notFound((c) => fail(c, 404, "not_found"));
 app.onError((err, c) => {

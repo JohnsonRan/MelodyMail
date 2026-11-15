@@ -37,6 +37,26 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
     path: "/settings/security",
     component: lazyRouteComponent(() => import("./pages/SecurityPage"), "SecurityPage"),
   });
+  const domainsRoute = createRoute({
+    getParentRoute: () => shellRoute,
+    path: "/settings/domains",
+    component: lazyRouteComponent(() => import("./pages/DomainsPage"), "DomainsPage"),
+  });
+  const domainDnsRoute = createRoute({
+    getParentRoute: () => shellRoute,
+    path: "/settings/domains/$name",
+    component: lazyRouteComponent(() => import("./pages/DomainDnsPage"), "DomainDnsPage"),
+  });
+  const addressesRoute = createRoute({
+    getParentRoute: () => shellRoute,
+    path: "/settings/addresses",
+    component: lazyRouteComponent(() => import("./pages/AddressesPage"), "AddressesPage"),
+  });
+  const forwardingRoute = createRoute({
+    getParentRoute: () => shellRoute,
+    path: "/settings/forwarding",
+    component: lazyRouteComponent(() => import("./pages/ForwardingPage"), "ForwardingPage"),
+  });
 
   const setupRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -69,7 +89,14 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
   });
 
   const routeTree = rootRoute.addChildren([
-    shellRoute.addChildren([inboxRoute, securityRoute]),
+    shellRoute.addChildren([
+      inboxRoute,
+      securityRoute,
+      domainsRoute,
+      domainDnsRoute,
+      addressesRoute,
+      forwardingRoute,
+    ]),
     setupRoute,
     loginRoute,
     recoverRoute,

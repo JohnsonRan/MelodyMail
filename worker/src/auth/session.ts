@@ -89,14 +89,19 @@ export async function readSession(c: Context<AppEnv>): Promise<SessionInfo | nul
  * (until the first Passkey is added on it, at most 30 minutes), else 403 reauth_required.
  */
 export const requireFreshAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
+  if (!hasFreshAuth(c)) return fail(c, 403, "reauth_required");
+  return next();
+};
+
+/** The test behind requireFreshAuth, for a route that needs it only for some requests. */
+export function hasFreshAuth(c: Context<AppEnv>): boolean {
   const now = Date.now();
   const reauthAt = c.get("reauthAt");
   const recoveryFreshUntil = c.get("recoveryFreshUntil");
   const recentPasskey = reauthAt !== null && now - reauthAt <= REAUTH_MS;
   const recoveryWindow = recoveryFreshUntil !== null && now < recoveryFreshUntil;
-  if (!recentPasskey && !recoveryWindow) return fail(c, 403, "reauth_required");
-  return next();
-};
+  return recentPasskey || recoveryWindow;
+}
 
 export function clearSessionCookie(c: Context<AppEnv>): void {
   deleteCookie(c, SESSION_COOKIE, COOKIE_OPTIONS);

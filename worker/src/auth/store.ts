@@ -15,11 +15,11 @@ export type NewPasskey = {
   transports?: string[];
 };
 
-export function audit(c: Ctx, event: string, now: number): D1PreparedStatement {
+export function audit(c: Ctx, event: string, now: number, detail?: string): D1PreparedStatement {
   const { ip, userAgent } = clientInfo(c);
   return c.env.DB.prepare(
-    "INSERT INTO audit_log (event, created_at, ip, user_agent) VALUES (?, ?, ?, ?)",
-  ).bind(event, now, ip, userAgent);
+    "INSERT INTO audit_log (event, created_at, ip, user_agent, detail) VALUES (?, ?, ?, ?, ?)",
+  ).bind(event, now, ip, userAgent, detail ?? null);
 }
 
 export function passkeyInsert(c: Ctx, credential: NewPasskey, label: string, now: number) {
