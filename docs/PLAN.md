@@ -1,6 +1,6 @@
 # MelodyMail 实施计划
 
-状态：已确认（2026-11-15），下一步 M0。风险等级：High（涉及登录与数据存储），按 `AGENTS.md`"Change risk"执行。
+状态：已确认（2026-11-15）。M0 进行中，进度见 `docs/STATE.md`。风险等级：High（涉及登录与数据存储），按 `AGENTS.md`"Change risk"执行。
 
 ## 1. 目标
 
@@ -36,17 +36,17 @@
 | 定时任务 | Cron Triggers | 清理垃圾箱、回收 R2 孤儿对象 |
 | 后端框架 | Hono + Zod + OpenAPI 生成 | 体积小，Workers 原生支持 |
 | 认证 | Better Auth（D1 存储）：密码、Passkey、TOTP；API Key 供脚本使用 | 不自己写密码和会话逻辑 |
-| 前端 | React 19 + Vite（`@cloudflare/vite-plugin`）+ TanStack Router / Query + Astryx | Astryx 需要 React 19，提供预编译 CSS，Vite 下无需插件 |
-| 样式 | Astryx 主题 token，加上 CSS Modules 补少量自定义样式；不用 Tailwind | `web/AGENTS.md` 要求一套 token，避免两套设计系统并存 |
-| i18n | i18next + react-i18next，按语言懒加载；`<html lang>` 随语言切换 | 中日共用汉字但字形不同，`lang` 属性决定浏览器选用哪种字形 |
-| 测试 | Vitest + `@cloudflare/vitest-pool-workers`；Playwright 端到端 | 测试跑在本地模拟的 D1、R2、Queues 上 |
+| 前端 | React 19 + Vite + Astryx；路由与数据请求（TanStack Router / Query）在 M4 引入 | Astryx 需要 React 19，提供预编译 CSS，Vite 下无需插件。开发时 Vite 把 `/api` 代理到 `wrangler dev`，比 Cloudflare Vite 插件少一层配置 |
+| 样式 | 只用 Astryx 组件属性和主题 token，不引入自定义 CSS 文件，不用 Tailwind | Astryx 的规范（`web/ASTRYX.md`）和 `web/AGENTS.md` 都要求一套 token |
+| i18n | 应用文案用 i18next + react-i18next，按语言懒加载；组件内置文案用 Astryx 自带的 zh-CN / ja-JP 语言包；`<html lang>` 随语言切换；`scripts/check-i18n.ts` 检查三种语言的 key 一致 | 中日共用汉字但字形不同，`lang` 属性决定浏览器选用哪种字形 |
+| 测试 | Vitest + `@cloudflare/vitest-plugin`（原 `vitest-pool-workers` 已改名）；脚本测试用 `bun test`；Playwright 端到端在 M4 引入 | 测试跑在本地模拟的 D1、R2、Queues 上 |
 | 包管理与运行时 | Bun（workspaces、脚本、测试运行）；所有 Node 相关操作只用 Bun | 负责人指定 |
 
 已知风险：
 
 - Astryx 处于 Beta（0.4.x），API 可能变化。应对：固定版本号，升级时用 `astryx upgrade` 跑 codemod。
 - Astryx 主题默认字体 Figtree 不含 CJK 字形。应对：字体栈追加系统 CJK 字体（中文用 PingFang SC / Microsoft YaHei，日文用 Hiragino Sans / Yu Gothic），不加载 CJK 网络字体。
-- wrangler 和 `@cloudflare/vitest-pool-workers` 官方以 Node 为运行时，在 Bun 下（`bun --bun`）能否正常运行尚未核实。M0 先验证；跑不通就停下报告，不悄悄换回 Node。
+- M0 验证结果（2026-11-15）：Vitest + `@cloudflare/vitest-plugin`、Vite、TypeScript、Biome 都能在 `bun --bun` 下运行；wrangler 命令行明确拒绝 Bun 运行时（"Wrangler does not support the Bun runtime"）。本地开发（`wrangler dev`）、D1 迁移和部署都要用 wrangler，怎么处理待负责人决定。类型检查已改用 `@cloudflare/workers-types`，不依赖 `wrangler types`。
 - 改用 Resend 后可能不再需要 Workers Paid，但 Queues、Durable Objects、Rate Limiting 在 Free 计划下是否可用、额度多少，尚未核实，M0 时确认。
 
 ## 3. 架构
@@ -84,7 +84,7 @@ MelodyMail/
 ├─ .github/AGENTS.md  .github/workflows/
 ├─ docs/PLAN.md
 ├─ scripts/
-├─ packages/shared/     Zod schema、API 类型（前后端共用）
+├─ packages/shared/     Zod schema、API 类型（前后端共用；M1 需要时再建）
 ├─ worker/
 │  ├─ wrangler.jsonc
 │  ├─ migrations/
