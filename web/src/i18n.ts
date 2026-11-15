@@ -1,3 +1,4 @@
+import type { ProviderMessagesByLocale } from "@astryxdesign/core/i18n";
 import i18next, { type BackendModule } from "i18next";
 import { initReactI18next } from "react-i18next";
 
@@ -48,6 +49,26 @@ export function saveLocale(locale: Locale): void {
   } catch {
     // Storage can be unavailable (private mode); the choice then lasts for this visit only.
   }
+}
+
+// Astryx component strings for the non-English locales, one chunk each (English is built in).
+const astryxCatalogs: Partial<
+  Record<Locale, () => Promise<{ default: ProviderMessagesByLocale[string] }>>
+> = {
+  "zh-CN": () => import("@astryxdesign/core/locales/zh-CN.generated.js"),
+  "ja-JP": () => import("@astryxdesign/core/locales/ja-JP.generated.js"),
+};
+
+export type AstryxMessages = ProviderMessagesByLocale;
+
+/** Adds the Astryx catalog for `locale` to `messages`, loading it once. */
+export async function withAstryxMessages(
+  messages: AstryxMessages,
+  locale: Locale,
+): Promise<AstryxMessages> {
+  const load = astryxCatalogs[locale];
+  if (!load || messages[locale]) return messages;
+  return { ...messages, [locale]: (await load()).default };
 }
 
 export async function initI18n(locale: Locale): Promise<void> {

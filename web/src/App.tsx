@@ -1,117 +1,65 @@
-import { AppShell } from "@astryxdesign/core/AppShell";
-import { Center } from "@astryxdesign/core/Center";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { Icon } from "@astryxdesign/core/Icon";
 import { InternationalizationProvider } from "@astryxdesign/core/i18n";
-import jaJP from "@astryxdesign/core/locales/ja-JP.generated.js";
-import zhCN from "@astryxdesign/core/locales/zh-CN.generated.js";
-import { NavIcon } from "@astryxdesign/core/NavIcon";
-import { Selector } from "@astryxdesign/core/Selector";
-import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
-import { HStack } from "@astryxdesign/core/Stack";
-import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
+import { LinkProvider } from "@astryxdesign/core/Link";
 import { Theme } from "@astryxdesign/core/theme";
-import {
-  ArchiveBoxIcon,
-  Cog6ToothIcon,
-  DocumentIcon,
-  EnvelopeIcon,
-  InboxIcon,
-  PaperAirplaneIcon,
-  TrashIcon,
-} from "@heroicons/react/24/outline";
-import i18next from "i18next";
-import { useEffect, useState } from "react";
+import { Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { type AnchorHTMLAttributes, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { defaultThemeSlug, themes } from "./astryx-themes";
-import { LOCALES, type Locale, saveLocale } from "./i18n";
-import { MODES, type Mode, readMode, saveMode } from "./mode";
+import type { AstryxMessages, Locale } from "./i18n";
+import { PreferencesProvider } from "./preferences";
 
-const astryxMessages = { "zh-CN": zhCN, "ja-JP": jaJP };
+/** Every Astryx link navigates through the router instead of reloading the page. */
+function RouterLink({ href, ...props }: AnchorHTMLAttributes<HTMLAnchorElement>) {
+  return <Link to={href ?? "/"} {...props} />;
+}
 
-export function App({ initialLocale }: { initialLocale: Locale }) {
+/** After a route change, focus starts at the page title (web/AGENTS.md, Accessibility). */
+function useFocusTitleOnNavigate() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const first = useRef(true);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: pathname is the trigger, not an input.
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    const title = document.querySelector("h1");
+    if (title instanceof HTMLElement) {
+      title.tabIndex = -1;
+      title.focus({ preventScroll: true });
+    }
+  }, [pathname]);
+}
+
+function DocumentMeta({ locale }: { locale: Locale }) {
   const { t } = useTranslation();
-  const [locale, setLocale] = useState<Locale>(initialLocale);
-  const [mode, setMode] = useState<Mode>(readMode);
-
   useEffect(() => {
     document.documentElement.lang = locale;
     document.title = t("app.name");
   }, [locale, t]);
+  return null;
+}
 
-  const changeLocale = (value: string) => {
-    const next = value as Locale;
-    void i18next.changeLanguage(next).then(() => setLocale(next));
-    saveLocale(next);
-  };
-
-  const changeMode = (value: string) => {
-    const next = value as Mode;
-    setMode(next);
-    saveMode(next);
-  };
-
+export function RootLayout({
+  initialLocale,
+  initialMessages,
+}: {
+  initialLocale: Locale;
+  initialMessages: AstryxMessages;
+}) {
+  useFocusTitleOnNavigate();
   return (
-    <Theme theme={themes[defaultThemeSlug]} mode={mode}>
-      <InternationalizationProvider locale={locale} messages={astryxMessages}>
-        <AppShell
-          contentPadding={6}
-          style={{ height: "100dvh", minHeight: 0 }}
-          topNav={
-            <TopNav
-              label={t("nav.main")}
-              heading={
-                <TopNavHeading heading={t("app.name")} logo={<NavIcon icon={<EnvelopeIcon />} />} />
-              }
-              endContent={
-                <HStack gap={2}>
-                  <Selector
-                    label={t("settings.language")}
-                    isLabelHidden
-                    variant="ghost"
-                    size="sm"
-                    value={locale}
-                    onChange={changeLocale}
-                    options={LOCALES.map((l) => ({ value: l, label: t(`language.${l}`) }))}
-                  />
-                  <Selector
-                    label={t("settings.theme")}
-                    isLabelHidden
-                    variant="ghost"
-                    size="sm"
-                    value={mode}
-                    onChange={changeMode}
-                    options={MODES.map((m) => ({ value: m, label: t(`theme.${m}`) }))}
-                  />
-                </HStack>
-              }
-            />
-          }
-          sideNav={
-            <SideNav>
-              <SideNavSection title={t("nav.mail")} isHeaderHidden>
-                <SideNavItem label={t("folder.inbox")} icon={InboxIcon} isSelected href="#" />
-                <SideNavItem label={t("folder.sent")} icon={PaperAirplaneIcon} href="#" />
-                <SideNavItem label={t("folder.drafts")} icon={DocumentIcon} href="#" />
-                <SideNavItem label={t("folder.archive")} icon={ArchiveBoxIcon} href="#" />
-                <SideNavItem label={t("folder.trash")} icon={TrashIcon} href="#" />
-              </SideNavSection>
-              <SideNavSection title={t("nav.manage")}>
-                <SideNavItem label={t("nav.settings")} icon={Cog6ToothIcon} href="#" />
-              </SideNavSection>
-            </SideNav>
-          }
-        >
-          <Center height="100%">
-            <EmptyState
-              headingLevel={1}
-              icon={<Icon icon={InboxIcon} size="lg" color="secondary" />}
-              title={t("inbox.emptyTitle")}
-              description={t("inbox.emptyDescription")}
-            />
-          </Center>
-        </AppShell>
-      </InternationalizationProvider>
-    </Theme>
+    <PreferencesProvider initialLocale={initialLocale} initialMessages={initialMessages}>
+      {({ locale, mode, astryxMessages }) => (
+        <Theme theme={themes[defaultThemeSlug]} mode={mode}>
+          <InternationalizationProvider locale={locale} messages={astryxMessages}>
+            <LinkProvider component={RouterLink}>
+              <DocumentMeta locale={locale} />
+              <Outlet />
+            </LinkProvider>
+          </InternationalizationProvider>
+        </Theme>
+      )}
+    </PreferencesProvider>
   );
 }
