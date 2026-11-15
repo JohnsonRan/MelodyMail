@@ -504,8 +504,278 @@ addresses as an account-level list, verified once and shared by every address.
 - Resend domain verification state (`domains` column) waits for M5, which owns its shape.
 - The send switch is stored but has no effect until M5.
 
-## Next: M3 (inbound mail, auto-forwarding, storage)
+## M3: inbound mail (in progress, branch `m3-inbound`)
 
-See `docs/PLAN.md`, sections 4 and 7. Carry over: a forward-only address always has a target
-(M2 ruling 5); check a mixed-case verified destination against a lowercase target on a real
-account.
+Design: `docs/M3-inbound.md`. Risk class High (stored data, mail delivery, migration 0005). Not
+merged; waits for the independent review the risk class asks for.
+
+### Done
+
+- `d608929` migration `0005_inbound.sql`: `messages` (no foreign key on `address_id`, so
+  deleting an address neither fails nor deletes its mail), three indexes, and `messages_fts`
+  (FTS5, trigram tokenizer, written by hand after the generated SQL).
+- `7464e49` bounded parse (`worker/src/mail/parse.ts`, postal-mime 4.2.1): first 64 KB, then
+  the whole 256 KB slice only when the prefix has no text or HTML part; nesting depth 32, 500
+  parts, header size capped. Fixtures in `worker/test/fixtures` (ASCII, `-text` in
+  `.gitattributes`); the 20 MiB message is generated in memory.
+- `055d29c` `email()` (`worker/src/mail/inbound.ts`): recipient lookup, reject before storing,
+  forward-only forwarding with the audit row, R2 storage through `FixedLengthStream`, the
+  `messages` row, forward-and-keep, enqueue. R2 bucket `MAIL` and queue producer `INBOUND` in
+  `wrangler.jsonc`.
+- `aa8c9f0` queue consumer and cron (`worker/src/mail/consumer.ts`): consumer `max_batch_size`
+  1, `max_retries` 5, retry delay 60 s; cron `*/15 * * * *` re-enqueues up to 100 messages still
+  `stored` after 15 minutes. REQUIREMENTS "Background work" now has a row.
+- `b2dd4d2` `worker/bench/parse.ts` and its REQUIREMENTS number; its "Not yet enforced" row is
+  gone.
+- `9e16a97` linear HTML-to-text reduction (review of 2c9e9c4, item 1).
+- Owner rulings: `830f76d` forward instead of bouncing, `e594fad` attempt counter (migration
+  0006), `b44a34a` one 64 KB pass with tighter limits, `30ea82b` search builder, `a7a4f0b`
+  concurrent gate (see Owner rulings).
+- `a062220` drops a target dedupe that could not trigger; `d52e3c1` adds the ablation gap
+  tests (see Ablation). README section "Inbound mail":
+  migration 0005 right after deploy, the queue create command, the catch-all rule.
+
+### Cloudflare facts checked (2026-11-16)
+
+1. `forward()` after `message.raw` was read: the official local-development example reads the
+   whole stream (`new Response(message.raw).arrayBuffer()`) and then calls `message.forward()`
+   (https://developers.cloudflare.com/email-service/local-development/routing/). The design's
+   order (store, then forward) is kept. Not run against the real service.
+2. A thrown error in `email()`: not documented. The Workers API page
+   (https://developers.cloudflare.com/email-service/api/route-emails/email-handler/) documents
+   only `setReject()`, "a permanent SMTP error". Community reports
+   (https://community.cloudflare.com/t/is-it-possible-to-return-a-transient-failure-from-an-email-worker/599938,
+   https://community.cloudflare.com/t/email-worker-upstream-error/457228) describe
+   "521 5.3.0 Upstream error", also permanent. The handler still throws on an R2 or D1 failure
+   (open question 1). Both sources are cited in `inbound.ts`.
+3. Queue provisioning: the Wrangler configuration page lists Queues under automatic provisioning
+   (https://developers.cloudflare.com/workers/wrangler/configuration/#automatic-provisioning),
+   and the installed wrangler 4.162.0 has a `QueueHandler` that creates a missing queue on
+   deploy. The README still gives `wrangler queues create melodymail-inbound` for the error case.
+
+### Verified, with the command
+
+- `bun run check` green at every commit; each commit was checked with the rest of the tree
+  stashed (`git stash push --keep-index -u`). The fixtures kept their CRLF (`od -c`,
+  `git ls-files --eol` shows `i/crlf`).
+- `bun --bun vitest run` in `worker/`: 192 tests after the review fix (184 before), 61 of them
+  in `inbound.spec.ts`, `consumer.spec.ts` and `parse.spec.ts` against D1, R2 and Queues in
+  workerd. The real queue delivers to the real consumer in the test runtime, so three tests run
+  the whole path: `email()`, R2, queue, range read, parse, `parsed` row (one of them with a
+  20 MiB message).
+- Every test the design lists: rejects (unknown, disabled, receive off) store nothing; tag kept;
+  any case matches; forward-only forwards once per target and stores nothing; loop header keeps;
+  all forwards failing keeps (without forwarding again); store-and-forward stores first,
+  forwards once, records a failure without throwing; an R2 or D1 failure throws before any
+  forward; a queue send failure leaves `stored` and the cron step re-enqueues it to `parsed`;
+  the consumer parses and is idempotent (sequential and concurrent redelivery); a refused parse
+  becomes `parse_failed`; the FTS row is found by `MATCH`, Chinese included. Added: nothing
+  throws after a forward when the audit or `forward_failed` write fails; forward errors are
+  logged without addresses; a failing cron job is logged by name and fails the run.
+- Charsets parse in workerd as in Bun: GBK, GB18030 (with a 4-byte character), Big5,
+  ISO-2022-JP, Shift_JIS, EUC-JP; QP and base64 bodies; encoded-word subjects in Chinese and
+  Japanese.
+- Benchmark `bun worker/bench/parse.ts`, 3 runs (load 23-35%): worst fixture p95 0.67-0.79 ms
+  (the 20 MiB slice), all fixtures p95 0.36-0.37 ms. Before the first pass was added, a full
+  pass over 256 KB measured 1.3-2.2 ms median and 2.4-3.9 ms p95 at 40% load.
+
+### Ablation
+
+A script removes or inverts one behaviour hunk at a time in `worker/src/mail/*.ts` and
+`errorText` in `worker/src/http.ts`, and runs the three M3 test files. 64 hunks: recipient
+parsing (case, empty local part, tag split, empty tag), the lookup, each reject condition, the
+target list, the loop header, the forward header, the caught forward failure, the forward-only
+branch and its early return, the audit row and its caught failure, the R2 key layout, the row's
+`forward_failed`, tag and `last_received_at`, forward-and-keep and its forward-only exclusion,
+recording a forward failure and its caught failure, the enqueue and its caught failure, log
+redaction; in the consumer the stored-only select, the range read, both `parse_failed` paths and
+their guard, the FTS and UPDATE guards, the FTS sender fallback, the parsed status, thread key,
+snippet and attachment flag, ack and retry; in the cron the age, status, order, limit, send, the
+contained job and the failed run; in the parse the slice cap, the first pass and its condition,
+the nesting limit, HTML to text, the text and snippet caps, both attachment rules, display
+names, Cc, References, the thread key order and fallback, entity decoding and script removal.
+
+First pass: 60 of 64 red. The gap tests in `d52e3c1` came from the earlier gaps (the writes after
+a forward, redaction, the stored-only select, concurrent redelivery, the sender fallback) and from
+two survivors of this pass: the slice cap (the old test could not see past the 8 KB text cap) and
+the attachment flag for an attachment outside `multipart/mixed`. Both are red now.
+
+Two survivors kept: `AND status = 'stored'` on the `parse_failed` UPDATE and on the `parsed`
+UPDATE. The consumer selects only a stored row, and two deliveries of the same job parse the same
+bytes, so they write the same values; no test can tell the guard from its absence. The guards
+keep a later status from being overwritten if that ever stops holding. The FTS insert guard,
+which does change the result under concurrent redelivery, is covered.
+
+### Gate timing
+
+| Point | Merge gate wall, 3 runs | Worker suite (vitest Duration) | CPU load before each run |
+| --- | --- | --- | --- |
+| Before M3 (`69563bb` with postal-mime installed) | 9.52, 8.93, 8.79 s | 5.95, 5.48, 5.36 s | 51%, 19%, 22% |
+| M3 code before the ablation gap tests | 10.82, 10.73, 10.99 s | 7.01, 7.26, 7.44 s | 31%, 32%, 41% |
+| M3 at `d52e3c1` | 10.78, 10.61, 10.60 s | 7.18, 7.07, 7.05 s | 54%, 24%, 38% |
+| M3 at `9e16a97` (review fix 1) | 11.07, 10.63, 9.08 s | 7.16, 7.40, 6.31 s | 31%, 26%, 7% |
+
+Both limits (10 s merge gate, 6 s slowest test package) are exceeded. The suite without the
+three M3 files measured 6.26 and 6.54 s at the same time (load about 30%), so M3 adds about
+0.7 s and the suite was already at the limit on this host. Transform is 79-80% of the suite
+time; pre-bundling postal-mime in the vitest optimizer did not change it (7.30, 7.14, 6.49 s)
+and was not kept. No test was weakened. Owner decision: re-baseline, or reduce (for example by
+merging test files).
+
+### Review of 2c9e9c4 ("FIX FIRST")
+
+1. **Quadratic HTML reduction (High, reproduced).** `htmlToText` used `/<[^>]*>/g` and a lazy
+   `<(script|style|head)...</\1>` regex, both quadratic on sender HTML. Fixed in `9e16a97`: one
+   forward scan with `indexOf`; an unterminated tag, comment or skipped element drops the rest;
+   the scan stops at twice the 8 KB text it needs. Reviewer's repro, `parseSlice` on a 60 KB
+   `text/html` message, 3 runs each under Bun 1.4.4:
+
+   | Input | Before | After |
+   | --- | --- | --- |
+   | normal HTML (`<p>hello world</p>` repeated) | 4.2, 0.6, 0.9 ms | 5.9, 1.8, 1.2 ms (first run includes warm-up) |
+   | `"<"` repeated 60,000 times | 381, 377, 376 ms | 0.5, 0.5, 0.5 ms |
+   | `"<head"` repeated 12,000 times | 238, 234, 243 ms | 0.5, 0.7, 0.5 ms |
+
+   Six 250 KB adversarial bodies (`<` without `>`, `<head`, `<script ` never closed, `<!--`
+   without `-->`, an attribute without `>`, `&amp` without `;`) are gated inputs of
+   `bun worker/bench/parse.ts` (p95 0.13-0.25 ms over 3 runs) and unit tests that check the text
+   returned. Ablation of the new hunks: 10, 9 red after one more test (text after 20,000 empty
+   tags, for the one-space-per-run rule). Survivor kept: the output cap in the scan loop; the
+   result is sliced to the same length afterwards, so only the work it saves differs.
+
+2. **postal-mime on crafted input (measured; not changed).** `parseSlice` under Bun 1.4.4,
+   100 runs each after 20 warm-up runs, CPU load 24%, current limits (500 parts, nesting depth
+   32, header size 256 KB):
+
+   | Input (within the 256 KB slice) | Median | p95 | Result |
+   | --- | --- | --- | --- |
+   | 499 parts of 1 byte (18 KB) | 2.05 ms | 3.69 ms | parsed |
+   | 5,000 parts (over the limit) | 1.43 ms | 3.08 ms | throws, `parse_failed` |
+   | nesting depth 31 | 0.14 ms | 0.43 ms | parsed |
+   | nesting depth 2,000 (over the limit) | 0.12 ms | 0.33 ms | throws |
+   | one 250 KB folded Subject | 1.52 ms | 2.73 ms | parsed, subject cut to 998 |
+   | 5,000 `X-` headers | 1.82 ms | 3.46 ms | throws (header size) |
+   | Subject of 12,000 B encoded words | 1.95 ms | 3.04 ms | throws (header size) |
+   | Subject of 12,000 Q encoded words (GBK) | 2.20 ms | 3.59 ms | throws (header size) |
+   | boundary never closed, 250 KB text part | 0.84 ms | 1.77 ms | parsed |
+   | boundary never closed, 250 KB base64 part, no text | 1.65 ms | 3.22 ms | parsed, no text |
+   | 499 base64 parts of 500 bytes, no text | 11.70 ms | 15.06 ms | parsed, no text |
+   | one 250 KB line without CRLF | 0.08 ms | 0.20 ms | parsed |
+   | 250 KB of bare CR | 0.05 ms | 0.11 ms | parsed |
+
+   Over the 3 ms p95 budget: many parts (worst: 499 parts with no text, 11.7 ms median, both
+   passes walk them), header-heavy messages, and a slice with no text part (open question 3).
+   Measured with `maxPartCount: 50` and `maxHeadersSize: 64 KB` (then reverted): every input
+   above except the no-text base64 part drops to p95 0.11-2.04 ms (the parts and header cases
+   throw early, 0.15-0.86 ms median); the no-text base64 part stays at 1.90 ms median, 3.33 ms
+   p95. Proposal for the owner (open question 9): lower `maxPartCount` to 50 and
+   `maxHeadersSize` to 64 KB, so such messages become `parse_failed` quickly and the browser
+   parses them; together with open question 3 (skip the full pass when the first 64 KB has no
+   text), which bounds the last case. A real message with more than 50 MIME parts in its first
+   256 KB, or more than 64 KB of headers across its parts, would then have no search text or
+   snippet.
+
+3. **Export with an FTS5 table (Medium, docs).** Reproduced locally:
+   `bun run wrangler d1 export melodymail --local` fails with "cannot export databases with
+   Virtual Tables (fts5)"; `--table messages` exports. M7 constraint, recorded below.
+
+### M7 constraint: backups and messages_fts
+
+- A whole-database `wrangler d1 export` fails while `messages_fts` exists, so PLAN's periodic
+  export to R2 must export table by table (`--table`), skipping `messages_fts`.
+- The search text lives only in `messages_fts`. A restore rebuilds it: after importing the
+  tables, set `status = 'stored'` on the restored `parsed` rows (and clear their parsed columns
+  if wanted); the cron step re-enqueues them, 100 per run, and the consumer re-parses each from
+  its R2 object. The restore procedure in M7 has to say this, and that it costs one queue round
+  per message.
+- D1 Time Travel (PLAN's 7-day restore) is not an export and is not affected.
+
+### Not verified
+
+- Real Email Routing delivery, `forward()` to a real verified destination (including the M2
+  note about a destination verified in mixed case against the lowercase target), and what the
+  sending server sees when `email()` throws.
+- `wrangler deploy` creating the queue and the bucket (no real account used).
+- Production `cpuTime` of `email()`, the consumer and the cron run.
+- Queue retry timing and the 24-hour retention on the Free plan: tests call the consumer
+  directly for retries; only the immediate delivery runs in workerd.
+- `forward()` after a failed R2 write that read part of `message.raw` (the forward-instead
+  path of ruling 1): the docs show a forward after a full read only.
+
+### Owner rulings (2026-11-16, reply "同意" to the M3 open questions)
+
+1. **Storage failure forwards instead** (was open question 1, `830f76d`). An R2 or D1 failure in
+   `email()` for an address with targets (and no loop header) forwards to them, writes the
+   audit row `mail_forwarded_unstored` (address id, counts, and the key of an R2 object already
+   written, for the M7 sweep) and returns; nothing is stored, so nothing forwards twice. It
+   throws, so the sender gets the bounce, when no forward goes out: no targets, the loop header,
+   a forward-only address whose forwards all failed, or every fallback forward failing. Tests:
+   R2 failure with targets; D1 insert failure with targets (orphan named); no fallback forward
+   going out; no targets (R2 and D1); loop header; forward-only with all forwards failing.
+   Ablation: 7 hunks; the "no targets" condition survived (the fallback already rethrows with
+   no targets) and was removed; the rest red.
+2. **Attempt counter** (was open question 2, `e594fad`, migration 0006 `attempts` default 0).
+   The consumer increments it in its own write before reading R2 or parsing. A failing fifth
+   try sets `parse_failed` and acks; a delivery past 5 sets `parse_failed` without parsing; the
+   cron sets `parse_failed` on stuck rows that used 5 tries and re-enqueues only the rest.
+   Tests: 5 failed tries end `parse_failed` with the raw object kept; a success on try 3 ends
+   `parsed`; a killed fifth try gives up on the next delivery without reading R2; the cron skips
+   `parse_failed` and used-up rows. Ablation: 5 hunks, all red. `db:migrate:local` applied 0006
+   on the local database with rows; a second run reported nothing to apply.
+3. **Second pass at 128 KB**: replaced by ruling 9 before it was built.
+4. **Short search terms** (was open question 4, `30ea82b`). `buildSearch` in
+   `worker/src/mail/search.ts`: terms of 3 or more characters form one `MATCH` of quoted
+   phrases; shorter terms each add an escaped `LIKE` over subject, sender and body; every term
+   must match; no route until M4. Tests: 1-, 2- and 3-or-more-character Chinese, Japanese and
+   Latin terms; every term required; `%`, `_`, `"`, `\`, column filters, `OR`, `NEAR`, `*` and
+   an unbalanced quote taken literally. Ablation: 9 hunks; the sender column first survived and
+   got a test (`张三`); all red.
+5. **Concurrent gate** (was open question 8, `a7a4f0b`). `scripts/check.ts` runs the seven
+   steps at once with `Bun.spawn`, prints each step's output and exit code, exits 1 when any
+   fails; CI still calls `bun run check`. A planted lint violation made it exit 1 naming `lint`.
+   Slowest test package limit 9 s (owner approval); merge gate limit stays 10 s.
+6. **Settled as recorded**: the 20 MiB raw message fixture (was question 5), the header-only
+   loop guard (question 7), and the parse benchmark checked by hand and in review rather than in
+   the merge gate (question 6).
+7. **Parse only the first 64 KB** (was open question 9, option A; replaces ruling 3,
+   `b44a34a`). One postal-mime pass over 64 KB (the R2 range read is 64 KB); at most 50 parts
+   and 64 KB of headers, over either the message becomes `parse_failed`; the second pass, its
+   tests and its benchmark case are gone. A message whose text starts after 64 KB is `parsed`
+   with an empty snippet and no search text; `has_attachments` comes from what the slice shows.
+   Tests: more than 50 parts and more than 64 KB of headers are refused (parse level) and end
+   `parse_failed` (consumer level); text after 64 KB gives `parsed` with an empty snippet; the
+   15 fixtures are unchanged. Ablation: 4 hunks, all red. Benchmark, 3 runs of 200 per input,
+   CPU load 2-6%: worst p95 1.20-1.61 ms over 36 inputs (15 fixtures, the 20 MiB message, text
+   after 64 KB, the 13 crafted MIME shapes, the 6 adversarial HTML bodies); all inputs together
+   median 0.07 ms, p95 0.52-0.57 ms. Every input is gated.
+
+Verified after the rulings: `bun run check` green at every commit (each checked with the rest of
+the tree stashed); 206 worker tests. Merge gate (concurrent), 3 runs at `a7a4f0b`: 6.52, 7.27,
+7.78 s wall, worker suite 5.48, 6.12, 6.62 s, CPU load 14%, 9%, 10%. Both under their limits
+(10 s, 9 s).
+
+### Re-review of 5b9e290 ("FIX FIRST")
+
+1. **Superlinear HTML text building (Medium, reproduced).** `htmlToText` appended to one string
+   and read its last character back per tag. `a007117` collects the text in an array joined
+   once and keeps the length and the trailing-space state in variables; the output is byte for
+   byte the same for every fixture, crafted message and adversarial body (snapshot compared
+   before and after). `parseSlice` under Bun, 200 runs: `<b>x</b>` x 7500 (60 KB) median
+   3.85 ms, p95 4.61 ms before (the bench exited 1), median 0.63-0.81 ms, p95 0.74-1.05 ms
+   after; 60 KB of table cells median 2.84 ms, p95 3.44 ms before, median 0.52-0.64 ms, p95
+   0.78-0.87 ms after. Both are gated bench inputs and unit tests. Benchmark, 3 runs at load
+   1-10%: worst p95 1.23-1.35 ms over 38 inputs. Ablation: 4 hunks, 2 red; the text-end
+   tracking and the length count survive because they only bound the work under the 16 K cap,
+   and the 8 KB text is the same either way.
+2. **PLAN said 256 KB (Low).** `docs/PLAN.md` sections 2 and 4 now say 64 KB.
+
+### Open questions for the owner
+
+None open from M3.
+
+### Deferred
+
+- R2 objects without a row (a failed D1 insert after the R2 write) stay until the M7 sweep.
+- The Durable Object notification after a parse arrives with the mail UI (M4).
+- `has_attachments` is decided from the first 64 KB, so an attachment part that starts later is
+  seen only through a `multipart/mixed` top-level type (ruling 7).

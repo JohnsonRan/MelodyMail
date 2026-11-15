@@ -4,7 +4,8 @@
   "type": "module",
   "dependencies": {
     "@simplewebauthn/server": "^14.1.0",
-    "hono": "^4.13.18"
+    "hono": "^4.13.18",
+    "postal-mime": "^4.2.1"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.8.2",
@@ -23,6 +24,7 @@
     "db:migrate:local": "wrangler d1 migrations apply melodymail --local",
     "db:migrate:remote": "wrangler d1 migrations apply melodymail --remote",
     "bench:auth": "bun bench/auth.ts",
+    "bench:parse": "bun bench/parse.ts",
     "wrangler": "wrangler"
   }
 }

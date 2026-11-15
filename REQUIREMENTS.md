@@ -33,7 +33,7 @@ as the baseline; then the limit, as the baseline plus a margin (start at 20%).
 | Tier | Command | Runs (where, when) | Wall-time limit | Baseline (date, host, load) |
 | --- | --- | --- | --- | --- |
 | Pre-commit | `bun run lint` | locally, before each commit (no hook yet) | 1 s | 0.34 s, 3 runs 0.34–0.46 s (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load ~80%) |
-| Merge gate | `bun run check` | CI on every pull request and push to main; locally before push | 10 s | 8.1 s, 3 runs 7.9–8.2 s, CPU load 55–67%; a 4th run 8.9 s (2026-11-15, dev workstation, Ryzen 9 9950X3D) |
+| Merge gate | `bun run check` | CI on every pull request and push to main; locally before push | 10 s | 7.2 s, 3 runs 6.5–7.8 s with the steps run concurrently by `scripts/check.ts`, CPU load 9–14% (2026-11-16, dev workstation, Ryzen 9 9950X3D); sequential before: 10.6–11.1 s |
 | Scheduled run on main | | | | |
 | Release | | | | |
 
@@ -50,7 +50,7 @@ meanwhile.
 | Page frame width; readable column width | | | e2e page-width check |
 | Supported widths (phone, laptop, wide) | phone 390 px, laptop 1280 px, wide 1920 px; tables stack below Astryx's sm breakpoint (640 px) | a setting, not measured (owner ruling 2026-11-16) | screenshots |
 | Full end-to-end run, wall time | | | |
-| Slowest test package | 6 s | 4.7 s, worker suite (vitest Duration), 3 runs 4.54–4.91 s, of which about 2 s is fixed workerd startup (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load 67–70%) | review |
+| Slowest test package | 9 s (owner approval 2026-11-16) | 6.1 s, worker suite (vitest Duration) inside the concurrent gate, 3 runs 5.48–6.62 s, CPU load 9–14% (2026-11-16, dev workstation, Ryzen 9 9950X3D); about 80% of it is transform | review |
 | Frontend entry chunk, gzip | 270 kB | 14 kB (2026-11-15, vite build, gzip -6) | review |
 | Frontend first paint (sign-in page), JS + CSS gzip | 370 kB | 309 kB (2026-11-15, vite build, gzip -6) | review |
 | Frontend total JS + CSS, gzip | 610 kB | 508 kB; Astryx core about 890 kB minified is most of it (2026-11-15, vite build, gzip -6) | review |
@@ -60,7 +60,7 @@ meanwhile.
 | Status check interval while several jobs run | 10 min | a setting, not measured | orchestrator |
 | Commit subject length | 72 characters | a setting, not measured | commit hook |
 | CPU time per Worker invocation, production | | | Workers Logs cpuTime, review |
-| Inbound header parse, JS time per message (Bun benchmark) | | | parse benchmark in the merge gate |
+| Inbound header parse, JS time per message (Bun benchmark) | 3 ms p95 per input | one pass over the first 64 KB (owner ruling 2026-11-16): worst p95 1.23–1.35 ms over 38 inputs (15 fixtures, a 20 MiB message, text after 64 KB, 13 crafted MIME shapes, 8 adversarial HTML bodies including 60 KB dense with short tags; worst: an unclosed boundary with a long text part, and 499 base64 parts); all inputs together median 0.07–0.08 ms, p95 0.64–0.71 ms; 3 runs of 200 per input (2026-11-16, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4, CPU load 1–10%) | `bun worker/bench/parse.ts` (exits 1 over the limit), review |
 | Passkey assertion verification, JS time per login (Bun benchmark) | 3 ms p95 | median 0.19–0.20 ms, p95 0.44–0.70 ms, 3 runs of 200 (2026-11-15, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4, CPU load ~68%) | `bun worker/bench/auth.ts`, review |
 | TOTP check (3 HMAC-SHA-1 steps), JS time per recovery (Bun benchmark) | 3 ms p95 | median 0.07–0.08 ms, p95 0.17–0.32 ms, 3 runs of 200 (2026-11-15, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4, CPU load ~68%) | `bun worker/bench/auth.ts`, review |
 
@@ -112,7 +112,7 @@ tagged rule marked as not applying needs the owner's approval, quoted in the com
 | worker/AGENTS.md#authz | `bun run test` | `REVIEW.md`, "Checking against the rules", Authorization |  |
 | worker/AGENTS.md#sensitive-values |  | `REVIEW.md`, "Checking against the rules", Sensitive data |  |
 | worker/AGENTS.md: Retries and concurrency | `bun run test` | `REVIEW.md`, "Checking against the rules", Retries and concurrency |  |
-| worker/AGENTS.md: Background work (if present) |  |  | no background work yet; queue consumers and cron arrive in M3 and M7 |
+| worker/AGENTS.md: Background work (if present) | `bun run test` | `REVIEW.md`, "Checking against the rules", Retries and concurrency |  |
 | worker/AGENTS.md: Operations (if present) |  | `REVIEW.md`, "Checking against the rules" |  |
 | worker/AGENTS.md: Admin panel (if present) |  | `REVIEW.md`, "Pass bar" |  |
 | worker/AGENTS.md: Performance |  | `REVIEW.md`, "Pass bar" |  |
@@ -150,7 +150,6 @@ body.
 | Numbers: Page frame width; readable column width | the shell has no content pages yet | measure once the mail list and settings pages exist (M4) | 2027-01-31 |
 | Numbers: Full end-to-end run, wall time | no end-to-end suite | measure when Playwright lands in M4 | 2027-01-31 |
 | Numbers: CPU time per Worker invocation, production | not deployed yet; Workers Free caps it at 10 ms | read cpuTime from Workers Logs after the first deploy | 2027-02-28 |
-| Numbers: Inbound header parse, JS time per message (Bun benchmark) | parser not written yet; planned budget 3 ms | add the benchmark with the M3 parser | 2027-01-31 |
 
 ## Example (illustrative values; measure your own)
 

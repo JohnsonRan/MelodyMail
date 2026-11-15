@@ -1,0 +1,12 @@
+From: "Sender Name" <sender@example.org>
+To: shop@example.com
+Date: Mon, 16 Nov 2026 08:00:00 +0000
+Message-ID: <plain@example.org>
+MIME-Version: 1.0
+Subject: Plain text message
+In-Reply-To: <parent@example.org>
+References: <root@example.org> <parent@example.org>
+Content-Type: text/plain; charset=utf-8
+
+Hello from the plain fixture.
+Second line.

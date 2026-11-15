@@ -19,6 +19,22 @@
   ],
   // DNS-over-HTTPS JSON endpoint for the domain DNS check (Settings > Domains).
   "vars": { "DOH_URL": "https://cloudflare-dns.com/dns-query" },
+  // Raw inbound mail (raw/{yyyy}/{mm}/{id}.eml). wrangler deploy creates the bucket when it is
+  // missing (automatic provisioning, wrangler 4.45 and later).
+  "r2_buckets": [{ "binding": "MAIL", "bucket_name": "melodymail-mail" }],
+  // Inbound parse jobs carry only { id }. wrangler 4.162 creates a missing queue on deploy
+  // (https://developers.cloudflare.com/workers/wrangler/configuration/#automatic-provisioning
+  // lists Queues); README has the manual create command.
+  // max_batch_size 1: each parse may take up to the 3 ms Bun budget, about 3 times that on a
+  // slower production CPU, and a consumer invocation has 10 ms CPU on Workers Free. No dead-letter
+  // queue: the cron step re-enqueues every message still "stored" after 15 minutes.
+  "queues": {
+    "producers": [{ "binding": "INBOUND", "queue": "melodymail-inbound" }],
+    "consumers": [{ "queue": "melodymail-inbound", "max_batch_size": 1, "max_retries": 5 }]
+  },
+  // One trigger (Workers Free allows 5 per account): re-enqueue stuck messages. M7 adds the R2
+  // orphan sweep and trash clean-up here.
+  "triggers": { "crons": ["*/15 * * * *"] },
   // Abuse guard only: counts are approximate and per location. The strict recovery lockout is
   // counted in D1 (login_attempts). namespace_id is chosen here, not issued by an account.
   "ratelimits": [

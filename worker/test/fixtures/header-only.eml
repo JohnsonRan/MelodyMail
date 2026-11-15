@@ -1,0 +1,7 @@
+From: "Sender Name" <sender@example.org>
+To: shop@example.com
+Date: Mon, 16 Nov 2026 08:00:00 +0000
+Message-ID: <header-only@example.org>
+MIME-Version: 1.0
+Subject: Header only
+Content-Type: text/plain

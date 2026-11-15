@@ -6,6 +6,8 @@ import { registerAuthRoutes } from "./auth/routes";
 import { registerDomainRoutes } from "./domains/routes";
 import type { AppEnv, Env } from "./env";
 import { fail, log } from "./http";
+import { handleQueue, handleScheduled } from "./mail/consumer";
+import { handleEmail } from "./mail/inbound";
 import { publicRoute, requireAuthorization, requireSameOrigin } from "./routing";
 
 export type { Env };
@@ -33,16 +35,9 @@ app.onError((err, c) => {
   return fail(c, 500, "internal");
 });
 
-/**
- * Inbound mail. Until the address list exists (M2/M3) no address is configured, so every
- * message is rejected before anything is stored: the owner ruled that only addresses added in
- * the panel may receive mail.
- */
-export async function handleEmail(message: ForwardableEmailMessage): Promise<void> {
-  message.setReject("Address not found");
-}
-
 export default {
   fetch: app.fetch,
   email: handleEmail,
-} satisfies ExportedHandler<Env>;
+  queue: handleQueue,
+  scheduled: handleScheduled,
+} satisfies ExportedHandler<Env, InboundJob>;
