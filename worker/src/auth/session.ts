@@ -19,10 +19,11 @@ const COOKIE_OPTIONS = { httpOnly: true, secure: true, sameSite: "Strict", path:
  */
 export async function startSession(c: Context<AppEnv>, now: number) {
   const token = isoBase64URL.fromBuffer(randomBytes(32));
+  const id = await sha256Hex(token);
   const insert = c.env.DB.prepare(
     "INSERT INTO sessions (id, created_at, expires_at, last_seen_at, user_agent) VALUES (?, ?, ?, ?, ?)",
-  ).bind(await sha256Hex(token), now, now + SESSION_LIFETIME_MS, now, clientInfo(c).userAgent);
-  return { token, insert };
+  ).bind(id, now, now + SESSION_LIFETIME_MS, now, clientInfo(c).userAgent);
+  return { id, token, insert };
 }
 
 export function setSessionCookie(c: Context<AppEnv>, token: string): void {

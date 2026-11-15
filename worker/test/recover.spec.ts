@@ -98,6 +98,15 @@ describe("recovery", () => {
     expect(failed).toBe(2);
   });
 
+  it("signs out every other session after a successful recovery", async () => {
+    const owner = await setupOwner();
+    const first = await recover(owner.recoveryKey, await nextCode(owner.totpSecret));
+    expect(first.res.status).toBe(200);
+    expect((await owner.client.request("GET", "/api/auth/passkeys")).status).toBe(401);
+    expect((await first.client.request("GET", "/api/auth/passkeys")).status).toBe(200);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM sessions").first("n")).toBe(1);
+  });
+
   it("lets only one of two concurrent recoveries with the same key and code win", async () => {
     const owner = await setupOwner();
     const code = await nextCode(owner.totpSecret);

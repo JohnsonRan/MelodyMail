@@ -191,7 +191,13 @@ export function registerAuthRoutes(auth: Hono<AppEnv>): void {
       .run();
     if (swapped.meta.changes !== 1) return fail(c, 401, "verification_failed");
     const session = await startSession(c, now);
-    await db.batch([session.insert, clearFailures(db, ip), audit(c, "recover", now)]);
+    // Whoever needed recovery may have lost a device: every other session ends (owner ruling).
+    await db.batch([
+      session.insert,
+      db.prepare("DELETE FROM sessions WHERE id != ?").bind(session.id),
+      clearFailures(db, ip),
+      audit(c, "recover", now),
+    ]);
     setSessionCookie(c, session.token);
     return c.json({ recoveryKey });
   });
