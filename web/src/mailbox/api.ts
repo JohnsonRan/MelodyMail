@@ -91,6 +91,6 @@ export function senderName(from: string): string {
 
 /** The address of a From header ("Name <a@b>" gives "a@b"); the header itself when it has none. */
 export function senderAddress(from: string): string {
-  const match = /<([^>]*)>s*$/.exec(from);
+  const match = /<([^>]*)>\s*$/.exec(from);
   return (match?.[1] ?? from).trim();
 }
