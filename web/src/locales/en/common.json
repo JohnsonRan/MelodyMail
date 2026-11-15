@@ -72,7 +72,7 @@
     "addPasskeyDescription": "Register a passkey on this device so you can sign in without your recovery key.",
     "addPasskey": "Add a passkey",
     "skip": "Not now",
-    "newKeyNotice": "Your old recovery key no longer works. Store this one somewhere safe. Then add a passkey within 5 minutes; after that, adding one asks you to confirm with a passkey you may no longer have."
+    "newKeyNotice": "Your old recovery key no longer works. Store this one somewhere safe. Then add a new passkey within 30 minutes; after that, adding one asks you to confirm with a passkey you may no longer have."
   },
   "recoveryKey": {
     "shownOnce": "This key is shown only once",
