@@ -48,7 +48,8 @@ const FORBID_TAGS = [
 ];
 
 const REMOTE_CSS = /url\s*\(|@import/i;
-const LINK_SCHEME = /^\s*(https?|mailto|tel):/i;
+// "//" is required: "http:/x" and "http:\x" resolve against the base URL, the app's own page.
+const LINK_SCHEME = /^\s*(https?:\/\/|mailto:|tel:)/i;
 
 export type SanitizedMail = {
   html: string;

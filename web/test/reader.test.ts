@@ -238,6 +238,30 @@ describe("hostile HTML corpus", () => {
     expect(await survivors(s, result.sanitized, ["#rel[href]", "#proto[href]"])).toEqual([]);
   });
 
+  // A special scheme without "//" is still resolved against the base URL (WHATWG URL), which
+  // for srcdoc is the app's own page: "http:/api/x" opens https://<app>/api/x.
+  test("drops scheme-relative links that resolve against the app origin", async () => {
+    const hrefs = ["https:/api/messages", "http:api", "http:\\evil.example/h", "HTTPS:/x"];
+    const html = hrefs
+      .map(
+        (h, i) =>
+          `<a id="h${i}" href="${h}">h</a><svg xmlns:xlink="http://www.w3.org/1999/xlink"><a id="x${i}" xlink:href="${h}"><text>x</text></a></svg>`,
+      )
+      .join("");
+    const { result, s } = await render({
+      html: `${html}<a id="ok" href="https://example.org/">ok</a>`,
+    });
+    for (const [i, h] of hrefs.entries()) {
+      expect(await attributes(s, result.sanitized, `#h${i}`, ["href"]), h).toEqual([[null]]);
+      expect(await attributes(s, result.sanitized, `#x${i}`, ["xlink:href", "href"]), h).toEqual([
+        [null, null],
+      ]);
+    }
+    expect(await attributes(s, result.sanitized, "#ok", ["href"])).toEqual([
+      ["https://example.org/"],
+    ]);
+  });
+
   // An SVG <a> reports a lowercase tagName; a link that is not sent to a new tab navigates the
   // mail frame itself to the sender's page, where the frame CSP no longer applies.
   for (const attr of ["href", "xlink:href"]) {
