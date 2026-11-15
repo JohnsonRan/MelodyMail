@@ -1,9 +1,11 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { LOCKOUT_WINDOW_MS } from "../src/auth/lockout";
+import { GLOBAL_FAILURES, LOCKOUT_WINDOW_MS, PER_IP_FAILURES } from "../src/auth/lockout";
 import { Client, setupOwner, totpCode } from "./helpers";
 
 const UNKNOWN_KEY = "AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA-AAAA";
+const GLOBAL = "recover";
+const ipScope = (client: Client) => `recover:ip:${client.ip}`;
 
 async function recover(recoveryKey: string, code: string, client = new Client()) {
   const res = await client.request("POST", "/api/auth/recover", { recoveryKey, totpCode: code });
@@ -24,7 +26,18 @@ async function wrongCode(secret: string): Promise<string> {
   return String(code).padStart(6, "0");
 }
 
-const attempts = () => env.DB.prepare("SELECT COUNT(*) AS n FROM login_attempts").first("n");
+function attempts(scope?: string) {
+  const db = env.DB;
+  return scope
+    ? db.prepare("SELECT COUNT(*) AS n FROM login_attempts WHERE scope = ?").bind(scope).first("n")
+    : db.prepare("SELECT COUNT(*) AS n FROM login_attempts").first("n");
+}
+
+/** Sends `times` wrong attempts (right key, wrong code) from one client, one after another. */
+async function fail(secret: string, recoveryKey: string, client: Client, times: number) {
+  const bad = await wrongCode(secret);
+  for (let i = 0; i < times; i++) await recover(recoveryKey, bad, client);
+}
 
 describe("recovery", () => {
   it("signs in, rotates the recovery key, and the old key stops working", async () => {
@@ -71,79 +84,18 @@ describe("recovery", () => {
 
   it("gives the same answer for a wrong key and for a wrong code, and counts both", async () => {
     const owner = await setupOwner();
-    const wrongKey = await recover(UNKNOWN_KEY, await nextCode(owner.totpSecret));
-    const badCode = await recover(owner.recoveryKey, await wrongCode(owner.totpSecret));
+    const client = new Client();
+    const wrongKey = await recover(UNKNOWN_KEY, await nextCode(owner.totpSecret), client);
+    const badCode = await recover(owner.recoveryKey, await wrongCode(owner.totpSecret), client);
     expect(wrongKey.res.status).toBe(401);
     expect(badCode.res.status).toBe(401);
     expect(wrongKey.body).toEqual(badCode.body);
-    expect(await attempts()).toBe(2);
+    expect(await attempts(ipScope(client))).toBe(2);
+    expect(await attempts(GLOBAL)).toBe(2);
     const failed = await env.DB.prepare(
       "SELECT COUNT(*) AS n FROM audit_log WHERE event = 'recover_failed'",
     ).first("n");
     expect(failed).toBe(2);
-  });
-
-  it("locks after 5 failures in 15 minutes, even for the right credentials", async () => {
-    const owner = await setupOwner();
-    const bad = await wrongCode(owner.totpSecret);
-    for (let i = 0; i < 5; i++) {
-      expect((await recover(owner.recoveryKey, bad)).res.status).toBe(401);
-    }
-    const locked = await recover(owner.recoveryKey, await nextCode(owner.totpSecret));
-    expect(locked.res.status).toBe(429);
-    expect(locked.body.error).toBe("locked");
-    expect(locked.body.retryAfter).toBeGreaterThan(890);
-    expect(locked.body.retryAfter).toBeLessThanOrEqual(900);
-    expect(locked.res.headers.get("retry-after")).toBe(String(locked.body.retryAfter));
-    // Attempts while locked are not counted, so they cannot extend the lock.
-    expect(await attempts()).toBe(5);
-  });
-
-  it("opens again once the 15-minute window has passed", async () => {
-    const owner = await setupOwner();
-    const bad = await wrongCode(owner.totpSecret);
-    for (let i = 0; i < 5; i++) await recover(owner.recoveryKey, bad);
-    await env.DB.prepare("UPDATE login_attempts SET created_at = created_at - ?")
-      .bind(LOCKOUT_WINDOW_MS)
-      .run();
-    const res = await recover(owner.recoveryKey, await nextCode(owner.totpSecret));
-    expect(res.res.status).toBe(200);
-    expect(await attempts()).toBe(0);
-  });
-
-  it("opens again when the owner clears login_attempts (the README command)", async () => {
-    const owner = await setupOwner();
-    const bad = await wrongCode(owner.totpSecret);
-    for (let i = 0; i < 5; i++) await recover(owner.recoveryKey, bad);
-    await env.DB.prepare("DELETE FROM login_attempts").run();
-    const res = await recover(owner.recoveryKey, await nextCode(owner.totpSecret));
-    expect(res.res.status).toBe(200);
-  });
-
-  it("evaluates at most 5 of 20 concurrent wrong attempts", async () => {
-    const owner = await setupOwner();
-    const bad = await wrongCode(owner.totpSecret);
-    const results = await Promise.all(
-      Array.from({ length: 20 }, () => recover(owner.recoveryKey, bad)),
-    );
-    const evaluated = results.filter((r) => r.res.status === 401).length;
-    const locked = results.filter((r) => r.res.status === 429).length;
-    expect(evaluated).toBeLessThanOrEqual(5);
-    expect(evaluated + locked).toBe(20);
-    expect(await attempts()).toBeLessThanOrEqual(5);
-  });
-
-  it("does not lock when 5 failures spread over more than 15 minutes", async () => {
-    const owner = await setupOwner();
-    const now = Date.now();
-    for (const minutesAgo of [20, 19, 18, 17]) {
-      await env.DB.prepare("INSERT INTO login_attempts (scope, created_at) VALUES ('recover', ?)")
-        .bind(now - minutesAgo * 60_000)
-        .run();
-    }
-    await recover(owner.recoveryKey, await wrongCode(owner.totpSecret));
-    const res = await recover(owner.recoveryKey, await nextCode(owner.totpSecret));
-    expect(res.res.status).toBe(200);
   });
 
   it("lets only one of two concurrent recoveries with the same key and code win", async () => {
@@ -156,17 +108,120 @@ describe("recovery", () => {
     expect(results.map((r) => r.res.status).sort()).toEqual([200, 401]);
   });
 
-  it("drops failures older than the window", async () => {
-    await env.DB.prepare("INSERT INTO login_attempts (scope, created_at) VALUES ('recover', ?)")
-      .bind(Date.now() - LOCKOUT_WINDOW_MS - 1)
-      .run();
-    await recover(UNKNOWN_KEY, "123456");
-    expect(await attempts()).toBe(1);
-  });
-
   it("answers verification_failed before setup", async () => {
     const res = await recover(UNKNOWN_KEY, "123456");
     expect(res.res.status).toBe(401);
     expect(res.body).toEqual({ error: "verification_failed" });
+  });
+});
+
+describe("recovery lockout", () => {
+  it("locks one IP after 5 failures in 15 minutes, even for the right credentials", async () => {
+    const owner = await setupOwner();
+    const attacker = new Client();
+    await fail(owner.totpSecret, owner.recoveryKey, attacker, PER_IP_FAILURES);
+    const locked = await recover(owner.recoveryKey, await nextCode(owner.totpSecret), attacker);
+    expect(locked.res.status).toBe(429);
+    expect(locked.body.error).toBe("locked");
+    expect(locked.body.retryAfter).toBeGreaterThan(890);
+    expect(locked.body.retryAfter).toBeLessThanOrEqual(900);
+    expect(locked.res.headers.get("retry-after")).toBe(String(locked.body.retryAfter));
+    // Attempts while locked are not counted, so they cannot extend the lock.
+    expect(await attempts(ipScope(attacker))).toBe(PER_IP_FAILURES);
+    expect(await attempts(GLOBAL)).toBe(PER_IP_FAILURES);
+  });
+
+  it("does not lock the owner when another IP is locked below the global ceiling", async () => {
+    const owner = await setupOwner();
+    const attacker = new Client();
+    await fail(owner.totpSecret, owner.recoveryKey, attacker, PER_IP_FAILURES + 3);
+    const res = await recover(owner.recoveryKey, await nextCode(owner.totpSecret));
+    expect(res.res.status).toBe(200);
+  });
+
+  it("locks every IP after 20 failures in 15 minutes from many IPs", async () => {
+    const owner = await setupOwner();
+    for (let i = 0; i < GLOBAL_FAILURES / PER_IP_FAILURES; i++) {
+      await fail(owner.totpSecret, owner.recoveryKey, new Client(), PER_IP_FAILURES);
+    }
+    const res = await recover(owner.recoveryKey, await nextCode(owner.totpSecret));
+    expect(res.res.status).toBe(429);
+    expect(res.body.error).toBe("locked");
+    expect(res.body.retryAfter).toBeGreaterThan(890);
+  });
+
+  it("evaluates at most 5 of 20 concurrent wrong attempts from one IP", async () => {
+    const owner = await setupOwner();
+    const bad = await wrongCode(owner.totpSecret);
+    const attacker = new Client();
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => recover(owner.recoveryKey, bad, attacker)),
+    );
+    const evaluated = results.filter((r) => r.res.status === 401).length;
+    const locked = results.filter((r) => r.res.status === 429).length;
+    expect(evaluated).toBeLessThanOrEqual(PER_IP_FAILURES);
+    expect(evaluated + locked).toBe(20);
+    expect(await attempts(ipScope(attacker))).toBeLessThanOrEqual(PER_IP_FAILURES);
+  });
+
+  it("evaluates at most 20 of 40 concurrent wrong attempts from 40 IPs", async () => {
+    const owner = await setupOwner();
+    const bad = await wrongCode(owner.totpSecret);
+    const results = await Promise.all(
+      Array.from({ length: 40 }, () => recover(owner.recoveryKey, bad)),
+    );
+    const evaluated = results.filter((r) => r.res.status === 401).length;
+    expect(evaluated).toBeLessThanOrEqual(GLOBAL_FAILURES);
+    expect(results.filter((r) => r.res.status === 429).length).toBe(40 - evaluated);
+    expect(await attempts(GLOBAL)).toBeLessThanOrEqual(GLOBAL_FAILURES);
+  });
+
+  it("opens again once the 15-minute window has passed and clears both counters", async () => {
+    const owner = await setupOwner();
+    const client = new Client();
+    await fail(owner.totpSecret, owner.recoveryKey, client, PER_IP_FAILURES);
+    await env.DB.prepare("UPDATE login_attempts SET created_at = created_at - ?")
+      .bind(LOCKOUT_WINDOW_MS)
+      .run();
+    const res = await recover(owner.recoveryKey, await nextCode(owner.totpSecret), client);
+    expect(res.res.status).toBe(200);
+    expect(await attempts()).toBe(0);
+  });
+
+  it("opens again when the owner clears login_attempts (the README command)", async () => {
+    const owner = await setupOwner();
+    for (let i = 0; i < GLOBAL_FAILURES / PER_IP_FAILURES; i++) {
+      await fail(owner.totpSecret, owner.recoveryKey, new Client(), PER_IP_FAILURES);
+    }
+    await env.DB.prepare("DELETE FROM login_attempts").run();
+    const res = await recover(owner.recoveryKey, await nextCode(owner.totpSecret));
+    expect(res.res.status).toBe(200);
+  });
+
+  it("does not lock when 5 failures from one IP spread over more than 15 minutes", async () => {
+    const owner = await setupOwner();
+    const client = new Client();
+    const now = Date.now();
+    for (const minutesAgo of [20, 19, 18, 17]) {
+      await env.DB.prepare("INSERT INTO login_attempts (scope, created_at) VALUES (?, ?)")
+        .bind(ipScope(client), now - minutesAgo * 60_000)
+        .run();
+    }
+    await recover(owner.recoveryKey, await wrongCode(owner.totpSecret), client);
+    const res = await recover(owner.recoveryKey, await nextCode(owner.totpSecret), client);
+    expect(res.res.status).toBe(200);
+  });
+
+  it("drops failures older than the window from both counters", async () => {
+    const client = new Client();
+    const old = Date.now() - LOCKOUT_WINDOW_MS - 1;
+    for (const scope of [GLOBAL, ipScope(client)]) {
+      await env.DB.prepare("INSERT INTO login_attempts (scope, created_at) VALUES (?, ?)")
+        .bind(scope, old)
+        .run();
+    }
+    await recover(UNKNOWN_KEY, "123456", client);
+    expect(await attempts(GLOBAL)).toBe(1);
+    expect(await attempts(ipScope(client))).toBe(1);
   });
 });

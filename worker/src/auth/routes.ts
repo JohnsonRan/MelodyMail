@@ -18,7 +18,6 @@ import {
 } from "./webauthn";
 
 const MIN_SETUP_TOKEN_LENGTH = 32;
-const RECOVER_SCOPE = "recover";
 const MAX_CREDENTIAL_ID = 1024;
 
 type Ctx = Context<AppEnv>;
@@ -160,7 +159,8 @@ export function registerAuthRoutes(auth: Hono<AppEnv>): void {
     const db = c.env.DB;
     const now = Date.now();
     // The attempt is counted before the credentials are checked; a locked attempt is not.
-    const retryAfter = await reserveAttempt(db, RECOVER_SCOPE, now);
+    const ip = c.req.header("cf-connecting-ip") ?? "unknown";
+    const retryAfter = await reserveAttempt(db, ip, now);
     if (retryAfter > 0) {
       c.header("Retry-After", String(retryAfter));
       return c.json({ error: "locked", retryAfter }, 429);
@@ -191,7 +191,7 @@ export function registerAuthRoutes(auth: Hono<AppEnv>): void {
       .run();
     if (swapped.meta.changes !== 1) return fail(c, 401, "verification_failed");
     const session = await startSession(c, now);
-    await db.batch([session.insert, clearFailures(db, RECOVER_SCOPE), audit(c, "recover", now)]);
+    await db.batch([session.insert, clearFailures(db, ip), audit(c, "recover", now)]);
     setSessionCookie(c, session.token);
     return c.json({ recoveryKey });
   });

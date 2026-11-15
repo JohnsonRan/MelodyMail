@@ -56,9 +56,10 @@ succeeds, the token no longer opens anything. For `wrangler dev`, put the value 
 
 ### Clear a recovery lockout
 
-Recovery accepts at most five failed attempts in any 15 minutes. After the fifth, it stays locked
-until the oldest of those attempts is 15 minutes old (at most 15 minutes). To open it at once,
-delete the counted failures from `worker/`:
+Recovery counts failed attempts in two ways. One IP address gets at most five in any 15 minutes;
+all addresses together get at most 20. A lock lasts until the oldest counted attempt is 15 minutes
+old (at most 15 minutes). The global ceiling locks recovery for everyone, the owner included. To
+open both at once, delete the counted failures from `worker/`:
 
 ```sh
 bun run wrangler d1 execute melodymail --remote --command "DELETE FROM login_attempts"
