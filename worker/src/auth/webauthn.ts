@@ -17,6 +17,15 @@ import { log } from "../http";
 const OWNER_USER_ID = new Uint8Array(new TextEncoder().encode("melodymail-owner"));
 const TIMEOUT_MS = 5 * 60_000;
 
+/**
+ * The library's error text names the failed check but also quotes the expected and received
+ * values (challenges, origins). Keep the check, drop the values.
+ */
+function redact(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.replace(/"[^"]*"/g, '"…"').replace(/[A-Za-z0-9_-]{16,}/g, "…");
+}
+
 export type StoredPasskey = { id: string; publicKey: string; counter: number; transports: string };
 
 /** RP ID and origin come from the request, so dev on 127.0.0.1 and production use one build. */
@@ -55,7 +64,7 @@ export async function verifyRegistration(
     });
     return result.verified ? result.registrationInfo.credential : null;
   } catch (err) {
-    log("info", "webauthn_registration_rejected", { reason: String(err) });
+    log("info", "webauthn_registration_rejected", { reason: redact(err) });
     return null;
   }
 }
@@ -93,7 +102,7 @@ export async function verifyAuthentication(
     });
     return result.verified ? result.authenticationInfo.newCounter : null;
   } catch (err) {
-    log("info", "webauthn_authentication_rejected", { reason: String(err) });
+    log("info", "webauthn_authentication_rejected", { reason: redact(err) });
     return null;
   }
 }
