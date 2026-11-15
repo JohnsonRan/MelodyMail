@@ -1,4 +1,5 @@
 import { AppShell } from "@astryxdesign/core/AppShell";
+import { Icon } from "@astryxdesign/core/Icon";
 import { NavIcon } from "@astryxdesign/core/NavIcon";
 import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
 import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
@@ -27,7 +28,10 @@ export function MailShell() {
         <TopNav
           label={t("nav.main")}
           heading={
-            <TopNavHeading heading={t("app.name")} logo={<NavIcon icon={<EnvelopeIcon />} />} />
+            <TopNavHeading
+              heading={t("app.name")}
+              logo={<NavIcon icon={<Icon icon={EnvelopeIcon} size="sm" />} />}
+            />
           }
           endContent={<PreferenceSelectors />}
         />
