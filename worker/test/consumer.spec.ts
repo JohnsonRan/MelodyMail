@@ -4,6 +4,7 @@ import type { Env } from "../src/env";
 import { handleQueue, MAX_ATTEMPTS, RETRY_DELAY_SECONDS } from "../src/mail/consumer";
 import { handleEmail } from "../src/mail/inbound";
 import { SLICE_BYTES } from "../src/mail/parse";
+import { buildSearch } from "../src/mail/search";
 import { fixture } from "./fixtures";
 import { attachmentFirst, craftedMessages, deeplyNested, largeMessage } from "./fixtures/generated";
 import { addAddress, asMessage, inbound, messageRows } from "./mail-helpers";
@@ -231,5 +232,83 @@ describe("queue consumer", () => {
     });
     expect((await env.MAIL.head(r?.r2_key ?? ""))?.size).toBe(raw.byteLength);
     expect(get).toHaveBeenCalledWith(r?.r2_key, { range: { offset: 0, length: SLICE_BYTES } });
+  });
+});
+
+describe("search query builder", () => {
+  async function search(input: string): Promise<string[]> {
+    const query = buildSearch(input);
+    if (!query) return [];
+    const { results } = await env.DB.prepare(query.sql)
+      .bind(...query.params)
+      .all<{ message_id: string }>();
+    return results.map((r) => r.message_id).sort();
+  }
+
+  async function index() {
+    const insert = env.DB.prepare(
+      "INSERT INTO messages_fts (message_id, subject, sender, body) VALUES (?, ?, ?, ?)",
+    );
+    await env.DB.batch([
+      insert.bind("zh", "测试主题", "张三 <zhang@example.cn>", "你好，这是一封测试邮件。"),
+      insert.bind(
+        "ja",
+        "テスト件名",
+        "山田 <yamada@example.jp>",
+        "こんにちは、これはテストメールです。",
+      ),
+      insert.bind(
+        "en",
+        "Plain text message",
+        "Ann <ann@example.org>",
+        'Hello. 100% sure_thing "quoted" a\\b',
+      ),
+    ]);
+  }
+
+  it("finds Chinese, Japanese and Latin terms of 1, 2 and 3 or more characters", async () => {
+    await index();
+    expect(await search("邮")).toEqual(["zh"]);
+    expect(await search("邮件")).toEqual(["zh"]);
+    expect(await search("测试邮件")).toEqual(["zh"]);
+    expect(await search("メ")).toEqual(["ja"]);
+    expect(await search("件名")).toEqual(["ja"]);
+    expect(await search("テストメール")).toEqual(["ja"]);
+    expect(await search("Q")).toEqual(["en"]);
+    expect(await search("张三")).toEqual(["zh"]);
+    expect(await search("he")).toEqual(["en"]);
+    expect(await search("plain hello")).toEqual(["en"]);
+    expect(await search("example")).toEqual(["en", "ja", "zh"]);
+  });
+
+  it("requires every term", async () => {
+    await index();
+    expect(await search("测试 邮件")).toEqual(["zh"]);
+    expect(await search("测试 hello")).toEqual([]);
+    expect(await search("邮件 he")).toEqual([]);
+  });
+
+  it("treats FTS syntax and LIKE wildcards in the input as literal text", async () => {
+    await index();
+    expect(await search("%")).toEqual(["en"]);
+    expect(await search("_")).toEqual(["en"]);
+    expect(await search('"')).toEqual(["en"]);
+    expect(await search("\\")).toEqual(["en"]);
+    expect(await search('"quoted"')).toEqual(["en"]);
+    for (const input of [
+      "subject:测试",
+      "测试 OR hello",
+      "NEAR(测试 邮件)",
+      "*",
+      '"unbalanced',
+      "a*b",
+      "-hello",
+    ]) {
+      await expect(search(input), input).resolves.toEqual([]);
+    }
+  });
+
+  it("returns no query for blank input", () => {
+    expect(buildSearch("   ")).toBeNull();
   });
 });
