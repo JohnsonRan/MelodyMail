@@ -31,11 +31,14 @@ Not verified:
 - CJK fallback on macOS, iOS and Android (only Windows was checked).
 - Phone width on a real device or a resized window; only the iframe was checked.
 
-Free-plan research: results and design changes are in `docs/PLAN.md`, section 9. The open risk is
-10 ms CPU per invocation for MIME parsing; M3 measures it on real samples.
+Owner ruling (2026-11-15): design for Workers Free only. `docs/PLAN.md`, section 2 holds the
+limits and the CPU budget: no JS work proportional to mail size in the Worker, mail parsed in the
+browser, a bounded 256 KB header parse server-side, and no user-chosen password (slow hashes break
+the 10 ms CPU cap).
 
 ## Next: M1 (authentication)
 
-- Owner setup with `SETUP_TOKEN`, password, Passkey, TOTP, sessions, login rate limiting.
+- Owner setup with `SETUP_TOKEN`: register the first Passkey, show a recovery key once, enrol TOTP.
+- Passkey login; recovery key + TOTP fallback; sessions as hashed random tokens in D1.
 - Strict login lockout counts in D1, because the Rate Limiting binding is approximate.
 - Load the Astryx zh-CN / ja-JP catalogs per locale to shrink the entry chunk (224 kB gzip).

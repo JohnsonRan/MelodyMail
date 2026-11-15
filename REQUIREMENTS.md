@@ -58,6 +58,8 @@ meanwhile.
 | Context handoff limit (share of the model's window) | 60% | a setting, not measured | orchestrator |
 | Status check interval while several jobs run | 10 min | a setting, not measured | orchestrator |
 | Commit subject length | 72 characters | a setting, not measured | commit hook |
+| CPU time per Worker invocation, production | | | Workers Logs cpuTime, review |
+| Inbound header parse, JS time per message (Bun benchmark) | | | parse benchmark in the merge gate |
 
 ## Enforcement
 
@@ -145,6 +147,8 @@ body.
 | Numbers: Page frame width; readable column width | the shell has no content pages yet | measure once the mail list and settings pages exist (M4) | 2027-01-31 |
 | Numbers: Supported widths (phone, laptop, wide) | not chosen | choose with the first screenshots in M4 | 2027-01-31 |
 | Numbers: Full end-to-end run, wall time | no end-to-end suite | measure when Playwright lands in M4 | 2027-01-31 |
+| Numbers: CPU time per Worker invocation, production | not deployed yet; Workers Free caps it at 10 ms | read cpuTime from Workers Logs after the first deploy | 2027-02-28 |
+| Numbers: Inbound header parse, JS time per message (Bun benchmark) | parser not written yet; planned budget 3 ms | add the benchmark with the M3 parser | 2027-01-31 |
 
 ## Example (illustrative values; measure your own)
 
