@@ -62,16 +62,14 @@ Errors use one shape: `{ error: "<code>" }` with codes such as `unauthorized`,
   stays fresh until the first Passkey is added on it, at most 30 minutes after the recovery
   (`sessions.recovery_fresh_until`, owner ruling 2026-11-15), so an owner without Passkeys can
   register one.
-- Session location (owner request 2026-11-15): setup, sign-in and recovery store
-  `cf-connecting-ip` on the session (`ip`, when it parses as an IP address). For a public address
-  the Worker then asks `https://api.ip.sb/geoip/<ip>` inside `waitUntil`, after the response, with
-  a 2-second timeout, and stores country, region, city and provider in one UPDATE (`geo_source`
-  `ip.sb`). On any failure it stores `request.cf` (country, region, city, `asOrganization`;
-  `geo_source` `cf`) and logs a warning without the IP. Loopback, private, link-local and CGNAT
-  addresses get `geo_source` `local` and no lookup. The lookup never changes the sign-in result.
-  Third-party call: the owner's IP address is sent to ip.sb. `GET /sessions` returns these
-  fields; Settings > Security shows the IP and "city, region, country · provider", or "this device
-  or local network".
+- Session location (owner ruling G, amended 2026-11-16): setup, sign-in and recovery write the
+  client IP (`cf-connecting-ip`, when it parses as an IP address) and Cloudflare's `request.cf`
+  country, region, city and `asOrganization` in the same INSERT that creates the session
+  (`geo_source` `cf`). There is no third-party call and no subrequest: the IP goes nowhere.
+  Loopback, private, link-local and CGNAT addresses store no location (`geo_source` `local`);
+  without `request.cf` the location stays empty (`geo_source` null). `GET /sessions` returns
+  these fields; Settings > Security shows the IP and "city, region, country · provider", or "this
+  device or local network".
 
 ## CSRF and origin
 

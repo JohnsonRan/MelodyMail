@@ -58,7 +58,10 @@ is on branch `m1-auth`; it merges only after the owner reviews it. Not pushed; n
   is added on that session, or at most 30 minutes after the recovery, whichever comes first.
   Setup and sign-in sessions keep the 5-minute window (`sessions.recovery_fresh_until`,
   migration 0002, `26082c2`; copy says 30 minutes, `1cd4169`). Was open question 1.
-- G. Owner request: the session list shows each session's IP address and location from ip.sb,
+- G. Owner request (2026-11-15, amended 2026-11-16): the session list shows each session's IP
+  address and location. Amended: location comes only from `request.cf`, written with the session
+  (`a84e692`); the ip.sb lookup was dropped so the owner's IP is not sent to a third party.
+  Originally: location from ip.sb,
   looked up after the response with a `request.cf` fallback (migration 0003, `a7f07cd`, web
   `721c00a`). The owner's IP is sent to ip.sb.
 
@@ -241,3 +244,22 @@ Setup and sign-in worked end to end. Fixes from the walkthrough:
 
 Not verified: a real ip.sb answer (only mocked; tests never reach it) and `request.cf` values in
 production. In `wrangler dev` the client IP is loopback, so no lookup runs.
+
+### Ruling G amended (2026-11-16)
+
+The ip.sb lookup is gone (`a84e692`). Setup, sign-in and recovery write the IP and the
+`request.cf` location (country, region, city, `asOrganization`) in the session INSERT: no
+`waitUntil`, no subrequest, no follow-up UPDATE. Migration 0003 is unchanged and every column is
+still used; `geo_source` is now `cf`, `local` or null. Timezone (`request.cf.timezone`) is not
+stored: it needs a new column (migration 0004) and the session list has no use for it yet.
+
+Tests (`worker/test/geo.spec.ts`, 7): IP and `request.cf` location stored at sign-in; setup and
+recovery sessions located; loopback, private and IPv6 loopback store no location; sign-in works
+without `request.cf`; sign-in makes no outbound request; the list returns the fields; a non-IP
+header is ignored. The ip.sb tests were removed. Ablation: 9 hunks (IP, city and source stored in
+the INSERT, no location for local addresses, cf city and organization mapping, empty location
+without `request.cf`, IP validation, list fields), all red. 101 worker tests. `fetch` stays
+mocked to reject in every test.
+
+Not verified: `request.cf` values in production (in `wrangler dev` the client IP is loopback, so
+sessions show "this device or local network").
