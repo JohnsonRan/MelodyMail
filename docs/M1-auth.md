@@ -17,7 +17,7 @@ design; deviations go into "Open questions" in `docs/STATE.md`, not silently int
 | --- | --- | --- | --- |
 | `SETUP_TOKEN` | the owner, as a Worker secret (`wrangler secret put`) | secret binding | first-run setup only; the Worker refuses setup when it is shorter than 32 characters |
 | Passkey | the owner's authenticator | `passkeys`: credential id, public key (COSE), sign counter, transports, label, created / last used | normal login |
-| Recovery key | the server, 128 random bits, shown once, formatted as 8 groups of 4 base32 characters | SHA-256 hex in `owner.recovery_key_hash` | fallback login, together with a TOTP code |
+| Recovery key | the server, 160 random bits (20 bytes), shown once, formatted as 8 groups of 4 base32 characters | SHA-256 hex in `owner.recovery_key_hash` | fallback login, together with a TOTP code |
 | TOTP secret | the server, 20 random bytes | `owner.totp_secret` (base32) plus `owner.totp_last_step` | second factor of the fallback login |
 | Session token | the server, 32 random bytes, base64url | SHA-256 hex as `sessions.id` | the `mm_session` cookie |
 
@@ -30,18 +30,22 @@ marker described under "Authorization"; everything else needs a valid session.
 | --- | --- | --- |
 | `GET /state` | yes | `{ initialized, authenticated }` |
 | `POST /setup/options` | yes | body `{ setupToken }`. 409 if already initialized. 401 on a wrong token (constant-time compare). Returns WebAuthn registration options (resident key required, user verification preferred) and a fresh TOTP secret with its `otpauth://` URI. Stores challenge + TOTP secret in `auth_challenges` (purpose `setup`, 5-minute expiry) and sets the `mm_challenge` cookie to the challenge row id. |
-| `POST /setup/verify` | yes | body `{ setupToken, credential, totpCode }`. Verifies the token, the registration response against the stored challenge, and the TOTP code against the stored secret. In one D1 batch: create the `owner` row, the first `passkeys` row, delete the challenge, create a session. Returns `{ recoveryKey }` (the only time it is ever shown). A second call after success gets 409. |
+| `POST /setup/verify` | yes | body `{ setupToken, credential, totpCode, label? }`. Verifies the token, the registration response against the stored challenge, and the TOTP code against the stored secret. In one D1 batch: create the `owner` row, the first `passkeys` row, delete the challenge, create a session. Returns `{ recoveryKey }` (the only time it is ever shown). A second call after success gets 409. |
 | `POST /login/options` | yes | Authentication options for discoverable credentials (empty `allowCredentials`), challenge stored with purpose `login`. |
 | `POST /login/verify` | yes | body `{ credential }`. Verifies against the stored challenge and the matching `passkeys` row; rejects a sign counter that went backwards (unless both are 0); updates counter and last used; creates a session. |
-| `POST /recover` | yes | body `{ recoveryKey, totpCode }`. Subject to the lockout below. On success: create a session, replace the recovery key with a new one (the old one stops working), return `{ recoveryKey }`. The UI then offers to register a new Passkey. |
+| `POST /recover` | yes | body `{ recoveryKey, totpCode }`. Subject to the lockout below. On success: create a session, delete every other session, replace the recovery key with a new one (the old one stops working), return `{ recoveryKey }`. The UI then offers to register a new Passkey. |
 | `POST /logout` | no | Deletes the current session and clears the cookie. |
 | `GET /passkeys` | no | List label, created, last used. |
-| `POST /passkeys/options`, `POST /passkeys/verify` | no | Register another Passkey (purpose `add-passkey`). |
-| `DELETE /passkeys/:id` | no | 409 when it is the last Passkey. |
-| `GET /sessions`, `DELETE /sessions/others` | no | List sessions; revoke every session but the current one. |
+| `POST /passkeys/options`, `POST /passkeys/verify` | no | Register another Passkey (purpose `add-passkey`); verify takes an optional `label`. Needs fresh re-authentication. |
+| `DELETE /passkeys/:id` | no | 409 when it is the last Passkey. Needs fresh re-authentication. |
+| `GET /sessions`, `DELETE /sessions/others` | no | List sessions; revoke every session but the current one (needs fresh re-authentication). |
+| `POST /reauth/options`, `POST /reauth/verify` | no | Passkey assertion for the current session (purpose `reauth`); sets `sessions.reauth_at`. |
+| `POST /recovery-key` | no | Needs fresh re-authentication. Replaces the recovery key and returns `{ recoveryKey }` once; the old key stops working. |
 
 Errors use one shape: `{ error: "<code>" }` with codes such as `unauthorized`, `already_initialized`,
-`invalid_setup_token`, `verification_failed`, `locked`, `rate_limited`, `last_passkey`. They carry no
+`invalid_setup_token`, `setup_disabled` (503, `SETUP_TOKEN` missing or under 32 characters),
+`verification_failed`, `locked`, `rate_limited`, `last_passkey`, `passkey_exists`,
+`reauth_required` (403). They carry no
 internal detail (`worker/AGENTS.md`, Security).
 
 ## Sessions and cookies
@@ -49,14 +53,20 @@ internal detail (`worker/AGENTS.md`, Security).
 - `mm_session`: `HttpOnly; Secure; SameSite=Strict; Path=/`, absolute lifetime 30 days, idle
   timeout 7 days. `last_seen_at` is written at most once per hour per session.
 - `mm_challenge`: same flags, `Path=/api/auth`, 5 minutes.
-- Chrome accepts `Secure` cookies on `http://127.0.0.1` and `http://localhost`, so local dev works.
+- Chrome accepts `Secure` cookies on `http://localhost`, so local dev works. Use `localhost`, not
+  `127.0.0.1`: browsers reject an IP address as a WebAuthn RP ID.
+- Step-up re-authentication (owner ruling 2026-11-15): `sessions.reauth_at` holds the last Passkey
+  assertion or recovery on the session. Adding or deleting a Passkey, signing out other sessions
+  and regenerating the recovery key need it within the last 5 minutes, else 403
+  `reauth_required`; the web app then runs `/reauth` and retries. A session created by setup,
+  sign-in or recovery starts fresh.
 
 ## CSRF and origin
 
 - Every non-GET request under `/api/` must carry an `Origin` header equal to the request's own
   origin, else 403 `bad_origin`. SameSite=Strict is the second layer.
 - WebAuthn expected origin and RP ID come from the request URL (`new URL(request.url)`), so the
-  same build works on `127.0.0.1` in dev and on the custom domain in production.
+  same build works on `localhost` in dev and on the custom domain in production.
 
 ## Authorization
 
@@ -68,9 +78,13 @@ internal detail (`worker/AGENTS.md`, Security).
 
 ## Lockout and rate limits
 
-- `POST /recover`: 5 failures within 15 minutes lock recovery for 15 minutes (`locked`, with
-  `retryAfter` seconds). Counted in D1 `login_attempts` (scope `recover`), because the Rate
-  Limiting binding is approximate. Way out: wait for the window, or the owner clears the table
+- `POST /recover` (owner ruling 2026-11-15): two counters in D1 `login_attempts`, because the
+  Rate Limiting binding is approximate. Per client IP (`cf-connecting-ip`, scope
+  `recover:ip:<ip>`): 5 failures within 15 minutes lock that IP. Global (scope `recover`): 20
+  failures within 15 minutes lock recovery for everyone. Both are reserved atomically in one D1
+  batch before the credentials are checked; a locked attempt is counted in neither. A lock lasts
+  until the oldest counted attempt is 15 minutes old (at most 15 minutes); the answer is 429
+  `locked` with `retryAfter` seconds. Success clears this IP's counter and the global one. Way out: wait for the window, or the owner clears the table
   with `wrangler d1 execute`; document the command in the README section M1 adds and test the
   time-based way out.
 - A wrong TOTP code and a wrong recovery key count the same and return the same error, so the
@@ -84,7 +98,9 @@ internal detail (`worker/AGENTS.md`, Security).
 
 `owner` (single row, `id = 1` enforced by a CHECK), `passkeys`, `sessions`, `auth_challenges`,
 `login_attempts`, `audit_log` (event, created_at, ip, user agent; never a secret). Use Drizzle for
-the schema and `drizzle-kit generate` for the SQL migration in `worker/migrations/`; apply it in
+the schema and `drizzle-kit generate` for the SQL migrations in `worker/migrations/` (the Worker
+queries D1 with prepared SQL; `drizzle-orm` is a dev dependency); `0001` adds
+`sessions.reauth_at`; apply it in
 tests with `readD1Migrations` / `applyD1Migrations` from `@cloudflare/vitest-plugin`. Add the D1
 binding `DB` to `wrangler.jsonc` without an id (wrangler provisions it on first deploy). If
 drizzle-kit does not run under `bun --bun`, stop and record it; do not fall back to Node.
@@ -108,7 +124,7 @@ drizzle-kit does not run under `bun --bun`, stop and record it; do not fall back
 - Login: one primary "Sign in with a passkey" button; a secondary link to recovery.
 - Recovery: recovery key + TOTP code → show the new recovery key → offer "Add a passkey".
 - Settings > Security: passkeys (list, add, remove, last one protected), sessions (list, sign out
-  others), sign out.
+  others), recovery key (regenerate, with confirmation, shown once), sign out.
 - All copy in `zh-CN`, `en`, `ja-JP`; `bun scripts/check-i18n.ts` must pass. Follow `web/ASTRYX.md`
   (templates first, no raw `div`/`span`, tokens only). Check Astryx for a QR component before adding
   a dependency.
