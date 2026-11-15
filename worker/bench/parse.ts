@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * JS time of the bounded inbound parse over the first 64 KB of each fixture, a 20 MiB message,
- * thirteen crafted MIME shapes and six adversarial HTML bodies, all generated in memory except
+ * thirteen crafted MIME shapes and eight adversarial HTML bodies, all generated in memory except
  * the fixtures. workerd does not advance performance.now() during computation, so the budget is
  * measured here with the same code under Bun (docs/PLAN.md, section 2, "CPU budget"). An input
  * the parser refuses is timed until it throws (the message then becomes parse_failed). Exits 1

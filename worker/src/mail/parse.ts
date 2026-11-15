@@ -66,20 +66,32 @@ const SKIPPED_ELEMENTS = /^<(script|style|head)[\s>/]/;
  * A rough HTML-to-text reduction for search and the snippet; never rendered. The HTML comes
  * from the sender, so this is one forward scan with indexOf and no backtracking regex: each
  * search either moves past what it found or ends the scan. An unterminated tag, comment or
- * script, style or head element drops the rest of the input.
+ * script, style or head element drops the rest of the input. The text is collected in pieces and
+ * joined once; the length and whether it ends in a space are kept in variables, because reading
+ * back a string built with += costs more than linear time on HTML dense with short tags.
  */
 function htmlToText(html: string, max: number): string {
   const lower = html.toLowerCase();
-  let out = "";
+  const pieces: string[] = [];
+  let length = 0;
+  let endsInSpace = false;
   let i = 0;
-  while (i < html.length && out.length < max) {
+  while (i < html.length && length < max) {
     const lt = html.indexOf("<", i);
     if (lt === -1) {
-      out += html.slice(i);
+      pieces.push(html.slice(i));
       break;
     }
-    out += html.slice(i, lt);
-    if (!out.endsWith(" ")) out += " ";
+    if (lt > i) {
+      pieces.push(html.slice(i, lt));
+      length += lt - i;
+      endsInSpace = html.charCodeAt(lt - 1) === 0x20;
+    }
+    if (!endsInSpace) {
+      pieces.push(" ");
+      length += 1;
+      endsInSpace = true;
+    }
     let end: number;
     if (lower.startsWith("<!--", lt)) {
       end = lower.indexOf("-->", lt + 4);
@@ -93,12 +105,15 @@ function htmlToText(html: string, max: number): string {
     if (end === -1) break;
     i = end;
   }
-  return out.slice(0, max).replace(/&(#x[0-9a-f]{1,6}|#\d{1,7}|[a-z]{1,8});/gi, (m, e: string) => {
-    if (e[0] !== "#") return ENTITIES[e.toLowerCase()] ?? m;
-    const code =
-      e[1] === "x" || e[1] === "X" ? Number.parseInt(e.slice(2), 16) : Number(e.slice(1));
-    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
-  });
+  return pieces
+    .join("")
+    .slice(0, max)
+    .replace(/&(#x[0-9a-f]{1,6}|#\d{1,7}|[a-z]{1,8});/gi, (m, e: string) => {
+      if (e[0] !== "#") return ENTITIES[e.toLowerCase()] ?? m;
+      const code =
+        e[1] === "x" || e[1] === "X" ? Number.parseInt(e.slice(2), 16) : Number(e.slice(1));
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
+    });
 }
 
 /** The first message id in a References or In-Reply-To value. */

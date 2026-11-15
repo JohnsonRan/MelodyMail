@@ -95,8 +95,8 @@ export function attachmentFirst(lines = 1000): Uint8Array {
 }
 
 /**
- * HTML bodies built to make a backtracking tag-stripping regex quadratic, each about 250 KB, with
- * the text htmlToText must still give back.
+ * HTML bodies built to make a backtracking tag-stripping regex quadratic (about 250 KB each) or a
+ * string built with += slow (60 KB dense with short tags), with the text htmlToText must give back.
  */
 export function adversarialHtml(): [name: string, message: Uint8Array, text: string][] {
   const size = 250 * 1024;
@@ -108,6 +108,12 @@ export function adversarialHtml(): [name: string, message: Uint8Array, text: str
     ["'<!--' repeated, no '-->'", `<p>lead</p>${fill("<!--")}`, "lead"],
     ["attribute without '>'", `<p>lead</p><a href="${fill("x")}`, "lead"],
     ["'&amp' repeated, no ';'", fill("&amp"), fill("&amp").slice(0, 8 * 1024)],
+    ["'<b>x</b>' x 7500 (60 KB)", "<b>x</b>".repeat(7500), "x ".repeat(4096)],
+    [
+      "table rows (60 KB)",
+      "<tr><td>12</td><td>ab</td><td>x</td></tr>".repeat(1450),
+      "12 ab x ".repeat(1024),
+    ],
   ];
   return cases.map(([name, body, text]) => [
     name,
