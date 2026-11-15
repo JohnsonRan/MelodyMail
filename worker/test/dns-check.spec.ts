@@ -108,7 +108,8 @@ describe("DNS check", () => {
         Status: 0,
         Answer: txt('"v=spf1 include:_spf.mx.cloudflare.net ~all"', '"v=spf1 -all"'),
       },
-      "cf2024-1._domainkey.example.com TXT": { Status: 0, Answer: txt('"not a key"') },
+      // A key without v=DKIM1 is not a DKIM record.
+      "cf2024-1._domainkey.example.com TXT": { Status: 0, Answer: txt('"k=rsa; p=MIIBIjANBgkq"') },
       "_dmarc.example.com TXT": { Status: 0, Answer: txt('"v=DMARC1; p=none;"') },
     });
     expect(await check(client)).toEqual({
