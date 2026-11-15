@@ -42,7 +42,15 @@ openssl rand -base64 32
 bun run wrangler secret put SETUP_TOKEN
 ```
 
-Then open `/setup` on the Worker's domain and enter the same value. Setup runs once; after it
+`bun run deploy` does not change the database. Before the first `/setup`, and after every deploy
+that adds a migration, apply the migrations to the remote D1 database:
+
+```sh
+bun run --cwd worker db:migrate:remote
+```
+
+Without them, every auth route answers 500. Then open `/setup` on the Worker's domain and enter
+the same value. Setup runs once; after it
 succeeds, the token no longer opens anything. For `wrangler dev`, put the value in
 `worker/.dev.vars` instead.
 

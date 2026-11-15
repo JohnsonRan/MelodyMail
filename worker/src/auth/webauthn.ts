@@ -28,7 +28,10 @@ function redact(err: unknown): string {
 
 export type StoredPasskey = { id: string; publicKey: string; counter: number; transports: string };
 
-/** RP ID and origin come from the request, so dev on 127.0.0.1 and production use one build. */
+/**
+ * RP ID and origin come from the request, so dev on localhost and production use one build.
+ * Dev must use localhost: browsers reject an IP address such as 127.0.0.1 as an RP ID.
+ */
 export function relyingParty(c: Context<AppEnv>) {
   const url = new URL(c.req.url);
   return { rpID: url.hostname, origin: url.origin };
