@@ -754,6 +754,21 @@ the tree stashed); 206 worker tests. Merge gate (concurrent), 3 runs at `a7a4f0b
 7.78 s wall, worker suite 5.48, 6.12, 6.62 s, CPU load 14%, 9%, 10%. Both under their limits
 (10 s, 9 s).
 
+### Re-review of 5b9e290 ("FIX FIRST")
+
+1. **Superlinear HTML text building (Medium, reproduced).** `htmlToText` appended to one string
+   and read its last character back per tag. `a007117` collects the text in an array joined
+   once and keeps the length and the trailing-space state in variables; the output is byte for
+   byte the same for every fixture, crafted message and adversarial body (snapshot compared
+   before and after). `parseSlice` under Bun, 200 runs: `<b>x</b>` x 7500 (60 KB) median
+   3.85 ms, p95 4.61 ms before (the bench exited 1), median 0.63-0.81 ms, p95 0.74-1.05 ms
+   after; 60 KB of table cells median 2.84 ms, p95 3.44 ms before, median 0.52-0.64 ms, p95
+   0.78-0.87 ms after. Both are gated bench inputs and unit tests. Benchmark, 3 runs at load
+   1-10%: worst p95 1.23-1.35 ms over 38 inputs. Ablation: 4 hunks, 2 red; the text-end
+   tracking and the length count survive because they only bound the work under the 16 K cap,
+   and the 8 KB text is the same either way.
+2. **PLAN said 256 KB (Low).** `docs/PLAN.md` sections 2 and 4 now say 64 KB.
+
 ### Open questions for the owner
 
 None open from M3.
