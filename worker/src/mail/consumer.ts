@@ -8,8 +8,10 @@ import { type ParsedHeaders, parseSlice, SLICE_BYTES, threadKey } from "./parse"
 export const RETRY_DELAY_SECONDS = 60;
 export const STUCK_AFTER_MS = 15 * 60 * 1000;
 export const REQUEUE_MAX = 100;
+/** Parse tries per message (owner ruling 2026-11-16); then it becomes parse_failed. */
+export const MAX_ATTEMPTS = 5;
 
-type Row = { r2_key: string; envelope_from: string };
+type Row = { r2_key: string; envelope_from: string; attempts: number };
 
 /** Marks the row parse_failed; the browser still parses the raw message (M4). */
 function markFailed(env: Env, id: string) {
@@ -51,12 +53,19 @@ function saveParsed(env: Env, id: string, row: Row, p: ParsedHeaders) {
 }
 
 async function processJob(env: Env, id: string): Promise<void> {
+  // Counted before the parse, in its own write, so a try that the CPU limit kills still counts.
   const row = await env.DB.prepare(
-    "SELECT r2_key, envelope_from FROM messages WHERE id = ? AND status = 'stored'",
+    `UPDATE messages SET attempts = attempts + 1 WHERE id = ? AND status = 'stored'
+     RETURNING r2_key, envelope_from, attempts`,
   )
     .bind(id)
     .first<Row>();
   if (!row) return;
+  if (row.attempts > MAX_ATTEMPTS) {
+    log("warn", "mail_parse_gave_up", { messageId: id, attempts: row.attempts });
+    await markFailed(env, id);
+    return;
+  }
   const object = await env.MAIL.get(row.r2_key, { range: { offset: 0, length: SLICE_BYTES } });
   if (!object) {
     log("warn", "mail_raw_missing", { messageId: id });
@@ -75,26 +84,46 @@ async function processJob(env: Env, id: string): Promise<void> {
   await saveParsed(env, id, row, parsed);
 }
 
+/** Ends a message that has used its last try; true when it did. */
+async function giveUp(env: Env, id: string): Promise<boolean> {
+  const { meta } = await env.DB.prepare(
+    "UPDATE messages SET status = 'parse_failed' WHERE id = ? AND status = 'stored' AND attempts >= ?",
+  )
+    .bind(id, MAX_ATTEMPTS)
+    .run();
+  return meta.changes > 0;
+}
+
 export async function handleQueue(batch: MessageBatch<InboundJob>, env: Env): Promise<void> {
   for (const message of batch.messages) {
     try {
       await processJob(env, message.body.id);
       message.ack();
     } catch (err) {
-      // D1 or R2 unavailable: try again later. After max_retries the cron step re-enqueues it.
+      // D1 or R2 unavailable: try again later, unless this was the last try.
       log("warn", "mail_parse_retry", { messageId: message.body.id, error: errorText(err) });
-      message.retry({ delaySeconds: RETRY_DELAY_SECONDS });
+      if (await giveUp(env, message.body.id).catch(() => false)) message.ack();
+      else message.retry({ delaySeconds: RETRY_DELAY_SECONDS });
     }
   }
 }
 
-/** Re-enqueues messages still "stored" after STUCK_AFTER_MS, at most REQUEUE_MAX per run. */
+/**
+ * Re-enqueues messages still "stored" after STUCK_AFTER_MS, at most REQUEUE_MAX per run. A
+ * message that used all its tries (the last one killed before it could give up) becomes
+ * parse_failed here instead.
+ */
 export async function requeueStored(env: Env, now: number): Promise<number> {
-  const { results } = await env.DB.prepare(
-    "SELECT id FROM messages WHERE status = 'stored' AND received_at <= ? ORDER BY received_at LIMIT ?",
-  )
-    .bind(now - STUCK_AFTER_MS, REQUEUE_MAX)
-    .all<{ id: string }>();
+  const cutoff = now - STUCK_AFTER_MS;
+  const [, stuck] = await env.DB.batch<{ id: string }>([
+    env.DB.prepare(
+      "UPDATE messages SET status = 'parse_failed' WHERE status = 'stored' AND received_at <= ? AND attempts >= ?",
+    ).bind(cutoff, MAX_ATTEMPTS),
+    env.DB.prepare(
+      "SELECT id FROM messages WHERE status = 'stored' AND received_at <= ? ORDER BY received_at LIMIT ?",
+    ).bind(cutoff, REQUEUE_MAX),
+  ]);
+  const results = stuck?.results ?? [];
   if (results.length > 0) {
     await env.INBOUND.sendBatch(results.map((r) => ({ body: { id: r.id } })));
     log("info", "mail_requeued", { count: results.length });

@@ -90,9 +90,10 @@ bun run --cwd worker db:migrate:remote
 
 ## Inbound mail
 
-Apply migration 0005 right after deploying this version: `email()` writes every received message
-to its `messages` table and throws until it exists, so mail sent in the meantime is refused (see
-"Set the setup token" for when migrations run):
+Apply migrations 0005 and 0006 right after deploying this version: `email()` writes every
+received message to the `messages` table and throws until it exists, so mail sent in the meantime
+is refused, and the queue consumer fails until the `attempts` column exists (see "Set the setup
+token" for when migrations run):
 
 ```sh
 bun run --cwd worker db:migrate:remote
@@ -112,7 +113,8 @@ bun run wrangler queues create melodymail-inbound
    disabled address, or to a domain with receiving switched off is refused before anything is
    stored. `shop+news@` is delivered to `shop@` with the tag `news` kept on the message.
 3. Each received message is stored in R2 and parsed by the queue consumer. A Cron Trigger every
-   15 minutes re-queues messages that are still unparsed after 15 minutes.
+   15 minutes re-queues messages that are still unparsed after 15 minutes. After five failed
+   parse tries a message is marked as not parsed; its raw copy stays in R2.
 4. An address with forwarding targets forwards every message to each of them, with the header
    `X-MelodyMail-Forwarded: 1`; a message that already carries it is kept and not forwarded
    again. A forward-only address keeps no copy, unless every forward fails.

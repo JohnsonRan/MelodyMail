@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../src/env";
-import { handleScheduled, requeueStored, STUCK_AFTER_MS } from "../src/mail/consumer";
+import { handleScheduled, MAX_ATTEMPTS, requeueStored, STUCK_AFTER_MS } from "../src/mail/consumer";
 import { FORWARDED_HEADER, handleEmail, parseRecipient } from "../src/mail/inbound";
 import { addAddress, asMessage, inbound, messageRows, r2Keys } from "./mail-helpers";
 
@@ -339,6 +339,29 @@ describe("email() failures", () => {
     expect(sent[0]?.body.id).toBe("s100");
     expect(sent.map((m) => m.body.id)).not.toContain("p");
     expect(sent.map((m) => m.body.id)).not.toContain("s0");
+  });
+
+  it("re-enqueues no parse_failed or used-up message, and ends a used-up one", async () => {
+    const now = Date.now();
+    const old = now - STUCK_AFTER_MS - 1;
+    const insert = env.DB.prepare(
+      `INSERT INTO messages (id, address_id, direction, status, envelope_from, envelope_to,
+         raw_size, r2_key, received_at, attempts) VALUES (?, 1, 'in', ?, 'a@b.c', 'shop@example.com', 1, 'k', ?, ?)`,
+    );
+    await env.DB.batch([
+      insert.bind("used-up", "stored", old, MAX_ATTEMPTS),
+      insert.bind("one-left", "stored", old, MAX_ATTEMPTS - 1),
+      insert.bind("failed", "parse_failed", old, 1),
+    ]);
+    const sendBatch = vi.spyOn(env.INBOUND, "sendBatch").mockResolvedValue(undefined as never);
+    expect(await requeueStored(env, now)).toBe(1);
+    expect(sendBatch.mock.calls[0]?.[0]).toEqual([{ body: { id: "one-left" } }]);
+    const { results } = await env.DB.prepare("SELECT id, status FROM messages ORDER BY id").all();
+    expect(results).toEqual([
+      { id: "failed", status: "parse_failed" },
+      { id: "one-left", status: "stored" },
+      { id: "used-up", status: "parse_failed" },
+    ]);
   });
 
   it("logs a failing cron job by name and fails the run", async () => {

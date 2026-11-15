@@ -181,6 +181,8 @@ export const messages = sqliteTable(
     r2Key: text("r2_key").notNull(),
     // Forwards that failed after the message was stored (the copy is kept).
     forwardFailed: integer("forward_failed").notNull().default(0),
+    // Parse tries, counted before each one, so a try the CPU limit kills still counts.
+    attempts: integer("attempts").notNull().default(0),
     read: integer("read", { mode: "boolean" }).notNull().default(false),
     starred: integer("starred", { mode: "boolean" }).notNull().default(false),
     archived: integer("archived", { mode: "boolean" }).notNull().default(false),

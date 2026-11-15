@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
 import type { Env } from "../src/env";
-import { handleQueue, RETRY_DELAY_SECONDS } from "../src/mail/consumer";
+import { handleQueue, MAX_ATTEMPTS, RETRY_DELAY_SECONDS } from "../src/mail/consumer";
 import { handleEmail } from "../src/mail/inbound";
 import { SLICE_BYTES } from "../src/mail/parse";
 import { fixture } from "./fixtures";
@@ -18,6 +18,14 @@ async function storeRow(id: string, raw: string | Uint8Array | null) {
   )
     .bind(id, typeof raw === "string" ? raw.length : (raw?.byteLength ?? 0), key, Date.now())
     .run();
+}
+
+/** env with an R2 bucket whose reads fail. */
+function r2Unavailable(): Env {
+  return {
+    ...env,
+    MAIL: { get: () => Promise.reject(new Error("R2 unavailable")) },
+  } as unknown as Env;
 }
 
 function batch(...ids: string[]) {
@@ -139,15 +147,49 @@ describe("queue consumer", () => {
 
   it("retries later on a transient storage error", async () => {
     await storeRow("t", fixture("plain"));
-    const failing = {
-      ...env,
-      MAIL: { get: () => Promise.reject(new Error("R2 unavailable")) },
-    } as unknown as Env;
     const { messages, batch: b } = batch("t");
-    await handleQueue(b, failing);
+    await handleQueue(b, r2Unavailable());
     expect(messages[0]?.ack).not.toHaveBeenCalled();
     expect(messages[0]?.retry).toHaveBeenCalledWith({ delaySeconds: RETRY_DELAY_SECONDS });
     expect((await row("t"))?.status).toBe("stored");
+  });
+
+  it("gives up after five failed tries and keeps the raw message", async () => {
+    await storeRow("f", fixture("plain"));
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const { messages, batch: b } = batch("f");
+      await handleQueue(b, r2Unavailable());
+      const last = attempt === MAX_ATTEMPTS;
+      expect(messages[0]?.ack, `attempt ${attempt}`).toHaveBeenCalledTimes(last ? 1 : 0);
+      expect(messages[0]?.retry, `attempt ${attempt}`).toHaveBeenCalledTimes(last ? 0 : 1);
+    }
+    expect(await row("f")).toMatchObject({ status: "parse_failed", attempts: MAX_ATTEMPTS });
+    expect(await env.MAIL.head("raw/2026/11/f.eml")).not.toBeNull();
+  });
+
+  it("parses on the third try after two failures", async () => {
+    await storeRow("s", fixture("plain"));
+    await handleQueue(batch("s").batch, r2Unavailable());
+    await handleQueue(batch("s").batch, r2Unavailable());
+    await handleQueue(batch("s").batch, env);
+    expect(await row("s")).toMatchObject({
+      status: "parsed",
+      attempts: 3,
+      subject: "Plain text message",
+    });
+  });
+
+  it("counts a try the CPU limit killed: the next delivery past the limit gives up unparsed", async () => {
+    await storeRow("k", fixture("plain"));
+    await env.DB.prepare("UPDATE messages SET attempts = ? WHERE id = 'k'")
+      .bind(MAX_ATTEMPTS)
+      .run();
+    const get = vi.spyOn(env.MAIL, "get");
+    const { messages, batch: b } = batch("k");
+    await handleQueue(b, env);
+    expect(messages[0]?.ack).toHaveBeenCalledOnce();
+    expect(get).not.toHaveBeenCalled();
+    expect(await row("k")).toMatchObject({ status: "parse_failed", attempts: MAX_ATTEMPTS + 1 });
   });
 
   it("reads only the first 256 KB of a 20 MiB message, end to end", async () => {
