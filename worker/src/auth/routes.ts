@@ -165,7 +165,7 @@ export function registerAuthRoutes(auth: Hono<AppEnv>): void {
       .bind(await hashRecoveryKey(recoveryKey), step, owner.recoveryKeyHash, step)
       .run();
     if (swapped.meta.changes !== 1) return fail(c, 401, "verification_failed");
-    const session = await startSession(c, now);
+    const session = await startSession(c, now, true);
     // Whoever needed recovery may have lost a device: every other session ends (owner ruling).
     await db.batch([
       session.insert,

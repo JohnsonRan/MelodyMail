@@ -93,6 +93,10 @@ export function registerAccountRoutes(auth: Hono<AppEnv>): void {
     try {
       await db.batch([
         passkeyInsert(c, credential, passkeyLabel(body.label), now),
+        // A recovery session's extra freshness ends with its first new Passkey.
+        db
+          .prepare("UPDATE sessions SET recovery_fresh_until = NULL WHERE id = ?")
+          .bind(c.get("sessionId")),
         audit(c, "passkey_added", now),
       ]);
     } catch (err) {

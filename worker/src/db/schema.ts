@@ -40,6 +40,9 @@ export const sessions = sqliteTable(
     userAgent: text("user_agent").notNull().default(""),
     // Last Passkey assertion or recovery on this session; sensitive actions need it recent.
     reauthAt: integer("reauth_at"),
+    // Set only by a recovery: until then (at most 30 minutes) the session counts as fresh, and
+    // adding a Passkey on it ends that early.
+    recoveryFreshUntil: integer("recovery_fresh_until"),
   },
   (t) => [index("sessions_expires_at").on(t.expiresAt)],
 );

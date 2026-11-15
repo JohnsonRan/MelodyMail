@@ -33,6 +33,7 @@ export const requireAuthorization: MiddlewareHandler<AppEnv> = async (c, next) =
   if (!session) return fail(c, 401, "unauthorized");
   c.set("sessionId", session.id);
   c.set("reauthAt", session.reauthAt);
+  c.set("recoveryFreshUntil", session.recoveryFreshUntil);
   return next();
 };
 

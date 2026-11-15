@@ -101,6 +101,87 @@ describe("step-up re-authentication", () => {
   });
 });
 
+describe("recovery session freshness", () => {
+  const MINUTE = 60_000;
+
+  /** Recovers on a new client; returns it with the setup authenticator still registered. */
+  async function recovered() {
+    const owner = await setupOwner();
+    const client = new Client();
+    const res = await client.request("POST", "/api/auth/recover", {
+      recoveryKey: owner.recoveryKey,
+      totpCode: await totpCode(owner.totpSecret, 1),
+    });
+    expect(res.status).toBe(200);
+    return client;
+  }
+
+  /** Moves the recovery session `minutes` into the past. */
+  function age(minutes: number) {
+    return env.DB.prepare(
+      "UPDATE sessions SET reauth_at = reauth_at - ?, recovery_fresh_until = recovery_fresh_until - ?",
+    )
+      .bind(minutes * MINUTE, minutes * MINUTE)
+      .run();
+  }
+
+  async function addPasskey(client: Client) {
+    const start = await client.request("POST", "/api/auth/passkeys/options", {});
+    if (start.status !== 200) return start.status;
+    const options = ((await start.json()) as Json).options as Json;
+    const credential = await (await SoftAuthenticator.create()).register(options);
+    return (await client.request("POST", "/api/auth/passkeys/verify", { credential })).status;
+  }
+
+  it("opens a 30-minute window on the recovery session only", async () => {
+    await recovered();
+    const rows = await env.DB.prepare(
+      "SELECT recovery_fresh_until - created_at AS window FROM sessions",
+    ).all<{ window: number }>();
+    expect(rows.results.map((r) => r.window)).toEqual([30 * MINUTE]);
+  });
+
+  it("lets a recovery session add a Passkey after 6 minutes", async () => {
+    const client = await recovered();
+    await age(6);
+    expect(await addPasskey(client)).toBe(200);
+  });
+
+  it("counts as fresh for the other guarded actions inside the window", async () => {
+    const client = await recovered();
+    await age(6);
+    expect((await client.request("POST", "/api/auth/recovery-key", {})).status).toBe(200);
+  });
+
+  it("does not count as fresh 31 minutes after the recovery", async () => {
+    const client = await recovered();
+    await age(31);
+    expect(await addPasskey(client)).toBe(403);
+  });
+
+  it("ends with the first Passkey added on the session", async () => {
+    const client = await recovered();
+    expect(await addPasskey(client)).toBe(200);
+    const until = await env.DB.prepare("SELECT recovery_fresh_until AS t FROM sessions").first("t");
+    expect(until).toBeNull();
+    await env.DB.prepare("UPDATE sessions SET reauth_at = reauth_at - ?")
+      .bind(6 * MINUTE)
+      .run();
+    expect((await client.request("POST", "/api/auth/recovery-key", {})).status).toBe(403);
+  });
+
+  it("does not apply to sign-in and setup sessions", async () => {
+    const owner = await setupOwner();
+    const { client } = await login(owner.authenticator);
+    const nulls = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM sessions WHERE recovery_fresh_until IS NULL",
+    ).first("n");
+    expect(nulls).toBe(2);
+    await setReauthAt(Date.now() - 6 * MINUTE);
+    expect((await client.request("POST", "/api/auth/recovery-key", {})).status).toBe(403);
+  });
+});
+
 describe("recovery key regeneration", () => {
   it("returns a new key once and the old key stops working", async () => {
     const owner = await setupOwner();
