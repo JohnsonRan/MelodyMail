@@ -48,8 +48,9 @@ succeeds, the token no longer opens anything. For `wrangler dev`, put the value 
 
 ### Clear a recovery lockout
 
-Five failed recovery attempts within 15 minutes lock recovery for 15 minutes. Waiting 15 minutes
-opens it again. To open it at once, delete the counted failures from `worker/`:
+Recovery accepts at most five failed attempts in any 15 minutes. After the fifth, it stays locked
+until the oldest of those attempts is 15 minutes old (at most 15 minutes). To open it at once,
+delete the counted failures from `worker/`:
 
 ```sh
 bun run wrangler d1 execute melodymail --remote --command "DELETE FROM login_attempts"

@@ -116,6 +116,19 @@ describe("recovery", () => {
     expect(res.res.status).toBe(200);
   });
 
+  it("evaluates at most 5 of 20 concurrent wrong attempts", async () => {
+    const owner = await setupOwner();
+    const bad = await wrongCode(owner.totpSecret);
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => recover(owner.recoveryKey, bad)),
+    );
+    const evaluated = results.filter((r) => r.res.status === 401).length;
+    const locked = results.filter((r) => r.res.status === 429).length;
+    expect(evaluated).toBeLessThanOrEqual(5);
+    expect(evaluated + locked).toBe(20);
+    expect(await attempts()).toBeLessThanOrEqual(5);
+  });
+
   it("does not lock when 5 failures spread over more than 15 minutes", async () => {
     const owner = await setupOwner();
     const now = Date.now();
@@ -139,9 +152,9 @@ describe("recovery", () => {
     expect(results.map((r) => r.res.status).sort()).toEqual([200, 401]);
   });
 
-  it("drops failures older than twice the window", async () => {
+  it("drops failures older than the window", async () => {
     await env.DB.prepare("INSERT INTO login_attempts (scope, created_at) VALUES ('recover', ?)")
-      .bind(Date.now() - 2 * LOCKOUT_WINDOW_MS - 1)
+      .bind(Date.now() - LOCKOUT_WINDOW_MS - 1)
       .run();
     await recover(UNKNOWN_KEY, "123456");
     expect(await attempts()).toBe(1);

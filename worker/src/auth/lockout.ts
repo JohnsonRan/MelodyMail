@@ -5,32 +5,27 @@ export const LOCKOUT_FAILURES = 5;
 export const LOCKOUT_WINDOW_MS = 15 * 60_000;
 
 /**
- * Returns the seconds until recovery opens again, or 0 when it is open. Recovery locks for
- * 15 minutes from the latest failure once the latest 5 failures fall within 15 minutes.
+ * Reserves one attempt before the credentials are checked: at most 5 attempts per scope in any
+ * 15-minute window. Returns 0 when a slot was reserved, or the seconds until one frees up.
+ * The count and the insert are one statement, so concurrent requests cannot all pass the check.
+ * A reserved row stays as the failure record; a successful attempt deletes the rows.
  */
-export async function lockedForSeconds(db: D1Database, scope: string, now: number) {
-  const { results } = await db
-    .prepare(
-      "SELECT created_at AS createdAt FROM login_attempts WHERE scope = ? ORDER BY created_at DESC LIMIT ?",
-    )
-    .bind(scope, LOCKOUT_FAILURES)
-    .all<{ createdAt: number }>();
-  const latest = results[0]?.createdAt;
-  const oldest = results[LOCKOUT_FAILURES - 1]?.createdAt;
-  if (latest === undefined || oldest === undefined) return 0;
-  if (latest - oldest >= LOCKOUT_WINDOW_MS) return 0;
-  const until = latest + LOCKOUT_WINDOW_MS;
-  return until > now ? Math.ceil((until - now) / 1000) : 0;
-}
-
-export function recordFailure(db: D1Database, scope: string, now: number) {
-  return db.batch([
-    db.prepare("INSERT INTO login_attempts (scope, created_at) VALUES (?, ?)").bind(scope, now),
-    // Only the latest few rows matter; keep the table small.
+export async function reserveAttempt(db: D1Database, scope: string, now: number) {
+  const since = now - LOCKOUT_WINDOW_MS;
+  const [, reserved] = await db.batch([
+    db.prepare("DELETE FROM login_attempts WHERE scope = ? AND created_at <= ?").bind(scope, since),
     db
-      .prepare("DELETE FROM login_attempts WHERE scope = ? AND created_at < ?")
-      .bind(scope, now - 2 * LOCKOUT_WINDOW_MS),
+      .prepare(
+        "INSERT INTO login_attempts (scope, created_at) SELECT ?, ? WHERE (SELECT COUNT(*) FROM login_attempts WHERE scope = ? AND created_at > ?) < ?",
+      )
+      .bind(scope, now, scope, since, LOCKOUT_FAILURES),
   ]);
+  if (reserved?.meta.changes === 1) return 0;
+  const oldest = await db
+    .prepare("SELECT MIN(created_at) AS t FROM login_attempts WHERE scope = ? AND created_at > ?")
+    .bind(scope, since)
+    .first<number | null>("t");
+  return Math.max(1, Math.ceil(((oldest ?? now) + LOCKOUT_WINDOW_MS - now) / 1000));
 }
 
 export function clearFailures(db: D1Database, scope: string) {

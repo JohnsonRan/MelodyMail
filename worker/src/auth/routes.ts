@@ -4,7 +4,7 @@ import { clientInfo, fail, readJson, str } from "../http";
 import { publicRoute } from "../routing";
 import { clearChallengeCookie, findChallenge, saveChallenge, takeChallenge } from "./challenge";
 import { base32Encode, base64url, randomBytes, secretsEqual, sha256Hex } from "./crypto";
-import { clearFailures, lockedForSeconds, recordFailure } from "./lockout";
+import { clearFailures, reserveAttempt } from "./lockout";
 import { readSession, setSessionCookie, startSession } from "./session";
 import { newTotpSecret, totpUri, verifyTotp } from "./totp";
 import {
@@ -189,7 +189,8 @@ export function registerAuthRoutes(auth: Hono<AppEnv>): void {
     if (!body) return fail(c, 400, "bad_request");
     const db = c.env.DB;
     const now = Date.now();
-    const retryAfter = await lockedForSeconds(db, RECOVER_SCOPE, now);
+    // The attempt is counted before the credentials are checked; a locked attempt is not.
+    const retryAfter = await reserveAttempt(db, RECOVER_SCOPE, now);
     if (retryAfter > 0) {
       c.header("Retry-After", String(retryAfter));
       return c.json({ error: "locked", retryAfter }, 429);
@@ -206,7 +207,6 @@ export function registerAuthRoutes(auth: Hono<AppEnv>): void {
     const code = String(body.totpCode ?? "");
     const step = owner ? await verifyTotp(owner.totpSecret, code, now, owner.totpLastStep) : null;
     if (!owner || !keyOk || step === null) {
-      await recordFailure(db, RECOVER_SCOPE, now);
       await audit(c, "recover_failed", now).run();
       return fail(c, 401, "verification_failed");
     }
