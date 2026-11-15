@@ -202,6 +202,7 @@
     "hint": {
       "mx": "3 つのホストすべてがあり、他の MX レコードがないこと。優先度は Cloudflare が設定します。",
       "spf": "include:_spf.mx.cloudflare.net を含む SPF レコードが 1 つあること。",
+      "dkim": "Email Routing を有効にすると、Cloudflare が独自の鍵でこのレコードを追加します。転送されるメールの署名に使われます。",
       "dmarc": "DMARC ポリシーであれば何でもかまいません。まず p=none で始め、メールが届くようになったら厳しくしてください。"
     },
     "sendTitle": "送信 (Resend)",

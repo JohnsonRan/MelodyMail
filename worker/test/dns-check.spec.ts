@@ -55,16 +55,32 @@ describe("DNS check", () => {
           '"v=spf1 include:_spf.mx.cloudflare.net ~all"',
         ),
       },
+      "cf2024-1._domainkey.example.com TXT": {
+        Status: 0,
+        Answer: txt(
+          '"v=DKIM1; h=sha256; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIB" "CgKCAQEAx+/="',
+        ),
+      },
       "_dmarc.example.com TXT": { Status: 0, Answer: txt('"v=DMARC1; p=none;"') },
     });
-    expect(await check(client)).toEqual({ mx: "found", spf: "found", dmarc: "found" });
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(await check(client)).toEqual({
+      mx: "found",
+      spf: "found",
+      dkim: "found",
+      dmarc: "found",
+    });
+    expect(fetch).toHaveBeenCalledTimes(4);
   });
 
   it("reports missing records on an empty or unknown name", async () => {
     const client = await ownerWithDomain();
     mockDoh({ "example.com MX": { Status: 0 }, "example.com TXT": { Status: 0, Answer: [] } });
-    expect(await check(client)).toEqual({ mx: "missing", spf: "missing", dmarc: "missing" });
+    expect(await check(client)).toEqual({
+      mx: "missing",
+      spf: "missing",
+      dkim: "missing",
+      dmarc: "missing",
+    });
   });
 
   it("reports records that differ from what Email Routing needs", async () => {
@@ -72,9 +88,16 @@ describe("DNS check", () => {
     mockDoh({
       "example.com MX": { Status: 0, Answer: mx([...CF_MX, "mx.other.test."]) },
       "example.com TXT": { Status: 0, Answer: txt('"v=spf1 include:other.test ~all"') },
+      // An empty p= is a revoked key.
+      "cf2024-1._domainkey.example.com TXT": { Status: 0, Answer: txt('"v=DKIM1; p="') },
       "_dmarc.example.com TXT": { Status: 0, Answer: txt('"not a policy"') },
     });
-    expect(await check(client)).toEqual({ mx: "different", spf: "different", dmarc: "different" });
+    expect(await check(client)).toEqual({
+      mx: "different",
+      spf: "different",
+      dkim: "different",
+      dmarc: "different",
+    });
   });
 
   it("counts two SPF records as different, and a partial MX set as different", async () => {
@@ -85,9 +108,15 @@ describe("DNS check", () => {
         Status: 0,
         Answer: txt('"v=spf1 include:_spf.mx.cloudflare.net ~all"', '"v=spf1 -all"'),
       },
+      "cf2024-1._domainkey.example.com TXT": { Status: 0, Answer: txt('"not a key"') },
       "_dmarc.example.com TXT": { Status: 0, Answer: txt('"v=DMARC1; p=none;"') },
     });
-    expect(await check(client)).toEqual({ mx: "different", spf: "different", dmarc: "found" });
+    expect(await check(client)).toEqual({
+      mx: "different",
+      spf: "different",
+      dkim: "different",
+      dmarc: "found",
+    });
   });
 
   it("joins TXT strings split by the resolver", () => {

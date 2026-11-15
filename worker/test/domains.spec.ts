@@ -171,6 +171,12 @@ describe("domains", () => {
         name: "example.com",
         values: ["v=spf1 include:_spf.mx.cloudflare.net ~all"],
       },
+      {
+        id: "dkim",
+        type: "TXT",
+        name: "cf2024-1._domainkey.example.com",
+        values: ["v=DKIM1; h=sha256; k=rsa; p=…"],
+      },
       { id: "dmarc", type: "TXT", name: "_dmarc.example.com", values: ["v=DMARC1; p=none;"] },
     ]);
     expect((dns.send as Json[]).map((r) => r.values)).toEqual([null, null, null]);

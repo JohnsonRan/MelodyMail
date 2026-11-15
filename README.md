@@ -79,8 +79,8 @@ bun run --cwd worker db:migrate:remote
 ```
 
 1. The domain must use Cloudflare DNS with Email Routing turned on.
-2. In Settings > Domains, add the domain. Its "DNS records" page lists the Email Routing MX, SPF
-   and DMARC records; "Check DNS" asks Cloudflare's DNS-over-HTTPS resolver
+2. In Settings > Domains, add the domain. Its "DNS records" page lists the Email Routing MX, SPF,
+   DKIM and DMARC records; "Check DNS" asks Cloudflare's DNS-over-HTTPS resolver
    (`DOH_URL` in `worker/wrangler.jsonc`) and marks each record found, missing or different.
 3. In Settings > Addresses, add each address that may receive mail. A prefix holds a-z, 0-9,
    `.`, `_` and `-`; `+` is reserved for tags such as `shop+news`.

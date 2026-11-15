@@ -202,6 +202,7 @@
     "hint": {
       "mx": "All three hosts, and no other MX record. Cloudflare sets the priorities.",
       "spf": "One SPF record that contains include:_spf.mx.cloudflare.net.",
+      "dkim": "Cloudflare adds this record with its own key when Email Routing is turned on. It signs forwarded mail.",
       "dmarc": "Any DMARC policy. Start with p=none and tighten it once mail flows."
     },
     "sendTitle": "Sending (Resend)",

@@ -202,6 +202,7 @@
     "hint": {
       "mx": "须包含全部三个主机，且没有其他 MX 记录。优先级由 Cloudflare 设置。",
       "spf": "一条包含 include:_spf.mx.cloudflare.net 的 SPF 记录。",
+      "dkim": "开启 Email Routing 时，Cloudflare 会用自己的密钥添加此记录，用于为转发的邮件签名。",
       "dmarc": "任意 DMARC 策略均可。建议先用 p=none，邮件正常收发后再收紧。"
     },
     "sendTitle": "发信（Resend）",
