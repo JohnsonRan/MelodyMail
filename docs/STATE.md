@@ -278,9 +278,13 @@ sessions show "this device or local network").
 
 ### M2 plan
 
-Risk class: Medium (a feature and new API endpoints; no change to login, no change to existing
-rows). Proof: integration tests against D1 for every endpoint, ablation of each behaviour hunk,
-one diff review in a fresh context.
+Risk class: High (corrected by the review of fea4c99; first written as Medium). Two things put it
+there: `audit()` writes the new `audit_log.detail` column and runs inside the setup, sign-in and
+recovery batches, so login answers 500 until migration 0004 is applied (the reviewer dropped the
+column and setup failed); and `DELETE /api/domains/:name?deleteAddresses=1` deletes addresses in
+bulk and cannot be undone. Proof: integration tests against D1 for every endpoint, every
+behaviour hunk ablated, and a review by an independent model family or, when none is available,
+the owner (`AGENTS.md`, Model usage).
 
 Scope (`docs/PLAN.md`, section 7, M2):
 
@@ -431,6 +435,26 @@ addresses as an account-level list, verified once and shared by every address.
    Cloudflare adds itself; one more subrequest would cover it.
 5. For M3: a forward-only address whose last target was detached has no target; M3 should keep
    the copy then rather than drop the message.
+
+### Review of fea4c99 ("FIX FIRST")
+
+1. Risk class is High, not Medium (process). The plan above now says so and why. No code change.
+2. A forward-only address left without targets by a detach could not be edited: PATCH refused
+   even `{ enabled: false }` and `{ forwardOnly: false }` with `forward_only_needs_target`, and
+   the dialog disabled the forward-only switch while it was on. PATCH now checks only when the
+   request turns forward-only on or replaces the targets; the switch stays usable while on
+   (`bcc40dd`). Test "lets a forward-only address left without targets be edited": before
+   `expected 400 to be 200`, after green (`bun --bun vitest run test/forward-targets.spec.ts`).
+3. Hypothesis: a create with targetIds racing a detach leaves a state no serial order gives.
+   Not reproduced: test "ends a create racing a detach in a state some serial order gives"
+   (`db5336d`) ran 20 pairs per run, 3 instrumented runs and 5 plain runs; every pair ended
+   with the detach first and the create refused (`unknown_target`). By reading: a create that
+   passes its target check before the detach and writes after it ends with the address
+   forward-only and without links, the same state as create-then-detach, so no atomic guard was
+   added. Owner ruling 5 below removes that state altogether.
+4. README: migration 0004 must be applied right after the deploy, because setup, sign-in and
+   recovery depend on it.
+5. `NOTE_MAX` is one export in `domains/validate.ts` (`468a7c6`).
 
 ### Deferred
 

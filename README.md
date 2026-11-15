@@ -70,7 +70,9 @@ failure counts; it does not change any credential.
 
 ## Domains and addresses
 
-Apply the new migration before using these pages on a deployed Worker:
+Apply migration 0004 right after deploying this version, before anyone signs in: setup, sign-in
+and recovery write to its `audit_log.detail` column and answer 500 until it exists (see "Set the
+setup token" for when migrations run):
 
 ```sh
 bun run --cwd worker db:migrate:remote
