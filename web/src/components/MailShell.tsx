@@ -5,8 +5,11 @@ import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav
 import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
 import {
   ArchiveBoxIcon,
+  ArrowUturnRightIcon,
+  AtSymbolIcon,
   DocumentIcon,
   EnvelopeIcon,
+  GlobeAltIcon,
   InboxIcon,
   PaperAirplaneIcon,
   ShieldCheckIcon,
@@ -51,6 +54,24 @@ export function MailShell() {
             <SideNavItem label={t("folder.trash")} icon={TrashIcon} isDisabled />
           </SideNavSection>
           <SideNavSection title={t("nav.manage")}>
+            <SideNavItem
+              label={t("nav.domains")}
+              icon={GlobeAltIcon}
+              isSelected={pathname.startsWith("/settings/domains")}
+              href="/settings/domains"
+            />
+            <SideNavItem
+              label={t("nav.addresses")}
+              icon={AtSymbolIcon}
+              isSelected={pathname === "/settings/addresses"}
+              href="/settings/addresses"
+            />
+            <SideNavItem
+              label={t("nav.forwarding")}
+              icon={ArrowUturnRightIcon}
+              isSelected={pathname === "/settings/forwarding"}
+              href="/settings/forwarding"
+            />
             <SideNavItem
               label={t("nav.security")}
               icon={ShieldCheckIcon}
