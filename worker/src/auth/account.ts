@@ -49,9 +49,15 @@ export function registerAccountRoutes(auth: Hono<AppEnv>): void {
         passkeyInsert(c, credential, passkeyLabel(body.label), now),
         audit(c, "passkey_added", now),
       ]);
-    } catch {
-      // The authenticator already holds a registered Passkey (same credential id).
-      return fail(c, 409, "passkey_exists");
+    } catch (err) {
+      // The authenticator already holds a registered Passkey (same credential id). Any other
+      // failure goes to onError; the batch rolled back as a whole.
+      const exists = await db
+        .prepare("SELECT 1 AS one FROM passkeys WHERE id = ?")
+        .bind(credential.id)
+        .first();
+      if (exists) return fail(c, 409, "passkey_exists");
+      throw err;
     }
     return c.json({ ok: true });
   });

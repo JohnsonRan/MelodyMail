@@ -64,6 +64,29 @@ describe("passkey management", () => {
     await client.json("POST", "/api/auth/passkeys/verify", { credential }, 401);
   });
 
+  it("answers 409 passkey_exists when the same credential is registered again", async () => {
+    const { client, authenticator } = await setupOwner();
+    const start = await client.json("POST", "/api/auth/passkeys/options", {});
+    const credential = await authenticator.register(start.options as Record<string, unknown>);
+    const res = await client.json("POST", "/api/auth/passkeys/verify", { credential }, 409);
+    expect(res).toEqual({ error: "passkey_exists" });
+  });
+
+  it("answers 500 internal, not passkey_exists, when the insert fails for another reason", async () => {
+    const { client } = await setupOwner();
+    const authenticator = await SoftAuthenticator.create();
+    const start = await client.json("POST", "/api/auth/passkeys/options", {});
+    const credential = await authenticator.register(start.options as Record<string, unknown>);
+    await env.DB.prepare("ALTER TABLE audit_log RENAME TO audit_log_away").run();
+    try {
+      const res = await client.json("POST", "/api/auth/passkeys/verify", { credential }, 500);
+      expect(res).toEqual({ error: "internal" });
+    } finally {
+      await env.DB.prepare("ALTER TABLE audit_log_away RENAME TO audit_log").run();
+    }
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM passkeys").first("n")).toBe(1);
+  });
+
   it("answers 404 for an unknown Passkey id", async () => {
     const { client } = await setupOwner();
     await client.json("DELETE", "/api/auth/passkeys/nope", undefined, 404);
