@@ -13,6 +13,8 @@ type Json = Record<string, unknown>;
 /** A browser stand-in: keeps cookies, sends this origin, and uses its own client IP. */
 export class Client {
   cookies = new Map<string, string>();
+  /** request.cf as Cloudflare would attach it; unset by default. */
+  cf: Record<string, unknown> | undefined;
   ip = `198.51.100.${Math.floor(Math.random() * 250)}-${crypto.randomUUID()}`;
 
   async request(
@@ -31,6 +33,7 @@ export class Client {
         ...headers,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
+      ...(this.cf ? { cf: this.cf } : {}),
     };
     const res = await exports.default.fetch(`${ORIGIN}${path}`, init);
     for (const line of res.headers.getSetCookie()) {
@@ -66,8 +69,7 @@ export type Owner = {
 };
 
 /** Runs the full first-run setup and returns a signed-in client. */
-export async function setupOwner(): Promise<Owner> {
-  const client = new Client();
+export async function setupOwner(client = new Client()): Promise<Owner> {
   const authenticator = await SoftAuthenticator.create();
   const start = await client.json("POST", "/api/auth/setup/options", { setupToken: SETUP_TOKEN });
   const totpSecret = (start.totp as { secret: string }).secret;

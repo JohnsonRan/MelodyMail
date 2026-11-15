@@ -132,10 +132,10 @@ export function registerAccountRoutes(auth: Hono<AppEnv>): void {
   auth.get("/sessions", async (c) => {
     const now = Date.now();
     const { results } = await c.env.DB.prepare(
-      "SELECT id, created_at AS createdAt, last_seen_at AS lastSeenAt, user_agent AS userAgent FROM sessions WHERE expires_at > ? AND last_seen_at > ? ORDER BY last_seen_at DESC",
+      "SELECT id, created_at AS createdAt, last_seen_at AS lastSeenAt, user_agent AS userAgent, ip, country, region, city, organization, geo_source AS geoSource FROM sessions WHERE expires_at > ? AND last_seen_at > ? ORDER BY last_seen_at DESC",
     )
       .bind(now, now - SESSION_IDLE_MS)
-      .all<{ id: string; createdAt: number; lastSeenAt: number; userAgent: string }>();
+      .all<{ id: string } & Record<string, unknown>>();
     const current = c.get("sessionId");
     return c.json({
       sessions: results.map(({ id, ...rest }) => ({ ...rest, current: id === current })),
