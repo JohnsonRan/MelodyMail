@@ -15,6 +15,7 @@
 - 前端设计系统用 Astryx（`@astryxdesign/core`）。
 - 只有面板中添加的地址前缀能收信，其余拒收。
 - 自动转发是必做功能，走 Cloudflare Email Routing 的 `forward()`，不占 Resend 额度。
+- 支持 PWA：可安装到桌面和手机主屏幕（负责人 2026-11-15 提出）。
 - 所有 Node 相关操作只用 Bun；wrangler 例外，在 Node 下运行。
 
 不做：
@@ -81,6 +82,8 @@ CPU 无法在 workerd 测试里直接测量：workerd 为防侧信道攻击，�
 - Astryx 处于 Beta（0.7.x），API 可能变化。应对：固定版本号，升级时用 `astryx upgrade` 跑 codemod。
 - 打开大邮件要下载整封原始邮件。Worker 只做流式转发，不占 CPU，但浏览器要下载全部字节。界面在打开前显示邮件大小。
 - 浏览器端解析依赖 JS。不支持 JS 的客户端无法阅读邮件；自用场景可接受。
+- PWA 缓存边界：Service Worker 只缓存应用外壳（HTML、JS、CSS、图标），不缓存 `/api/*` 和邮件内容，避免邮件明文留在设备缓存里。离线阅读已打开过的邮件不在本期范围。
+- iOS 上的 Web Push 只对添加到主屏幕的 PWA 生效（Safari 的限制，需在 M4b 实测确认）。
 - 中日文字体：Windows 上系统回退字体显示正常；macOS、iOS、Android 尚未验证。
 
 ## 4. 架构
@@ -182,6 +185,7 @@ MelodyMail/
 | M2 | 域名与地址：添加域名、DNS 记录指引（MX、SPF、DKIM、DMARC）、添加 / 停用 / 删除地址、备注；转发目标管理与按地址转发设置 | |
 | M3 | 收信：`email()` 拒收、自动转发（按地址和按规则、只转发不保存、防循环）、落盘、队列、有上限的解析、FTS、Cron 重新入队 | 真实 `.eml` 样本（多种编码、25 MiB 大附件、畸形 MIME）：解析基准每封低于 3 ms；未添加的地址拒收且不落盘；转发到配置的目标恰好一次；只转发不保存时 R2 无对象；带防循环头的邮件不再转发 |
 | M4 | Web 邮箱：列表、会话线程、浏览器端解析与阅读（沙箱 iframe，默认拦截远程图片）、附件下载、搜索、标记、实时推送 | Playwright 截图：手机和桌面宽度、亮暗主题、三种语言 |
+| M4b | PWA：Web App Manifest（三语名称、图标、主题色）、Service Worker 缓存应用外壳（静态资源走 Workers Static Assets，免费且不限量），离线时显示外壳和"离线"提示；Web Push 新邮件通知（VAPID，推送由 Worker 发出，加密用 Web Crypto，开销很小） | Chrome、Edge 可安装；Lighthouse 的 PWA 可安装性检查通过；离线打开显示外壳；关闭页面后新邮件能收到通知 |
 | M5 | 发信：撰写、回复 / 转发（线程头）、附件上传、草稿、幂等发送、Resend Webhook、发信额度显示 | 重复提交和并发提交都只发出一封 |
 | M6 | 规则与 API：规则编辑界面（转发、标记、归档、删除）、REST API + API Key、OpenAPI 文档 | |
 | M7 | 运维：备份（D1 Time Travel 7 天 + 定期导出到 R2）与恢复手册、部署文档、README（中英日） | 在空白 Cloudflare 账号上按 README 从零部署一遍 |
