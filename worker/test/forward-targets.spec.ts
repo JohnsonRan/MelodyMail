@@ -117,6 +117,44 @@ describe("forwarding targets", () => {
     });
   });
 
+  it("ends a create racing a detach in a state some serial order gives", async () => {
+    const client = await owner();
+    await client.json("POST", "/api/domains", { name: "example.com" }, 201);
+    for (let i = 0; i < 20; i++) {
+      const target = (
+        await client.json("POST", "/api/forward-targets", { email: `t${i}@out.test` }, 201)
+      ).target as { id: number };
+      const [created, removed] = await Promise.all([
+        client.request("POST", "/api/addresses", {
+          localPart: `a${i}`,
+          domain: "example.com",
+          forwardOnly: true,
+          targetIds: [target.id],
+        }),
+        client.request("DELETE", `/api/forward-targets/${target.id}?detach=1`),
+      ]);
+      expect(removed.status).toBe(200);
+      const links = await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM address_forwards WHERE target_id = ?",
+      )
+        .bind(target.id)
+        .first("n");
+      expect(links).toBe(0);
+      // Create first, then detach: the address exists, forward-only, without targets (M3 keeps a
+      // copy then). Detach first: the create is refused. No other outcome.
+      if (created.status === 201) {
+        const body = (await created.json()) as { address: { id: number } };
+        const row = await env.DB.prepare("SELECT forward_only AS f FROM addresses WHERE id = ?")
+          .bind(body.address.id)
+          .first("f");
+        expect(row).toBe(1);
+      } else {
+        expect(created.status).toBe(400);
+        expect(await created.json()).toEqual({ error: "unknown_target" });
+      }
+    }
+  });
+
   it("removes an unused target and answers 404 for an unknown one", async () => {
     const client = await owner();
     const target = (
