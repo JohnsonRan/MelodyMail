@@ -14,6 +14,8 @@
   },
   "scripts": {
     "typecheck": "bun --bun tsc -p . && bun --bun tsc -p test",
-    "test": "bun --bun vitest run"
+    "test": "bun --bun vitest run",
+    "dev": "wrangler dev",
+    "deploy": "bun run --cwd ../web build && wrangler deploy"
   }
 }

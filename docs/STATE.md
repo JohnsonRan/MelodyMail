@@ -24,7 +24,6 @@ Done:
 
 Blocked or unverified:
 
-- wrangler refuses the Bun runtime. Needs the owner's decision (see open questions).
 - `scripts/check-requirements.py` and its tests have never run: the local permission policy
   denied running them. `REQUIREMENTS.md` was filled by reading the check's rules, not by running it.
 - No screenshots: the browser extension was not connected. The build was served with
@@ -32,12 +31,17 @@ Blocked or unverified:
 - CI has not run: the repository has no remote yet.
 - Free-plan availability of Queues, Durable Objects and Rate Limiting is not checked yet.
 
+Owner rulings (2026-11-15):
+
+- wrangler alone runs on Node (`bun run dev` / `bun run deploy` call it without `--bun`).
+  `wrangler dev` verified: `/api/health` returns `{"ok":true}`, `/api/nope` the JSON 404, and
+  `/inbox` the SPA (HTTP 200).
+- Rules that do not apply were deleted: the money and ledger rules, card-number handling and the
+  key-file credential rule. The retry rule stays as `worker/AGENTS.md`, "Retries and concurrency".
+
 Open questions for the owner:
 
-1. wrangler under Bun: allow wrangler (only wrangler) to run on Node, or another way?
-2. Approve marking `worker/AGENTS.md#money-idempotent` and `#ledger` as not applying (no money
-   moves in this service)?
-3. Allow running `scripts/check-requirements.py` and its tests locally.
+1. Allow running `scripts/check-requirements.py` and its tests locally.
 
 Next:
 
