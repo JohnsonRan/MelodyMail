@@ -24,8 +24,6 @@ Done:
 
 Blocked or unverified:
 
-- `scripts/check-requirements.py` and its tests have never run: the local permission policy
-  denied running them. `REQUIREMENTS.md` was filled by reading the check's rules, not by running it.
 - No screenshots: the browser extension was not connected. The build was served with
   `vite preview` and returned the page (HTTP 200, SPA fallback works), but nothing was looked at.
 - CI has not run: the repository has no remote yet.
@@ -39,9 +37,9 @@ Owner rulings (2026-11-15):
 - Rules that do not apply were deleted: the money and ledger rules, card-number handling and the
   key-file credential rule. The retry rule stays as `worker/AGENTS.md`, "Retries and concurrency".
 
-Open questions for the owner:
-
-1. Allow running `scripts/check-requirements.py` and its tests locally.
+- Running the requirements check was allowed. `bun run check:requirements` exits 0; its 53 tests
+  pass; a copy of `REQUIREMENTS.md` without the "AGENTS.md: Waiting" row exits 1 and names it.
+  The full `bun run check` passes in 4.6–5.9 s.
 
 Next:
 

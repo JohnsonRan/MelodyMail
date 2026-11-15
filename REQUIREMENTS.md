@@ -33,7 +33,7 @@ as the baseline; then the limit, as the baseline plus a margin (start at 20%).
 | Tier | Command | Runs (where, when) | Wall-time limit | Baseline (date, host, load) |
 | --- | --- | --- | --- | --- |
 | Pre-commit | `bun run lint` | locally, before each commit (no hook yet) | 1 s | 0.34 s, 3 runs 0.34–0.46 s (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load ~80%) |
-| Merge gate | `bun run check` | CI on every pull request and push to main; locally before push | 6 s | 4.3 s, 3 runs 4.1–4.6 s, without check:requirements (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load ~80%) |
+| Merge gate | `bun run check` | CI on every pull request and push to main; locally before push | 6.2 s | 5.1 s, 3 runs 4.6–5.9 s (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load ~80%) |
 | Scheduled run on main | | | | |
 | Release | | | | |
 
