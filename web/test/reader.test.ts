@@ -226,13 +226,35 @@ describe("hostile HTML corpus", () => {
 
   test("links open a new tab without opener or referrer", async () => {
     const { result, s } = await render({
-      html: `<a href="https://example.org/a">a</a><a href="mailto:x@example.org" target="_self">m</a>`,
+      html: `<a href="https://example.org/a">a</a><a href="mailto:x@example.org" target="_self">m</a><a id="rel" href="/api/messages">r</a><a id="proto" href="//sender.invalid/x">p</a>`,
     });
     expect(await attributes(s, result.sanitized, "a", ["target", "rel"])).toEqual([
       ["_blank", "noopener noreferrer"],
       ["_blank", "noopener noreferrer"],
+      ["_blank", "noopener noreferrer"],
+      ["_blank", "noopener noreferrer"],
     ]);
+    // Relative and scheme-less links would resolve against the app's origin.
+    expect(await survivors(s, result.sanitized, ["#rel[href]", "#proto[href]"])).toEqual([]);
   });
+
+  // An SVG <a> reports a lowercase tagName; a link that is not sent to a new tab navigates the
+  // mail frame itself to the sender's page, where the frame CSP no longer applies.
+  for (const attr of ["href", "xlink:href"]) {
+    test(`SVG links (${attr}) open a new tab and leave the mail frame in place`, async () => {
+      const { result, s } = await render({
+        html: `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="200" height="50"><a ${attr}="https://sender.invalid/landing"><rect id="r" width="200" height="50"/></a></svg>`,
+      });
+      expect(await attributes(s, result.sanitized, "svg a", ["target", "rel"])).toEqual([
+        ["_blank", "noopener noreferrer"],
+      ]);
+      const popup = s.page.waitForEvent("popup", { timeout: 3000 });
+      await mailFrame(s).click("#r");
+      await (await popup).close();
+      await s.page.waitForTimeout(150);
+      expect(mailFrame(s).url()).toBe("about:srcdoc");
+    });
+  }
 
   test("notices a remote url() in a style attribute alone", async () => {
     const { result, s } = await render({

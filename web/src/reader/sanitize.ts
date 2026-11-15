@@ -48,6 +48,7 @@ const FORBID_TAGS = [
 ];
 
 const REMOTE_CSS = /url\s*\(|@import/i;
+const LINK_SCHEME = /^\s*(https?|mailto|tel):/i;
 
 export type SanitizedMail = {
   html: string;
@@ -83,12 +84,20 @@ export function sanitizeMailHtml(dirty: string, options: SanitizeOptions): Sanit
 
   purify.addHook("afterSanitizeAttributes", (node) => {
     if (!(node instanceof Element)) return;
-    if (node.tagName === "A" || node.tagName === "AREA") {
+    // localName, not tagName: an SVG <a> reports a lowercase tagName, and a link left without
+    // target would navigate the mail frame itself to the sender's page.
+    if (node.localName === "a" || node.localName === "area") {
       node.setAttribute("target", "_blank");
       node.setAttribute("rel", "noopener noreferrer");
+      // A relative link resolves against the app's own URL (srcdoc inherits it) and would open
+      // an app page in a new tab; mail has no use for one.
+      for (const attr of ["href", "xlink:href"]) {
+        const href = node.getAttribute(attr);
+        if (href !== null && !LINK_SCHEME.test(href)) node.removeAttribute(attr);
+      }
     }
     const src = node.getAttribute("src");
-    if (node.tagName === "IMG" && src !== null && /^\s*cid:/i.test(src)) {
+    if (node.localName === "img" && src !== null && /^\s*cid:/i.test(src)) {
       const id = decodeURIComponent(src.trim().slice(4)).toLowerCase();
       const part = byCid.get(id);
       if (part && part.content.byteLength <= INLINE_IMAGE_MAX) {
