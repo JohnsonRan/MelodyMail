@@ -6,6 +6,7 @@ import { registerAuthRoutes } from "./auth/routes";
 import { registerDomainRoutes } from "./domains/routes";
 import type { AppEnv, Env } from "./env";
 import { fail, log } from "./http";
+import { handleQueue, handleScheduled } from "./mail/consumer";
 import { handleEmail } from "./mail/inbound";
 import { publicRoute, requireAuthorization, requireSameOrigin } from "./routing";
 
@@ -37,4 +38,6 @@ app.onError((err, c) => {
 export default {
   fetch: app.fetch,
   email: handleEmail,
-} satisfies ExportedHandler<Env>;
+  queue: handleQueue,
+  scheduled: handleScheduled,
+} satisfies ExportedHandler<Env, InboundJob>;

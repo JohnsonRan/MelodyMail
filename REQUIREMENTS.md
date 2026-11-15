@@ -112,7 +112,7 @@ tagged rule marked as not applying needs the owner's approval, quoted in the com
 | worker/AGENTS.md#authz | `bun run test` | `REVIEW.md`, "Checking against the rules", Authorization |  |
 | worker/AGENTS.md#sensitive-values |  | `REVIEW.md`, "Checking against the rules", Sensitive data |  |
 | worker/AGENTS.md: Retries and concurrency | `bun run test` | `REVIEW.md`, "Checking against the rules", Retries and concurrency |  |
-| worker/AGENTS.md: Background work (if present) |  |  | no background work yet; queue consumers and cron arrive in M3 and M7 |
+| worker/AGENTS.md: Background work (if present) | `bun run test` | `REVIEW.md`, "Checking against the rules", Retries and concurrency |  |
 | worker/AGENTS.md: Operations (if present) |  | `REVIEW.md`, "Checking against the rules" |  |
 | worker/AGENTS.md: Admin panel (if present) |  | `REVIEW.md`, "Pass bar" |  |
 | worker/AGENTS.md: Performance |  | `REVIEW.md`, "Pass bar" |  |

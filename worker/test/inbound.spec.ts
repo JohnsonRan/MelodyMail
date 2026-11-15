@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../src/env";
+import { handleScheduled, requeueStored, STUCK_AFTER_MS } from "../src/mail/consumer";
 import { FORWARDED_HEADER, handleEmail, parseRecipient } from "../src/mail/inbound";
 import { addAddress, asMessage, inbound, messageRows, r2Keys } from "./mail-helpers";
 
@@ -9,6 +10,18 @@ async function auditDetails(): Promise<string[]> {
     "SELECT detail FROM audit_log WHERE event = 'mail_forwarded'",
   ).all<{ detail: string }>();
   return results.map((r) => r.detail);
+}
+
+/** Waits until the real queue consumer has parsed every stored message. */
+async function waitParsed() {
+  await vi.waitFor(
+    async () => {
+      const rows = await messageRows();
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.map((r) => r.status)).toEqual(rows.map(() => "parsed"));
+    },
+    { timeout: 4000, interval: 25 },
+  );
 }
 
 afterEach(async () => {
@@ -79,6 +92,13 @@ describe("email() stores", () => {
     const [row] = await messageRows();
     expect(row?.address_id).toBe(id);
     expect(row?.subaddress_tag).toBeNull();
+  });
+
+  it("enqueues the stored message and the consumer parses it", async () => {
+    await addAddress("shop");
+    await handleEmail(asMessage(inbound("shop@example.com")), env);
+    await waitParsed();
+    expect((await messageRows())[0]?.subject).toBe("Hello");
   });
 });
 
@@ -185,18 +205,57 @@ describe("email() failures", () => {
     expect(await messageRows()).toEqual([]);
   });
 
-  it("keeps the stored row when the queue send fails", async () => {
+  it("leaves the row stored when the queue send fails, and the cron step re-enqueues it", async () => {
     await addAddress("shop");
     const send = vi.spyOn(env.INBOUND, "send").mockRejectedValue(new Error("queue down"));
     await expect(handleEmail(asMessage(inbound("shop@example.com")), env)).resolves.toBeUndefined();
     expect(send).toHaveBeenCalledOnce();
-    expect((await messageRows())[0]?.status).toBe("stored");
+    const [row] = await messageRows();
+    expect(row?.status).toBe("stored");
+
+    // Not yet 15 minutes old: the cron step leaves it alone.
+    expect(await requeueStored(env, Date.now())).toBe(0);
+
+    const receivedAt = row?.received_at as number;
+    await handleScheduled(
+      { scheduledTime: receivedAt + STUCK_AFTER_MS } as ScheduledController,
+      env,
+    );
+    await waitParsed();
   });
 
-  it("enqueues the id of the stored message", async () => {
-    await addAddress("shop");
-    const send = vi.spyOn(env.INBOUND, "send");
-    await handleEmail(asMessage(inbound("shop@example.com")), env);
-    expect(send).toHaveBeenCalledWith({ id: (await messageRows())[0]?.id });
+  it("re-enqueues at most 100 stuck messages per run", async () => {
+    const now = Date.now();
+    const insert = env.DB.prepare(
+      `INSERT INTO messages (id, address_id, direction, status, envelope_from, envelope_to,
+         raw_size, r2_key, received_at) VALUES (?, 1, 'in', ?, 'a@b.c', 'shop@example.com', 1, 'k', ?)`,
+    );
+    await env.DB.batch([
+      ...Array.from({ length: 101 }, (_, i) =>
+        insert.bind(`s${i}`, "stored", now - STUCK_AFTER_MS - i),
+      ),
+      insert.bind("p", "parsed", now - STUCK_AFTER_MS - 500),
+    ]);
+    const sendBatch = vi.spyOn(env.INBOUND, "sendBatch").mockResolvedValue(undefined as never);
+    expect(await requeueStored(env, now)).toBe(100);
+    const sent = sendBatch.mock.calls[0]?.[0] as { body: { id: string } }[];
+    expect(sent).toHaveLength(100);
+    // Oldest first; the parsed row and the newest stuck row wait for the next run.
+    expect(sent[0]?.body.id).toBe("s100");
+    expect(sent.map((m) => m.body.id)).not.toContain("p");
+    expect(sent.map((m) => m.body.id)).not.toContain("s0");
+  });
+
+  it("logs a failing cron job by name and fails the run", async () => {
+    vi.spyOn(env.INBOUND, "sendBatch").mockRejectedValue(new Error("queue down"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    await env.DB.prepare(
+      `INSERT INTO messages (id, address_id, direction, status, envelope_from, envelope_to,
+         raw_size, r2_key, received_at) VALUES ('x', 1, 'in', 'stored', 'a@b.c', 'shop@example.com', 1, 'k', 0)`,
+    ).run();
+    await expect(
+      handleScheduled({ scheduledTime: Date.now() } as ScheduledController, env),
+    ).rejects.toThrow("1 cron job(s) failed");
+    expect(error.mock.calls.join(" ")).toContain('"job":"requeue_stored"');
   });
 });
