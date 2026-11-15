@@ -1,0 +1,9 @@
+From: "Sender Name" <sender@example.org>
+To: shop@example.com
+Date: Mon, 16 Nov 2026 08:00:00 +0000
+Message-ID: <html-only@example.org>
+MIME-Version: 1.0
+Subject: HTML only
+Content-Type: text/html; charset=utf-8
+
+<html><head><style>p{color:red}</style></head><body><p>Fish &amp; chips &#x263A; for <b>lunch</b></p></body></html>

@@ -1,0 +1,23 @@
+From: "Sender Name" <sender@example.org>
+To: shop@example.com
+Date: Mon, 16 Nov 2026 08:00:00 +0000
+Message-ID: <malformed-boundary@example.org>
+MIME-Version: 1.0
+Subject: Malformed boundaries
+Content-Type: multipart/mixed; boundary="declared"
+
+--declared
+Content-Type: text/plain
+
+First part before a broken boundary.
+--other-boundary
+Content-Type: text/html
+
+<p>orphan part</p>
+--declared
+Content-Type: multipart/alternative; boundary="inner"
+
+--inner
+Content-Type: text/plain
+
+never closed
