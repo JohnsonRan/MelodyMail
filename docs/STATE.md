@@ -527,6 +527,7 @@ merged; waits for the independent review the risk class asks for.
   `stored` after 15 minutes. REQUIREMENTS "Background work" now has a row.
 - `b2dd4d2` `worker/bench/parse.ts` and its REQUIREMENTS number; its "Not yet enforced" row is
   gone.
+- `9e16a97` linear HTML-to-text reduction (review of 2c9e9c4, item 1).
 - `a062220` drops a target dedupe that could not trigger; `d52e3c1` adds the ablation gap
   tests (see Ablation). README section "Inbound mail":
   migration 0005 right after deploy, the queue create command, the catch-all rule.
@@ -554,10 +555,11 @@ merged; waits for the independent review the risk class asks for.
 - `bun run check` green at every commit; each commit was checked with the rest of the tree
   stashed (`git stash push --keep-index -u`). The fixtures kept their CRLF (`od -c`,
   `git ls-files --eol` shows `i/crlf`).
-- `bun --bun vitest run` in `worker/`: 184 tests, 53 of them in `inbound.spec.ts`,
-  `consumer.spec.ts` and `parse.spec.ts` against D1, R2 and Queues in workerd. The real queue
-  delivers to the real consumer in the test runtime, so three tests run the whole path:
-  `email()`, R2, queue, range read, parse, `parsed` row (one of them with a 20 MiB message).
+- `bun --bun vitest run` in `worker/`: 192 tests after the review fix (184 before), 61 of them
+  in `inbound.spec.ts`, `consumer.spec.ts` and `parse.spec.ts` against D1, R2 and Queues in
+  workerd. The real queue delivers to the real consumer in the test runtime, so three tests run
+  the whole path: `email()`, R2, queue, range read, parse, `parsed` row (one of them with a
+  20 MiB message).
 - Every test the design lists: rejects (unknown, disabled, receive off) store nothing; tag kept;
   any case matches; forward-only forwards once per target and stores nothing; loop header keeps;
   all forwards failing keeps (without forwarding again); store-and-forward stores first,
@@ -607,7 +609,8 @@ which does change the result under concurrent redelivery, is covered.
 | --- | --- | --- | --- |
 | Before M3 (`69563bb` with postal-mime installed) | 9.52, 8.93, 8.79 s | 5.95, 5.48, 5.36 s | 51%, 19%, 22% |
 | M3 code before the ablation gap tests | 10.82, 10.73, 10.99 s | 7.01, 7.26, 7.44 s | 31%, 32%, 41% |
-| M3 final (`d52e3c1`) | 10.78, 10.61, 10.60 s | 7.18, 7.07, 7.05 s | 54%, 24%, 38% |
+| M3 at `d52e3c1` | 10.78, 10.61, 10.60 s | 7.18, 7.07, 7.05 s | 54%, 24%, 38% |
+| M3 at `9e16a97` (review fix 1) | 11.07, 10.63, 9.08 s | 7.16, 7.40, 6.31 s | 31%, 26%, 7% |
 
 Both limits (10 s merge gate, 6 s slowest test package) are exceeded. The suite without the
 three M3 files measured 6.26 and 6.54 s at the same time (load about 30%), so M3 adds about
@@ -615,6 +618,74 @@ three M3 files measured 6.26 and 6.54 s at the same time (load about 30%), so M3
 time; pre-bundling postal-mime in the vitest optimizer did not change it (7.30, 7.14, 6.49 s)
 and was not kept. No test was weakened. Owner decision: re-baseline, or reduce (for example by
 merging test files).
+
+### Review of 2c9e9c4 ("FIX FIRST")
+
+1. **Quadratic HTML reduction (High, reproduced).** `htmlToText` used `/<[^>]*>/g` and a lazy
+   `<(script|style|head)...</\1>` regex, both quadratic on sender HTML. Fixed in `9e16a97`: one
+   forward scan with `indexOf`; an unterminated tag, comment or skipped element drops the rest;
+   the scan stops at twice the 8 KB text it needs. Reviewer's repro, `parseSlice` on a 60 KB
+   `text/html` message, 3 runs each under Bun 1.4.4:
+
+   | Input | Before | After |
+   | --- | --- | --- |
+   | normal HTML (`<p>hello world</p>` repeated) | 4.2, 0.6, 0.9 ms | 5.9, 1.8, 1.2 ms (first run includes warm-up) |
+   | `"<"` repeated 60,000 times | 381, 377, 376 ms | 0.5, 0.5, 0.5 ms |
+   | `"<head"` repeated 12,000 times | 238, 234, 243 ms | 0.5, 0.7, 0.5 ms |
+
+   Six 250 KB adversarial bodies (`<` without `>`, `<head`, `<script ` never closed, `<!--`
+   without `-->`, an attribute without `>`, `&amp` without `;`) are gated inputs of
+   `bun worker/bench/parse.ts` (p95 0.13-0.25 ms over 3 runs) and unit tests that check the text
+   returned. Ablation of the new hunks: 10, 9 red after one more test (text after 20,000 empty
+   tags, for the one-space-per-run rule). Survivor kept: the output cap in the scan loop; the
+   result is sliced to the same length afterwards, so only the work it saves differs.
+
+2. **postal-mime on crafted input (measured; not changed).** `parseSlice` under Bun 1.4.4,
+   100 runs each after 20 warm-up runs, CPU load 24%, current limits (500 parts, nesting depth
+   32, header size 256 KB):
+
+   | Input (within the 256 KB slice) | Median | p95 | Result |
+   | --- | --- | --- | --- |
+   | 499 parts of 1 byte (18 KB) | 2.05 ms | 3.69 ms | parsed |
+   | 5,000 parts (over the limit) | 1.43 ms | 3.08 ms | throws, `parse_failed` |
+   | nesting depth 31 | 0.14 ms | 0.43 ms | parsed |
+   | nesting depth 2,000 (over the limit) | 0.12 ms | 0.33 ms | throws |
+   | one 250 KB folded Subject | 1.52 ms | 2.73 ms | parsed, subject cut to 998 |
+   | 5,000 `X-` headers | 1.82 ms | 3.46 ms | throws (header size) |
+   | Subject of 12,000 B encoded words | 1.95 ms | 3.04 ms | throws (header size) |
+   | Subject of 12,000 Q encoded words (GBK) | 2.20 ms | 3.59 ms | throws (header size) |
+   | boundary never closed, 250 KB text part | 0.84 ms | 1.77 ms | parsed |
+   | boundary never closed, 250 KB base64 part, no text | 1.65 ms | 3.22 ms | parsed, no text |
+   | 499 base64 parts of 500 bytes, no text | 11.70 ms | 15.06 ms | parsed, no text |
+   | one 250 KB line without CRLF | 0.08 ms | 0.20 ms | parsed |
+   | 250 KB of bare CR | 0.05 ms | 0.11 ms | parsed |
+
+   Over the 3 ms p95 budget: many parts (worst: 499 parts with no text, 11.7 ms median, both
+   passes walk them), header-heavy messages, and a slice with no text part (open question 3).
+   Measured with `maxPartCount: 50` and `maxHeadersSize: 64 KB` (then reverted): every input
+   above except the no-text base64 part drops to p95 0.11-2.04 ms (the parts and header cases
+   throw early, 0.15-0.86 ms median); the no-text base64 part stays at 1.90 ms median, 3.33 ms
+   p95. Proposal for the owner (open question 9): lower `maxPartCount` to 50 and
+   `maxHeadersSize` to 64 KB, so such messages become `parse_failed` quickly and the browser
+   parses them; together with open question 3 (skip the full pass when the first 64 KB has no
+   text), which bounds the last case. A real message with more than 50 MIME parts in its first
+   256 KB, or more than 64 KB of headers across its parts, would then have no search text or
+   snippet.
+
+3. **Export with an FTS5 table (Medium, docs).** Reproduced locally:
+   `bun run wrangler d1 export melodymail --local` fails with "cannot export databases with
+   Virtual Tables (fts5)"; `--table messages` exports. M7 constraint, recorded below.
+
+### M7 constraint: backups and messages_fts
+
+- A whole-database `wrangler d1 export` fails while `messages_fts` exists, so PLAN's periodic
+  export to R2 must export table by table (`--table`), skipping `messages_fts`.
+- The search text lives only in `messages_fts`. A restore rebuilds it: after importing the
+  tables, set `status = 'stored'` on the restored `parsed` rows (and clear their parsed columns
+  if wanted); the cron step re-enqueues them, 100 per run, and the consumer re-parses each from
+  its R2 object. The restore procedure in M7 has to say this, and that it costs one queue round
+  per message.
+- D1 Time Travel (PLAN's 7-day restore) is not an export and is not affected.
 
 ### Not verified
 
@@ -660,6 +731,8 @@ merging test files).
    the message come from the owner's own domain; any sender can add the header, and the message
    is then kept instead of forwarded (never dropped).
 8. **Gate and suite timing** over both limits (table above).
+9. **Tighter postal-mime limits.** Lower `maxPartCount` to 50 and `maxHeadersSize` to 64 KB
+   (measurements under "Review of 2c9e9c4", item 2)? Not changed until the owner decides.
 
 ### Deferred
 
