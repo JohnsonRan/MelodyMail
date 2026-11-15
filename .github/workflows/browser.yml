@@ -1,7 +1,7 @@
 name: browser
 
 # The browser suite (Playwright driven by bun test): the sender-HTML rendering security corpus
-# and the mailbox end to end. It takes about 16 s, too long for the 10 s merge gate, so it runs
+# and the mailbox end to end. It takes about 17 s, too long for the 10 s merge gate, so it runs
 # as its own job: on pull requests that touch web/, because it guards a High-risk path, and every
 # night on main, which covers merges that skipped it.
 on:

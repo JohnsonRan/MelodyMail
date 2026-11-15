@@ -797,8 +797,8 @@ class asks for and for the owner to see the screenshots.
   unread index (`WHERE read = 0`) for the counts. `IF NOT EXISTS`, additive.
 - `9affb90` mailbox API (`worker/src/mail/routes.ts`): `GET /api/messages`, `PATCH
   /api/messages`, `GET|PATCH|DELETE /api/messages/:id`, `GET /api/messages/:id/thread`, `GET
-  /api/messages/:id/raw`, `GET /api/search` (through a new `searchFilter` that `buildSearch` now
-  uses), `GET /api/counts`. All guarded and in the route walk.
+  /api/messages/:id/raw`, `GET /api/search` (through a new `searchFilter`; `buildSearch` was removed
+  in review fix 3), `GET /api/counts`. All guarded and in the route walk.
 - `78821ec` `Hub` Durable Object (`worker/src/mail/hub.ts`, SQLite class in `wrangler.jsonc`
   migrations tag `v1`): hibernatable sockets tagged with the session id hash, `ping`/`pong`
   auto-response, `notify` after each parse in the consumer, `closeSessions` on logout, on
@@ -938,21 +938,19 @@ the worker suite), expanding older thread messages, and revoking the object URL.
    the Layout end slot) without its StyleX parts and without the resize handle.
 7. The browser suite is not in `bun run check` (16 s against the 10 s gate); it runs in its own
    workflow on pull requests touching `web/` and nightly on main. REQUIREMENTS now has a
-   scheduled tier and an end-to-end wall time (limit 19 s, baseline 15.8 s).
+   scheduled tier and an end-to-end wall time (limit 21 s, baseline 17.4 s after the review fixes).
 8. Screenshots were taken with Playwright, not with the owner-facing browser tools; the
    orchestrator should show them to the owner (or retake them) before review.
 
 ### Open questions for the owner
 
-1. Bundle total is 642.5 kB gzip against the 610 kB limit (568.4 kB before M4). The parse worker
+1. Bundle total is 643.0 kB gzip (642.5 kB before the font fix) against the 610 kB limit (568.4 kB before M4). The parse worker
    (postal-mime, 30.6 kB) and the reader chunk (DOMPurify and the reader, 22.1 kB) load only when
    a message is opened. Options: count lazy reading chunks apart from the total, raise the limit,
    or cut elsewhere (the M1 analysis lists Astryx components and the router). First paint is
-   314.2 kB (limit 370 kB) and holds neither library.
-2. Found, not changed (outside M4): the app stylesheet from the Astryx theme loads the Figtree
-   font from `fonts.googleapis.com` on every page, so the browser talks to a third party and the
-   owner's IP reaches Google (`AGENTS.md`, "Frontend–backend mapping"). The end-to-end test
-   therefore checks remote requests from the mail frame only. Self-host the font or drop it?
+   314.6 kB (limit 370 kB) and holds neither library. The limit stays as it is (coordinator, review
+   of 5d11b90).
+2. (Resolved by review fix 6, `ee93a79`: Figtree is self-hosted.)
 3. `GET /api/messages/:id` has no frontend caller (the reader uses the thread route). It is in
    the design, so it stays, with a row in REQUIREMENTS "Exceptions". Remove it instead?
 
@@ -978,3 +976,50 @@ the worker suite), expanding older thread messages, and revoking the object URL.
 - A walkthrough with a real Passkey session in a real browser; the screenshots used a session row
   written to the local D1.
 - WCAG contrast of the new screens was not measured.
+
+### Review of 5d11b90 ("FIX FIRST")
+
+1. **SVG links navigated the mail frame (Medium, reproduced)** — `37c8854`. The hook matched
+   `tagName === "A"`; an SVG `<a>` reports lowercase, so `<svg><a href>` kept no target and a
+   click loaded the sender's page inside the reader frame, where the frame CSP does not apply.
+   Now matched by `localName` (`a`, `area`, and `img` for `cid:`). New corpus cases click an SVG
+   link with `href` and with `xlink:href`: before the fix both failed (no `target`/`rel`);
+   after, both have `_blank`/`noopener noreferrer`, the click opens a popup and the frame stays at
+   `about:srcdoc`. The reviewer's `attack2.test.ts` now shows the frame still at `about:srcdoc`;
+   `attack.test.ts` (41 vectors) shows nothing remote with all layers on. Its "sanitizer-only"
+   leaks are CSS and SVG `<image>`/`feImage` loads, which the CSP blocks by design. Found with
+   it: a relative link (`/api/...`) resolved against the app origin (srcdoc inherits the parent
+   URL) and opened an app page in a new tab; links now keep only `http`, `https`, `mailto` and
+   `tel`, asserted in the links test. Ablation: back to `tagName` turns both SVG cases red;
+   dropping the scheme check turns the links test red.
+2. **MailboxPage.tsx 481 lines** — `3d0250a`: split into `useMessageList`, `mailbox/actions.ts`,
+   `BulkBar` and `ListBody`; the page is 256 lines, every web file is under 314. End-to-end
+   suite unchanged and green.
+3. **Dead search builder** — `7e0ca21`: `buildSearch`, `SearchQuery`, `SEARCH_LIMIT` and the
+   rank flag are gone; the M3 search tests run `searchFilter` against `messages_fts` with every
+   case kept (1/2/3+-character CJK and Latin, every term required, injection inputs literal).
+4. **Sender repeated in the reader** — `d898cd5`: the thread line shows the display name with the
+   address beside it; the header keeps tag, recipients and date. Re-shot (below).
+5. **Vite proxy without WebSocket** — `ebd0012`: `/api` proxy entry now has `ws: true` (Vite
+   `server.proxy` passes upgrades only with it; checked by reading the docs, not run); README
+   local-run section updated. Still unverified: the app under Vite against the Worker's
+   same-origin checks.
+6. **Figtree from Google** — `ee93a79`: `@fontsource/figtree` 5.3.0 (OFL-1.1), weights 400–700,
+   latin and latin-ext, built into `web/dist`; a Vite alias points the generated
+   `astryx-themes.ts` import of the theme's `fonts.css` at `web/src/fonts.css`. No
+   `fonts.googleapis.com`/`fonts.gstatic.com` reference is left in `web/dist` (grep). New
+   end-to-end test: loading the app makes no third-party request and Figtree loads from
+   `/assets/`; with the alias removed it and the hostile-frame test turn red.
+
+Numbers after the fixes (`3d0250a`, vite build, gzip -6): first paint 314.6 kB (limit 370),
+entry 15.6 kB, total JS + CSS 643.0 kB (limit 610, unchanged, open question 1). Font files, not
+counted above: latin woff2 for the four weights 45.7 kB, all 16 woff2 70.5 kB (woff fallbacks
+93.8 kB, fetched only by browsers without woff2).
+
+Verified: `bun run check` green at every commit; 3 runs at `3d0250a`: 6.89, 7.21, 6.72 s wall,
+worker suite 5.79, 6.09, 5.66 s, 242 tests, CPU load 0–3%. `bun run test:browser`: 35 tests, 3
+runs 16.81–17.62 s, CPU load 1–5%. Screenshots re-taken (all 54, Playwright against a local
+`wrangler dev` started and stopped by this session; `scrollWidth` equal to the viewport in all
+18 combinations); zh-CN light and dark at 1280 px checked by eye: one sender line, Figtree
+rendering.
+

@@ -25,7 +25,7 @@ deviations under "Open questions" in `docs/STATE.md`.
 | `GET /api/messages/:id/raw` | Streams the R2 object as the response body, with no JS work. Headers: `Content-Type: application/octet-stream`, `Content-Disposition: attachment`, `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff`. A browser that opens the URL directly therefore never renders it. |
 | `PATCH /api/messages/:id` and `PATCH /api/messages` | Set read, starred, archived and trashed, on one message or on up to 100 `ids`. |
 | `DELETE /api/messages/:id` | Permanent delete of a message that is already in trash: removes the R2 object, the row and the FTS row. The UI asks for confirmation. |
-| `GET /api/search` | Query `q`, `cursor`. Uses M3's `buildSearch`; same list fields and pagination. |
+| `GET /api/search` | Query `q`, `cursor`. Uses M3's term handling (`searchFilter` in `worker/src/mail/search.ts`); same list fields and pagination. |
 | `GET /api/counts` | Unread counts per folder and per address. |
 | `GET /api/events` | WebSocket upgrade to the Hub Durable Object (below). It needs a valid session and an `Origin` equal to the request's own origin. |
 

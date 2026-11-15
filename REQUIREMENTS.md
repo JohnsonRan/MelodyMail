@@ -34,7 +34,7 @@ as the baseline; then the limit, as the baseline plus a margin (start at 20%).
 | --- | --- | --- | --- | --- |
 | Pre-commit | `bun run lint` | locally, before each commit (no hook yet) | 1 s | 0.34 s, 3 runs 0.34–0.46 s (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load ~80%) |
 | Merge gate | `bun run check` | CI on every pull request and push to main; locally before push | 10 s | 7.2 s, 3 runs 6.5–7.8 s with the steps run concurrently by `scripts/check.ts`, CPU load 9–14% (2026-11-16, dev workstation, Ryzen 9 9950X3D); sequential before: 10.6–11.1 s |
-| Scheduled run on main | `bun run test:browser` | CI nightly on main and on pull requests that touch `web/` (`.github/workflows/browser.yml`); locally before a web change is pushed | 19 s | 15.8 s, 3 runs 15.62–15.92 s including the web build (32 tests: the rendering-security corpus, file-name unit tests and the mailbox end to end, Playwright 1.65.0 under `bun test`), CPU load 0–3% (2026-11-16, dev workstation, Ryzen 9 9950X3D) |
+| Scheduled run on main | `bun run test:browser` | CI nightly on main and on pull requests that touch `web/` (`.github/workflows/browser.yml`); locally before a web change is pushed | 21 s | 17.4 s, 3 runs 16.81–17.62 s including the web build (35 tests: the rendering-security corpus, file-name unit tests and the mailbox end to end, Playwright 1.65.0 under `bun test`), CPU load 1–5% (2026-11-16, dev workstation, Ryzen 9 9950X3D) |
 | Release | | | | |
 
 ## Numbers
@@ -49,7 +49,7 @@ meanwhile.
 | Spacing scale (section, card, inside card, label to field) | Astryx spacing tokens only; no literal pixel value | a setting, not measured | design system |
 | Page frame width; readable column width | | | e2e page-width check |
 | Supported widths (phone, laptop, wide) | phone 390 px, laptop 1280 px, wide 1920 px; tables stack below Astryx's sm breakpoint (640 px) | a setting, not measured (owner ruling 2026-11-16) | screenshots |
-| Full end-to-end run, wall time | 19 s | 15.8 s, the same 3 runs as the scheduled tier; the mailbox API is an in-memory stand-in, the Worker is covered by its own suite (2026-11-16, dev workstation, Ryzen 9 9950X3D, CPU load 0–3%) | `bun run test:browser` in CI |
+| Full end-to-end run, wall time | 21 s | 17.4 s, the same 3 runs as the scheduled tier; the mailbox API is an in-memory stand-in, the Worker is covered by its own suite (2026-11-16, dev workstation, Ryzen 9 9950X3D, CPU load 1–5%) | `bun run test:browser` in CI |
 | Slowest test package | 9 s (owner approval 2026-11-16) | 6.1 s, worker suite (vitest Duration) inside the concurrent gate, 3 runs 5.48–6.62 s, CPU load 9–14% (2026-11-16, dev workstation, Ryzen 9 9950X3D); about 80% of it is transform | review |
 | Frontend entry chunk, gzip | 270 kB | 15.6 kB after M4 (15.4 kB before), 2026-11-16, vite build, gzip -6; 14 kB on 2026-11-15 | review |
 | Frontend first paint (sign-in page), JS + CSS gzip | 370 kB | 314.6 kB after M4 with Figtree self-hosted (313.5 kB before), index.html and every asset it references, 2026-11-16, vite build, gzip -6; postal-mime and DOMPurify are in none of them; font files are not counted: the Figtree latin woff2 for the 4 weights is 45.7 kB, all 16 woff2 files 70.5 kB; 309 kB on 2026-11-15 | review |
