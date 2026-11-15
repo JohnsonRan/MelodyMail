@@ -274,7 +274,10 @@ sessions show "this device or local network").
    a phone-width screenshot of `/settings/security` showing such a session.
 5. Earlier deferrals stand: the `4820d98` locale re-wrap.
 
-## M2: domains, addresses, forwarding targets (in progress, branch `m2-domains`)
+## M2: domains, addresses, forwarding targets (done 2026-11-16)
+
+Merged through pull request #2 as `04bdfdf` after a re-review PASS (both Lows fixed), the
+owner's UI check in a real browser, and CI green. Risk class High.
 
 ### M2 plan
 
@@ -500,3 +503,9 @@ addresses as an account-level list, verified once and shared by every address.
   `useSettingsPage` when it is next touched (source: M2, consistency).
 - Resend domain verification state (`domains` column) waits for M5, which owns its shape.
 - The send switch is stored but has no effect until M5.
+
+## Next: M3 (inbound mail, auto-forwarding, storage)
+
+See `docs/PLAN.md`, sections 4 and 7. Carry over: a forward-only address always has a target
+(M2 ruling 5); check a mixed-case verified destination against a lowercase target on a real
+account.
