@@ -29,6 +29,13 @@
       "when": 1794754682312,
       "tag": "0003_session_location",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1794756316791,
+      "tag": "0004_domains",
+      "breakpoints": true
     }
   ]
 }

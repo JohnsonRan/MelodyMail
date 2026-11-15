@@ -5,7 +5,19 @@ import { afterEach, beforeEach, vi } from "vitest";
 await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 
 // Storage lives as long as the test file, so each test starts from empty tables.
-const TABLES = ["owner", "passkeys", "sessions", "auth_challenges", "login_attempts", "audit_log"];
+// Children before parents: D1 enforces foreign keys.
+const TABLES = [
+  "address_forwards",
+  "addresses",
+  "forward_targets",
+  "domains",
+  "owner",
+  "passkeys",
+  "sessions",
+  "auth_challenges",
+  "login_attempts",
+  "audit_log",
+];
 beforeEach(async () => {
   await env.DB.batch(TABLES.map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
   // No test may reach a real upstream (AGENTS.md, hard limits). Tests that need an outbound
