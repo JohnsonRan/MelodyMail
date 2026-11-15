@@ -438,9 +438,10 @@ addresses as an account-level list, verified once and shared by every address.
    none is missing, anything else is different (`4a14924`, `83bd958`).
 5. A forward-only address never loses its last target: `DELETE /forward-targets/:id?detach=1`
    switches each forward-only address whose last target it was to store and forward in the same
-   batch, and address create and update run the same correction in their batch. The 409 that
-   asks for `?detach=1` lists the addresses, and the web confirmation names them and the ones
-   that start keeping a copy (`0a01fdb`).
+   batch, and address create and update run the same correction in their batch. The web
+   confirmation names the addresses using the target and the ones that start keeping a copy
+   (`0a01fdb`). The 409 that asks for `?detach=1` first listed the addresses too; no caller
+   read the list, so the re-review had it dropped (`67a7897`).
 
 ### Verified after the review and the rulings
 
@@ -448,17 +449,30 @@ addresses as an account-level list, verified once and shared by every address.
 - Red before, green after: "lets a forward-only address left without targets be edited"
   (review item 2, `expected 400 to be 200` before `bcc40dd`); "switches a forward-only address
   that loses its last target to store and forward", "lets a forward-only address without
-  targets from before the ruling be edited" and the 409 address list (3 tests red with the
-  `worker/src/addresses` changes of `0a01fdb` stashed).
+  targets from before the ruling be edited" (red with the `worker/src/addresses` changes of
+  `0a01fdb` stashed).
 - Ablation of the new hunks (14): PATCH check only when changing forwarding (3 hunks), forced
   delete step-up and its condition, the DKIM name, missing rule, key rule and version tag, the
-  detach switch and its last-target condition, the PATCH correction, the 409 address list: 13
-  red. The version tag first survived and got a test (`83bd958`). Survivor: the correction in
-  the create batch. It covers a target removed between the target check and the batch; the
-  parallel test (20 pairs per run) always saw the detach first, so the window was never hit.
-  By reading, without it that window could still create a forward-only address with no link.
+  detach switch and its last-target condition, the PATCH correction, the create correction: all
+  red now, no survivor. The version tag first survived and got a test (`83bd958`). The create
+  correction first survived because the parallel test (20 pairs per run) never reached the window
+  between the target check and the batch; re-review item 1 replaced that loop with a
+  deterministic test (`c145984`): a temporary trigger deletes the target right after the address
+  row is written, and the address must come back `{ forwardOnly: false, targetIds: [] }`. Red
+  with the correction removed, green with it (`bun ablate-m2b.ts create-keeps-targeted`).
 - `bun run check` green at every commit; `bun run check:requirements` green with the widths
   row filled and its "Not yet enforced" row removed.
+- Merge gate at `c145984`, 3 runs: 7.91 s, 7.86 s, 8.18 s wall (CPU load 51%, 3%, 3% before each
+  run); worker suite vitest Duration 4.83 s, 4.82 s, 4.97 s. Limits 10 s and 6 s. Slower than the
+  6.3-6.7 s / 3.85 s measured at `fea4c99` on the same host; not investigated (the step-up and
+  ruling tests add setups and Passkey assertions).
+
+### Re-review of ee668b6 ("PASS", two Lows)
+
+1. The 20-pair parallel test never reached the race window: replaced by the trigger test
+   (`c145984`), see the ablation line above.
+2. The 409 `target_in_use` carried an address list no caller read, built outside `fail()`:
+   dropped with its query and test assertion (`67a7897`).
 
 ### Review of fea4c99 ("FIX FIRST")
 
@@ -470,7 +484,7 @@ addresses as an account-level list, verified once and shared by every address.
    (`bcc40dd`). Test "lets a forward-only address left without targets be edited": before
    `expected 400 to be 200`, after green (`bun --bun vitest run test/forward-targets.spec.ts`).
 3. Hypothesis: a create with targetIds racing a detach leaves a state no serial order gives.
-   Not reproduced: test "ends a create racing a detach in a state some serial order gives"
+   Not reproduced (that test was later replaced, see the re-review): test "ends a create racing a detach in a state some serial order gives"
    (`db5336d`) ran 20 pairs per run, 3 instrumented runs and 5 plain runs; every pair ended
    with the detach first and the create refused (`unknown_target`). By reading: a create that
    passes its target check before the detach and writes after it ends with the address
