@@ -11,5 +11,7 @@ declare namespace Cloudflare {
     AUTH_LIMITER: RateLimit;
     /** Worker secret for first-run setup; setup is refused while it is unset or too short. */
     SETUP_TOKEN?: string;
+    /** DNS-over-HTTPS JSON API used by the domain DNS check. */
+    DOH_URL: string;
   }
 }

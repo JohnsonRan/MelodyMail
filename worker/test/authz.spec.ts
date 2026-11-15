@@ -26,6 +26,12 @@ const GUARDED = [
   "POST /api/auth/reauth/options",
   "POST /api/auth/reauth/verify",
   "POST /api/auth/recovery-key",
+  "GET /api/domains",
+  "POST /api/domains",
+  "PATCH /api/domains/:name",
+  "DELETE /api/domains/:name",
+  "GET /api/domains/:name/dns",
+  "POST /api/domains/:name/dns/check",
 ];
 
 describe("authorization", () => {

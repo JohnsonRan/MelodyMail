@@ -17,6 +17,8 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "melodymail", "migrations_dir": "migrations" }
   ],
+  // DNS-over-HTTPS JSON endpoint for the domain DNS check (Settings > Domains).
+  "vars": { "DOH_URL": "https://cloudflare-dns.com/dns-query" },
   // Abuse guard only: counts are approximate and per location. The strict recovery lockout is
   // counted in D1 (login_attempts). namespace_id is chosen here, not issued by an account.
   "ratelimits": [
