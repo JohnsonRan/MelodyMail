@@ -9,6 +9,8 @@ export type Session = {
   page: Page;
   /** Remote URLs the page (or any frame in it) tried to load. */
   remote: string[];
+  /** The subset of `remote` that a child frame (the mail frame) asked for. */
+  remoteFromFrames: string[];
   /** Popups and new tabs the page opened. */
   popups: Page[];
 };
@@ -32,16 +34,18 @@ export async function shutdown(): Promise<void> {
 export async function openSession(origin: string, path = "/"): Promise<Session> {
   const page = await (await sharedContext()).newPage();
   const remote: string[] = [];
+  const remoteFromFrames: string[] = [];
   const popups: Page[] = [];
   await page.route("**/*", (route) => {
     const url = route.request().url();
     if (url.startsWith(origin)) return route.continue();
     remote.push(url);
+    if (route.request().frame() !== page.mainFrame()) remoteFromFrames.push(url);
     return route.abort();
   });
   page.on("popup", (p) => popups.push(p));
   await page.goto(`${origin}${path}`);
-  return { page, remote, popups };
+  return { page, remote, remoteFromFrames, popups };
 }
 
 /** Builds a browser bundle of one entry for the test server. */

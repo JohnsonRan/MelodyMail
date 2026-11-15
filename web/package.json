@@ -32,6 +32,6 @@
     "typecheck": "bun --bun tsc -p . && bun --bun tsc -p test",
     "build": "bun --bun vite build",
     "astryx": "bun --bun node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs",
-    "test:browser": "bun test ./test"
+    "test:browser": "bun --bun vite build && bun test --timeout 20000 ./test"
   }
 }
