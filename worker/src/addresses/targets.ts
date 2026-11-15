@@ -71,8 +71,7 @@ export function registerTargetRoutes(targets: Hono<AppEnv>): void {
     return c.json({ target: { ...row, addressCount: 0 } }, 201);
   });
 
-  // Refused while addresses use the target, unless ?detach=1 (the UI confirms first); the 409
-  // names those addresses. One statement decides; the links go with the target (cascade). In the
+  // Refused while addresses use the target, unless ?detach=1 (the UI confirms first). One statement decides; the links go with the target (cascade). In the
   // same batch, a forward-only address losing its last target goes back to store and forward.
   targets.delete("/:id", async (c) => {
     const id = parseId(c.req.param("id"));
@@ -101,13 +100,6 @@ export function registerTargetRoutes(targets: Hono<AppEnv>): void {
       .prepare("SELECT 1 AS one FROM forward_targets WHERE id = ?")
       .bind(id)
       .first();
-    if (!exists) return fail(c, 404, "not_found");
-    const { results } = await db
-      .prepare(
-        "SELECT a.local_part || '@' || a.domain AS address FROM addresses a JOIN address_forwards f ON f.address_id = a.id WHERE f.target_id = ? ORDER BY a.domain, a.local_part",
-      )
-      .bind(id)
-      .all<{ address: string }>();
-    return c.json({ error: "target_in_use", addresses: results.map((r) => r.address) }, 409);
+    return exists ? fail(c, 409, "target_in_use") : fail(c, 404, "not_found");
   });
 }

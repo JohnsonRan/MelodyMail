@@ -74,10 +74,7 @@ describe("forwarding targets", () => {
     expect(list[0]?.addressCount).toBe(1);
 
     const path = `/api/forward-targets/${target.id}`;
-    expect(await client.json("DELETE", path, undefined, 409)).toEqual({
-      error: "target_in_use",
-      addresses: ["shop@example.com"],
-    });
+    expect(await client.json("DELETE", path, undefined, 409)).toEqual({ error: "target_in_use" });
     expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM address_forwards").first("n")).toBe(1);
 
     expect(await client.json("DELETE", `${path}?detach=1`)).toEqual({ ok: true });
