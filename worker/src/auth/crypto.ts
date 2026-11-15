@@ -4,17 +4,6 @@ export function randomBytes(length: number): Uint8Array<ArrayBuffer> {
   return crypto.getRandomValues(new Uint8Array(length));
 }
 
-export function base64url(bytes: Uint8Array): string {
-  let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
-}
-
-export function base64urlDecode(value: string): Uint8Array<ArrayBuffer> {
-  const binary = atob(value.replaceAll("-", "+").replaceAll("_", "/"));
-  return Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
-}
-
 export async function sha256Hex(value: string): Promise<string> {
   const digest = new Uint8Array(
     await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),

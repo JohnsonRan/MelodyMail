@@ -1,7 +1,7 @@
+import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import type { Context } from "hono";
 import type { AppEnv } from "../env";
 import { clientInfo, str } from "../http";
-import { base64url } from "./crypto";
 
 // Writes shared by the public auth routes and the signed-in account routes.
 
@@ -9,7 +9,7 @@ type Ctx = Context<AppEnv>;
 
 export type NewPasskey = {
   id: string;
-  publicKey: Uint8Array;
+  publicKey: Uint8Array<ArrayBuffer>;
   counter: number;
   transports?: string[];
 };
@@ -26,7 +26,7 @@ export function passkeyInsert(c: Ctx, credential: NewPasskey, label: string, now
     "INSERT INTO passkeys (id, public_key, counter, transports, label, created_at) VALUES (?, ?, ?, ?, ?, ?)",
   ).bind(
     credential.id,
-    base64url(credential.publicKey),
+    isoBase64URL.fromBuffer(credential.publicKey),
     credential.counter,
     JSON.stringify(credential.transports ?? []),
     label,

@@ -10,7 +10,8 @@ import {
   generateAuthenticationOptions,
   verifyAuthenticationResponse,
 } from "@simplewebauthn/server";
-import { base32Encode, base64urlDecode, randomBytes } from "../src/auth/crypto";
+import { isoBase64URL } from "@simplewebauthn/server/helpers";
+import { base32Encode, randomBytes } from "../src/auth/crypto";
 import { hotp, totpStep, verifyTotp } from "../src/auth/totp";
 import { ORIGIN, SoftAuthenticator } from "../test/soft-authenticator";
 
@@ -32,7 +33,7 @@ async function passkeySamples(): Promise<number[]> {
   const { decodeAttestationObject, parseAuthenticatorData } = await import(
     "@simplewebauthn/server/helpers"
   );
-  const authData = decodeAttestationObject(base64urlDecode(attestation)).get("authData");
+  const authData = decodeAttestationObject(isoBase64URL.toBuffer(attestation)).get("authData");
   const publicKey = parseAuthenticatorData(authData).credentialPublicKey;
   if (!publicKey) throw new Error("no public key in the software registration");
 

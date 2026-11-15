@@ -1,7 +1,8 @@
+import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { AppEnv } from "../env";
-import { base64url, randomBytes } from "./crypto";
+import { randomBytes } from "./crypto";
 
 export type Purpose = "setup" | "login" | "add-passkey";
 
@@ -23,7 +24,7 @@ export async function saveChallenge(
   now: number,
   totpSecret: string | null = null,
 ): Promise<void> {
-  const id = base64url(randomBytes(16));
+  const id = isoBase64URL.fromBuffer(randomBytes(16));
   const db = c.env.DB;
   await db.batch([
     db.prepare("DELETE FROM auth_challenges WHERE expires_at <= ?").bind(now),

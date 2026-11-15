@@ -1,5 +1,4 @@
-import { isoCBOR } from "@simplewebauthn/server/helpers";
-import { base64url, base64urlDecode } from "../src/auth/crypto";
+import { isoBase64URL, isoCBOR } from "@simplewebauthn/server/helpers";
 
 // No cloudflare:* imports here, so the Bun benchmark can use this module too.
 
@@ -9,7 +8,7 @@ type Json = Record<string, unknown>;
 
 /** A software Passkey: an ES256 key pair in Web Crypto with attestation format "none". */
 export class SoftAuthenticator {
-  readonly credentialId = base64url(crypto.getRandomValues(new Uint8Array(16)));
+  readonly credentialId = isoBase64URL.fromBuffer(crypto.getRandomValues(new Uint8Array(16)));
   counter = 0;
   private keys!: CryptoKeyPair;
 
@@ -32,11 +31,11 @@ export class SoftAuthenticator {
         [1, 2],
         [3, -7],
         [-1, 1],
-        [-2, base64urlDecode(jwk.x ?? "")],
-        [-3, base64urlDecode(jwk.y ?? "")],
+        [-2, isoBase64URL.toBuffer(jwk.x ?? "")],
+        [-3, isoBase64URL.toBuffer(jwk.y ?? "")],
       ]),
     );
-    const credentialId = base64urlDecode(this.credentialId);
+    const credentialId = isoBase64URL.toBuffer(this.credentialId);
     const authData = concat(
       await sha256(new TextEncoder().encode(rpId)),
       new Uint8Array([0x45]), // UP | UV | AT
@@ -59,7 +58,7 @@ export class SoftAuthenticator {
       type: "public-key",
       response: {
         clientDataJSON: clientData("webauthn.create", options.challenge as string, origin),
-        attestationObject: base64url(attestationObject),
+        attestationObject: isoBase64URL.fromBuffer(attestationObject),
         transports: ["internal"],
       },
       clientExtensionResults: {},
@@ -74,7 +73,7 @@ export class SoftAuthenticator {
       new Uint8Array([0x05]), // UP | UV
       uint32(this.counter),
     );
-    const signed = concat(authData, await sha256(base64urlDecode(clientDataJSON)));
+    const signed = concat(authData, await sha256(isoBase64URL.toBuffer(clientDataJSON)));
     const raw = new Uint8Array(
       await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, this.keys.privateKey, signed),
     );
@@ -84,9 +83,11 @@ export class SoftAuthenticator {
       type: "public-key",
       response: {
         clientDataJSON,
-        authenticatorData: base64url(authData),
-        signature: base64url(derSignature(raw)),
-        userHandle: base64url(new TextEncoder().encode("melodymail-owner")),
+        authenticatorData: isoBase64URL.fromBuffer(authData),
+        signature: isoBase64URL.fromBuffer(derSignature(raw)),
+        userHandle: isoBase64URL.fromBuffer(
+          new Uint8Array(new TextEncoder().encode("melodymail-owner")),
+        ),
       },
       clientExtensionResults: {},
     };
@@ -94,7 +95,8 @@ export class SoftAuthenticator {
 }
 
 function clientData(type: string, challenge: string, origin: string): string {
-  return base64url(new TextEncoder().encode(JSON.stringify({ type, challenge, origin })));
+  const json = JSON.stringify({ type, challenge, origin });
+  return isoBase64URL.fromBuffer(new Uint8Array(new TextEncoder().encode(json)));
 }
 
 async function sha256(data: Uint8Array): Promise<Uint8Array<ArrayBuffer>> {
@@ -118,7 +120,7 @@ function concat(...parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
 }
 
 /** Web Crypto returns r || s; WebAuthn ES256 signatures are DER sequences. */
-function derSignature(raw: Uint8Array): Uint8Array {
+function derSignature(raw: Uint8Array): Uint8Array<ArrayBuffer> {
   const integer = (bytes: Uint8Array) => {
     let start = 0;
     while (start < bytes.length - 1 && bytes[start] === 0) start++;

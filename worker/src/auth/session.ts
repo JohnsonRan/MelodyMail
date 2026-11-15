@@ -1,8 +1,9 @@
+import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { AppEnv } from "../env";
 import { clientInfo } from "../http";
-import { base64url, randomBytes, sha256Hex } from "./crypto";
+import { randomBytes, sha256Hex } from "./crypto";
 
 const SESSION_COOKIE = "mm_session";
 const HOUR = 3_600_000;
@@ -17,7 +18,7 @@ const COOKIE_OPTIONS = { httpOnly: true, secure: true, sameSite: "Strict", path:
  * authenticated the owner, and sets the cookie only after that batch succeeded.
  */
 export async function startSession(c: Context<AppEnv>, now: number) {
-  const token = base64url(randomBytes(32));
+  const token = isoBase64URL.fromBuffer(randomBytes(32));
   const insert = c.env.DB.prepare(
     "INSERT INTO sessions (id, created_at, expires_at, last_seen_at, user_agent) VALUES (?, ?, ?, ?, ?)",
   ).bind(await sha256Hex(token), now, now + SESSION_LIFETIME_MS, now, clientInfo(c).userAgent);

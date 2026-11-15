@@ -7,10 +7,10 @@ import {
   verifyRegistrationResponse,
   type WebAuthnCredential,
 } from "@simplewebauthn/server";
+import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import type { Context } from "hono";
 import type { AppEnv } from "../env";
 import { log } from "../http";
-import { base64urlDecode } from "./crypto";
 
 // One owner, so one stable user handle: an authenticator then treats every Passkey it holds for
 // this site as the same account.
@@ -85,7 +85,7 @@ export async function verifyAuthentication(
       expectedRPID: rpID,
       credential: {
         id: passkey.id,
-        publicKey: base64urlDecode(passkey.publicKey),
+        publicKey: isoBase64URL.toBuffer(passkey.publicKey),
         counter: passkey.counter,
         transports: JSON.parse(passkey.transports),
       },
