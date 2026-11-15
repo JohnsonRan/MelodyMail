@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
+import { REAUTH_MS } from "../src/auth/session";
 import { type Client, setupOwner } from "./helpers";
 
 type Json = Record<string, unknown>;
@@ -107,6 +108,34 @@ describe("domains", () => {
       event: "domain_removed",
       detail: "example.com (1 addresses)",
     });
+  });
+
+  it("needs step-up re-authentication only for a forced delete", async () => {
+    const { client, authenticator } = await setupOwner();
+    await client.json("POST", "/api/domains", { name: "example.com" }, 201);
+    await client.json("POST", "/api/domains", { name: "example.org" }, 201);
+    await env.DB.prepare(
+      "INSERT INTO addresses (local_part, domain, created_at) VALUES ('shop', 'example.com', ?)",
+    )
+      .bind(Date.now())
+      .run();
+    await env.DB.prepare("UPDATE sessions SET reauth_at = ?")
+      .bind(Date.now() - REAUTH_MS - 1)
+      .run();
+    const forced = "/api/domains/example.com?deleteAddresses=1";
+    expect(await client.json("DELETE", forced, undefined, 403)).toEqual({
+      error: "reauth_required",
+    });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM addresses").first("n")).toBe(1);
+    // An empty domain is removed without it.
+    expect(await client.json("DELETE", "/api/domains/example.org")).toEqual({
+      ok: true,
+      deletedAddresses: 0,
+    });
+    const start = await client.json("POST", "/api/auth/reauth/options", {});
+    const credential = await authenticator.authenticate(start.options as Json);
+    await client.json("POST", "/api/auth/reauth/verify", { credential });
+    expect(await client.json("DELETE", forced)).toEqual({ ok: true, deletedAddresses: 1 });
   });
 
   it("removes an unused domain and answers 404 for an unknown one", async () => {

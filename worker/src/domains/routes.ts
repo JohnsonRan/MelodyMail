@@ -1,4 +1,5 @@
 import type { Context, Hono } from "hono";
+import { hasFreshAuth } from "../auth/session";
 import { audit } from "../auth/store";
 import type { AppEnv } from "../env";
 import { fail, readJson } from "../http";
@@ -79,13 +80,15 @@ export function registerDomainRoutes(domains: Hono<AppEnv>): void {
   });
 
   // Refused while addresses use the domain, unless ?deleteAddresses=1 asks to delete them too
-  // (the UI confirms first; it cannot be undone).
+  // (the UI confirms first; it cannot be undone). That forced delete also needs step-up
+  // re-authentication (owner ruling 2026-11-16); a plain delete does not.
   domains.delete("/:name", async (c) => {
     const domain = await findDomain(c);
     if (!domain) return fail(c, 404, "not_found");
     const db = c.env.DB;
     const now = Date.now();
     const force = c.req.query("deleteAddresses") === "1";
+    if (force && !hasFreshAuth(c)) return fail(c, 403, "reauth_required");
     // One statement decides, so an address added concurrently is never orphaned; the foreign
     // key refuses it as well.
     const removeDomain = db

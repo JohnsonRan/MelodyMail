@@ -14,6 +14,7 @@ import { api } from "../api";
 import { DataTable, TableSkeleton, Value } from "../components/DataTable";
 import { FormDialog } from "../components/FormDialog";
 import { PageFrame } from "../components/PageFrame";
+import { withReauth } from "../passkeys";
 import { type Domain, useSettingsPage } from "../settings";
 
 const path = (name: string) => `/domains/${encodeURIComponent(name)}`;
@@ -46,7 +47,8 @@ export function DomainsPage() {
   const onRemove = (domain: Domain) =>
     act("remove", async () => {
       const force = domain.addressCount > 0 ? "?deleteAddresses=1" : "";
-      await api("DELETE", `${path(domain.name)}${force}`);
+      // Deleting the addresses as well needs a recent Passkey; withReauth asks and retries.
+      await withReauth(() => api("DELETE", `${path(domain.name)}${force}`));
       toast({ body: t("domains.removed") });
       setRemoving(null);
       await reload();
