@@ -74,6 +74,9 @@ export function parseFlag(value: unknown): Parsed<boolean | undefined> {
 /** A switch for SQL: undefined leaves the column as it is (COALESCE). */
 export const asInt = (flag: boolean | undefined) => (flag === undefined ? null : Number(flag));
 
+/** Longest note on an address or a forwarding target. */
+export const NOTE_MAX = 200;
+
 const MAX_TARGETS_PER_ADDRESS = 50;
 
 /** Optional list of forwarding target ids, deduplicated. */

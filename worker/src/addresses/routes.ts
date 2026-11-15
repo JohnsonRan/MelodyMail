@@ -2,6 +2,7 @@ import type { Hono } from "hono";
 import { audit } from "../auth/store";
 import {
   asInt,
+  NOTE_MAX,
   type Parsed,
   parseDomain,
   parseFlag,
@@ -38,7 +39,6 @@ const toAddress = (r: AddressRow) => ({
   targetIds: (JSON.parse(r.targetIds) as number[]).sort((x, y) => x - y),
 });
 
-const NOTE_MAX = 200;
 const DISPLAY_NAME_MAX = 100;
 
 type Fields = {

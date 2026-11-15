@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
 import { audit } from "../auth/store";
-import { parseEmail, parseId, parseText } from "../domains/validate";
+import { NOTE_MAX, parseEmail, parseId, parseText } from "../domains/validate";
 import type { AppEnv } from "../env";
 import { fail, readJson } from "../http";
 
@@ -24,8 +24,6 @@ export async function unknownTargets(db: D1Database, ids: number[]): Promise<boo
     .first<number>("n");
   return n !== ids.length;
 }
-
-const NOTE_MAX = 200;
 
 /**
  * Settings > Forwarding. Each target must be a verified destination address in the Cloudflare
