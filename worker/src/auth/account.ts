@@ -14,7 +14,7 @@ import {
 
 /**
  * Routes for the signed-in owner. None is public; the session middleware guards them all.
- * Sensitive actions also pass requireFreshAuth (a Passkey assertion in the last 5 minutes).
+ * Sensitive actions also pass requireFreshAuth (see its comment for what counts as fresh).
  * Adding a Passkey is guarded at /passkeys/options.
  */
 export function registerAccountRoutes(auth: Hono<AppEnv>): void {

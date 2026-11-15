@@ -58,6 +58,9 @@ is on branch `m1-auth`; it merges only after the owner reviews it. Not pushed; n
   is added on that session, or at most 30 minutes after the recovery, whichever comes first.
   Setup and sign-in sessions keep the 5-minute window (`sessions.recovery_fresh_until`,
   migration 0002, `26082c2`; copy says 30 minutes, `1cd4169`). Was open question 1.
+- G. Owner request: the session list shows each session's IP address and location from ip.sb,
+  looked up after the response with a `request.cf` fallback (migration 0003, `a7f07cd`, web
+  `721c00a`). The owner's IP is sent to ip.sb.
 
 ### Done
 
@@ -215,3 +218,26 @@ for a different model family. Deferred under the Low rule:
 
 Still unverified: the Rate Limiting binding's per-location counting in production (needs a deploy),
 and every signed-in page in a real browser with a real authenticator.
+
+### Owner walkthrough (2026-11-15, real Chrome, real Passkey)
+
+Setup and sign-in worked end to end. Fixes from the walkthrough:
+
+1. Passkey and session rows cut the dates with an ellipsis. Row descriptions now go through
+   `Meta`, one fact per line, never truncated (`7ffafc0`). Labels (Passkey name, browser and
+   system) stay one line; they are short.
+2. The app bar envelope filled and overflowed its NavIcon badge; it is now a sized `Icon`
+   (`18750cf`). The sign-in card uses a plain `Icon` without a badge and was not affected.
+3. Session IP and location (ruling G): worker `a7f07cd`, web `721c00a`. Tests in
+   `worker/test/geo.spec.ts`: IP stored; ip.sb answer stored after the response; an ip.sb error
+   falls back to `request.cf`; loopback, private and IPv6 loopback skip the lookup; sign-in
+   succeeds when ip.sb throws; setup and recovery sessions are located; the list returns the
+   fields; a non-IP header is ignored. Ablation: 11 hunks (IP stored, local marked, local skips
+   the lookup, ip.sb field mapping, ip.sb status check, cf fallback, each of the three call sites,
+   IP validation, list fields), all red. The test setup now rejects every outbound fetch by
+   default, so no test can reach ip.sb or any other upstream. 102 worker tests.
+4. Deferred item 1 of the final review is done: the `account.ts` header now points at
+   `requireFreshAuth` instead of naming 5 minutes.
+
+Not verified: a real ip.sb answer (only mocked; tests never reach it) and `request.cf` values in
+production. In `wrangler dev` the client IP is loopback, so no lookup runs.

@@ -62,6 +62,16 @@ Errors use one shape: `{ error: "<code>" }` with codes such as `unauthorized`,
   stays fresh until the first Passkey is added on it, at most 30 minutes after the recovery
   (`sessions.recovery_fresh_until`, owner ruling 2026-11-15), so an owner without Passkeys can
   register one.
+- Session location (owner request 2026-11-15): setup, sign-in and recovery store
+  `cf-connecting-ip` on the session (`ip`, when it parses as an IP address). For a public address
+  the Worker then asks `https://api.ip.sb/geoip/<ip>` inside `waitUntil`, after the response, with
+  a 2-second timeout, and stores country, region, city and provider in one UPDATE (`geo_source`
+  `ip.sb`). On any failure it stores `request.cf` (country, region, city, `asOrganization`;
+  `geo_source` `cf`) and logs a warning without the IP. Loopback, private, link-local and CGNAT
+  addresses get `geo_source` `local` and no lookup. The lookup never changes the sign-in result.
+  Third-party call: the owner's IP address is sent to ip.sb. `GET /sessions` returns these
+  fields; Settings > Security shows the IP and "city, region, country · provider", or "this device
+  or local network".
 
 ## CSRF and origin
 
@@ -102,10 +112,10 @@ Errors use one shape: `{ error: "<code>" }` with codes such as `unauthorized`,
 `login_attempts`, `audit_log` (event, created_at, ip, user agent; never a secret). Use Drizzle for
 the schema and `drizzle-kit generate` for the SQL migrations in `worker/migrations/` (the Worker
 queries D1 with prepared SQL; `drizzle-orm` is a dev dependency); `0001` adds `sessions.reauth_at`
-and `0002` adds `sessions.recovery_fresh_until`; apply them in tests with `readD1Migrations` /
-`applyD1Migrations` from `@cloudflare/vitest-plugin`. Add the D1 binding `DB` to `wrangler.jsonc`
-without an id (wrangler provisions it on first deploy). If drizzle-kit does not run under `bun
---bun`, stop and record it; do not fall back to Node.
+and `0002` adds `sessions.recovery_fresh_until`; `0003` adds the session location columns; apply
+them in tests with `readD1Migrations` / `applyD1Migrations` from `@cloudflare/vitest-plugin`. Add
+the D1 binding `DB` to `wrangler.jsonc` without an id (wrangler provisions it on first deploy). If
+drizzle-kit does not run under `bun --bun`, stop and record it; do not fall back to Node.
 
 ## Libraries
 
