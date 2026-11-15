@@ -19,7 +19,6 @@ async function reauth(client: Client, authenticator: SoftAuthenticator, origin?:
 // Each sensitive action, with the status it answers once re-authentication is fresh.
 const ACTIONS: [name: string, method: string, path: string, freshStatus: number][] = [
   ["start adding a Passkey", "POST", "/api/auth/passkeys/options", 200],
-  ["finish adding a Passkey", "POST", "/api/auth/passkeys/verify", 401],
   ["delete a Passkey", "DELETE", "/api/auth/passkeys/unknown", 404],
   ["sign out other sessions", "DELETE", "/api/auth/sessions/others", 200],
   ["regenerate the recovery key", "POST", "/api/auth/recovery-key", 200],
@@ -83,6 +82,22 @@ describe("step-up re-authentication", () => {
     await setReauthAt(stale);
     expect((await reauth(owner.client, owner.authenticator)).status).toBe(200);
     expect((await other.client.request("POST", "/api/auth/recovery-key", {})).status).toBe(403);
+  });
+
+  it("add-passkey survives a step-up between options and verify", async () => {
+    const { client, authenticator } = await setupOwner();
+    const second = await SoftAuthenticator.create();
+    const start = await client.json("POST", "/api/auth/passkeys/options", {});
+    const credential = await second.register(start.options as Json);
+    // The 5-minute window lapses while the owner is at the authenticator prompt.
+    await setReauthAt(Date.now() - REAUTH_MS - 1);
+    // What the web app does: on reauth_required, re-authenticate and retry.
+    let res = await client.request("POST", "/api/auth/passkeys/verify", { credential });
+    if (res.status === 403) {
+      expect((await reauth(client, authenticator)).status).toBe(200);
+      res = await client.request("POST", "/api/auth/passkeys/verify", { credential });
+    }
+    expect(res.status, `retry ${res.status} ${await res.clone().text()}`).toBe(200);
   });
 });
 

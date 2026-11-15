@@ -42,7 +42,8 @@ export async function addPasskey(label: string): Promise<void> {
     api<Options<PublicKeyCredentialCreationOptionsJSON>>("POST", "/auth/passkeys/options", {}),
   );
   const credential = await startRegistration({ optionsJSON: options });
-  await withReauth(() => api("POST", "/auth/passkeys/verify", { credential, label }));
+  // Not wrapped: the server guards adding at options; verify only needs that options challenge.
+  await api("POST", "/auth/passkeys/verify", { credential, label });
 }
 
 /** Groups a code into blocks of four so it wraps only between blocks. */

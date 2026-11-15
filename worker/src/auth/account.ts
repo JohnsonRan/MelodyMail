@@ -15,6 +15,7 @@ import {
 /**
  * Routes for the signed-in owner. None is public; the session middleware guards them all.
  * Sensitive actions also pass requireFreshAuth (a Passkey assertion in the last 5 minutes).
+ * Adding a Passkey is guarded at /passkeys/options.
  */
 export function registerAccountRoutes(auth: Hono<AppEnv>): void {
   auth.post("/reauth/options", async (c) => {
@@ -76,7 +77,11 @@ export function registerAccountRoutes(auth: Hono<AppEnv>): void {
     return c.json({ options });
   });
 
-  auth.post("/passkeys/verify", requireFreshAuth, async (c) => {
+  // No requireFreshAuth here: verify needs the single-use add-passkey challenge, which only a
+  // fresh session can get from /passkeys/options and which expires in 5 minutes. Guarding it as
+  // well broke the flow when the window lapsed at the authenticator prompt, because the
+  // re-authentication challenge replaced the add-passkey one.
+  auth.post("/passkeys/verify", async (c) => {
     const body = await readJson(c);
     if (!body) return fail(c, 400, "bad_request");
     const now = Date.now();

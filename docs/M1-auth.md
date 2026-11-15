@@ -36,7 +36,7 @@ marker described under "Authorization"; everything else needs a valid session.
 | `POST /recover` | yes | body `{ recoveryKey, totpCode }`. Subject to the lockout below. On success: create a session, delete every other session, replace the recovery key with a new one (the old one stops working), return `{ recoveryKey }`. The UI then offers to register a new Passkey. |
 | `POST /logout` | no | Deletes the current session and clears the cookie. |
 | `GET /passkeys` | no | List label, created, last used. |
-| `POST /passkeys/options`, `POST /passkeys/verify` | no | Register another Passkey (purpose `add-passkey`); verify takes an optional `label`. Needs fresh re-authentication. |
+| `POST /passkeys/options`, `POST /passkeys/verify` | no | Register another Passkey (purpose `add-passkey`); verify takes an optional `label`. Options needs fresh re-authentication; verify does not, because it needs the single-use challenge from options (5 minutes). |
 | `DELETE /passkeys/:id` | no | 409 when it is the last Passkey. Needs fresh re-authentication. |
 | `GET /sessions`, `DELETE /sessions/others` | no | List sessions; revoke every session but the current one (needs fresh re-authentication). |
 | `POST /reauth/options`, `POST /reauth/verify` | no | Passkey assertion for the current session (purpose `reauth`); sets `sessions.reauth_at`. |
@@ -56,10 +56,10 @@ internal detail (`worker/AGENTS.md`, Security).
 - Chrome accepts `Secure` cookies on `http://localhost`, so local dev works. Use `localhost`, not
   `127.0.0.1`: browsers reject an IP address as a WebAuthn RP ID.
 - Step-up re-authentication (owner ruling 2026-11-15): `sessions.reauth_at` holds the last Passkey
-  assertion or recovery on the session. Adding or deleting a Passkey, signing out other sessions
-  and regenerating the recovery key need it within the last 5 minutes, else 403
-  `reauth_required`; the web app then runs `/reauth` and retries. A session created by setup,
-  sign-in or recovery starts fresh.
+  assertion or recovery on the session. Adding a Passkey (checked at `/passkeys/options`),
+  deleting a Passkey, signing out other sessions and regenerating the recovery key need it within
+  the last 5 minutes, else 403 `reauth_required`; the web app then runs `/reauth` and retries. A
+  session created by setup, sign-in or recovery starts fresh.
 
 ## CSRF and origin
 
