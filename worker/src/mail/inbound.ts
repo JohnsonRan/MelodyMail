@@ -15,9 +15,9 @@ import { errorText, log } from "../http";
 //    (https://developers.cloudflare.com/email-service/api/route-emails/email-handler/) documents
 //    only setReject() ("a permanent SMTP error"); community reports describe a thrown error as
 //    "521 5.3.0 Upstream error", also permanent. So a storage failure most likely bounces the
-//    message back to the sender rather than being retried. The handler still throws then: the
-//    sender is told, and nothing has been forwarded, so no retry can forward twice. Recorded as
-//    an open question in docs/STATE.md.
+//    message back to the sender rather than being retried. By owner ruling (2026-11-16) an
+//    address with targets then forwards instead (forwardInstead); otherwise the handler throws
+//    and the sender is told. Either way nothing is forwarded twice.
 
 /** Marks a message MelodyMail forwarded, so a forward that comes back is not forwarded again. */
 export const FORWARDED_HEADER = "X-MelodyMail-Forwarded";
@@ -98,6 +98,36 @@ async function forwardAll(
   return failed;
 }
 
+/**
+ * Forwards a message that could not be stored. Returns when at least one forward went out;
+ * rethrows the storage error when none did, so the sender is told. A raw object written before
+ * the D1 failure is named in the audit row for the M7 orphan sweep.
+ */
+async function forwardInstead(
+  env: Env,
+  message: ForwardableEmailMessage,
+  targets: string[],
+  addressId: number,
+  now: number,
+  orphanKey: string | null,
+  storageError: unknown,
+): Promise<void> {
+  const sent = targets.length - (await forwardAll(message, targets, addressId));
+  if (sent === 0) throw storageError;
+  const orphan = orphanKey ? `; orphan ${orphanKey}` : "";
+  try {
+    await auditRow(
+      env.DB,
+      "mail_forwarded_unstored",
+      now,
+      `address ${addressId}: ${sent}/${targets.length}${orphan}`,
+    ).run();
+  } catch (err) {
+    // Throwing now would make a retry forward again.
+    log("error", "mail_audit_failed", { addressId, error: errorText(err) });
+  }
+}
+
 function rawKey(id: string, now: number): string {
   const d = new Date(now);
   const month = String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -134,29 +164,50 @@ export async function handleEmail(message: ForwardableEmailMessage, env: Env): P
     // Every forward failed: keep the message below instead of losing it.
   }
 
-  // Storage. Either step may throw; nothing has been forwarded yet unless every forward failed.
+  // Storage. Nothing has been forwarded yet unless every forward of a forward-only address failed.
   const id = crypto.randomUUID();
   const key = rawKey(id, now);
-  const { readable, writable } = new FixedLengthStream(message.rawSize);
-  await Promise.all([env.MAIL.put(key, readable), message.raw.pipeTo(writable)]);
-  await env.DB.batch([
-    env.DB.prepare(
-      `INSERT INTO messages (id, address_id, direction, status, envelope_from, envelope_to,
-         subaddress_tag, raw_size, r2_key, forward_failed, received_at)
-       VALUES (?, ?, 'in', 'stored', ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      id,
-      address.id,
-      message.from,
-      message.to,
-      recipient.tag,
-      message.rawSize,
-      key,
-      forwardFailed,
-      now,
-    ),
-    env.DB.prepare("UPDATE addresses SET last_received_at = ? WHERE id = ?").bind(now, address.id),
-  ]);
+  let rawStored = false;
+  try {
+    const { readable, writable } = new FixedLengthStream(message.rawSize);
+    await Promise.all([env.MAIL.put(key, readable), message.raw.pipeTo(writable)]);
+    rawStored = true;
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO messages (id, address_id, direction, status, envelope_from, envelope_to,
+           subaddress_tag, raw_size, r2_key, forward_failed, received_at)
+         VALUES (?, ?, 'in', 'stored', ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        id,
+        address.id,
+        message.from,
+        message.to,
+        recipient.tag,
+        message.rawSize,
+        key,
+        forwardFailed,
+        now,
+      ),
+      env.DB.prepare("UPDATE addresses SET last_received_at = ? WHERE id = ?").bind(
+        now,
+        address.id,
+      ),
+    ]);
+  } catch (err) {
+    // Owner ruling (2026-11-16): an address with targets forwards instead of throwing, so the
+    // message still arrives somewhere. Nothing is stored, so no later step forwards again.
+    // Without a target that could still work (none, the loop header, or a forward-only address
+    // whose forwards all failed already) the error is thrown and the sender gets the bounce;
+    // forwardInstead rethrows when no forward goes out.
+    if (address.forwardOnly) throw err;
+    log("warn", "mail_store_failed", {
+      addressId: address.id,
+      messageId: id,
+      error: errorText(err),
+    });
+    await forwardInstead(env, message, targets, address.id, now, rawStored ? key : null, err);
+    return;
+  }
 
   // Forward and keep: the row exists, so nothing below may throw (a retry would forward twice).
   if (!address.forwardOnly && targets.length > 0) {

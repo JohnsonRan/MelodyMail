@@ -5,6 +5,24 @@ import { handleScheduled, requeueStored, STUCK_AFTER_MS } from "../src/mail/cons
 import { FORWARDED_HEADER, handleEmail, parseRecipient } from "../src/mail/inbound";
 import { addAddress, asMessage, inbound, messageRows, r2Keys } from "./mail-helpers";
 
+/** env with an R2 bucket whose writes fail. */
+function r2Down(): Env {
+  return { ...env, MAIL: { put: () => Promise.reject(new Error("R2 down")) } } as unknown as Env;
+}
+
+async function failMessageInsert() {
+  await env.DB.exec(
+    "CREATE TRIGGER fail_message_insert BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT, 'D1 down'); END",
+  );
+}
+
+async function unstoredAudit(): Promise<string[]> {
+  const { results } = await env.DB.prepare(
+    "SELECT detail FROM audit_log WHERE event = 'mail_forwarded_unstored'",
+  ).all<{ detail: string }>();
+  return results.map((r) => r.detail);
+}
+
 async function auditDetails(): Promise<string[]> {
   const { results } = await env.DB.prepare(
     "SELECT detail FROM audit_log WHERE event = 'mail_forwarded'",
@@ -225,26 +243,61 @@ describe("email() failures", () => {
     });
   });
 
-  it("throws before any forward when R2 fails, and stores no row", async () => {
+  it("forwards instead of throwing when R2 fails and the address has targets", async () => {
+    const id = await addAddress("shop", { targets: ["a@dest.example", "b@dest.example"] });
+    const message = inbound("shop@example.com");
+    await expect(handleEmail(asMessage(message), r2Down())).resolves.toBeUndefined();
+    expect(message.forward).toHaveBeenCalledTimes(2);
+    expect(message.forward.mock.calls[0]?.[1]?.get(FORWARDED_HEADER)).toBe("1");
+    expect(await messageRows()).toEqual([]);
+    expect(await unstoredAudit()).toEqual([`address ${id}: 2/2`]);
+  });
+
+  it("forwards instead of throwing when the D1 insert fails, naming the orphan raw object", async () => {
+    const id = await addAddress("shop", { targets: ["a@dest.example"] });
+    await failMessageInsert();
+    const message = inbound("shop@example.com");
+    await expect(handleEmail(asMessage(message), env)).resolves.toBeUndefined();
+    expect(message.forward).toHaveBeenCalledOnce();
+    expect(await messageRows()).toEqual([]);
+    const [orphan] = await r2Keys();
+    expect(orphan?.startsWith("raw/")).toBe(true);
+    expect(await unstoredAudit()).toEqual([`address ${id}: 1/1; orphan ${orphan}`]);
+  });
+
+  it("throws when storage fails and no forward of the fallback goes out", async () => {
     await addAddress("shop", { targets: ["a@dest.example"] });
     const message = inbound("shop@example.com");
-    const failing = { ...env, MAIL: { put: () => Promise.reject(new Error("R2 down")) } };
-    await expect(handleEmail(asMessage(message), failing as unknown as Env)).rejects.toThrow(
+    message.forward.mockRejectedValue(new Error("destination address not verified"));
+    await expect(handleEmail(asMessage(message), r2Down())).rejects.toThrow("R2 down");
+    expect(message.forward).toHaveBeenCalledOnce();
+    expect(await unstoredAudit()).toEqual([]);
+  });
+
+  it("throws before any forward when storage fails and the address has no targets", async () => {
+    await addAddress("shop");
+    await expect(handleEmail(asMessage(inbound("shop@example.com")), r2Down())).rejects.toThrow(
       "R2 down",
     );
-    expect(message.forward).not.toHaveBeenCalled();
+    await failMessageInsert();
+    await expect(handleEmail(asMessage(inbound("shop@example.com")), env)).rejects.toThrow();
     expect(await messageRows()).toEqual([]);
   });
 
-  it("throws before any forward when D1 fails", async () => {
+  it("throws without forwarding when storage fails for a looped message", async () => {
     await addAddress("shop", { targets: ["a@dest.example"] });
-    await env.DB.exec(
-      "CREATE TRIGGER fail_message_insert BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT, 'D1 down'); END",
-    );
-    const message = inbound("shop@example.com");
-    await expect(handleEmail(asMessage(message), env)).rejects.toThrow();
+    const message = inbound("shop@example.com", undefined, { [FORWARDED_HEADER]: "1" });
+    await expect(handleEmail(asMessage(message), r2Down())).rejects.toThrow("R2 down");
     expect(message.forward).not.toHaveBeenCalled();
-    expect(await messageRows()).toEqual([]);
+  });
+
+  it("throws when a forward-only address cannot forward or store, trying each target once", async () => {
+    await addAddress("fwd", { forwardOnly: true, targets: ["a@dest.example", "b@dest.example"] });
+    const message = inbound("fwd@example.com");
+    message.forward.mockRejectedValue(new Error("destination address not verified"));
+    await expect(handleEmail(asMessage(message), r2Down())).rejects.toThrow("R2 down");
+    expect(message.forward).toHaveBeenCalledTimes(2);
+    expect(await unstoredAudit()).toEqual([]);
   });
 
   it("leaves the row stored when the queue send fails, and the cron step re-enqueues it", async () => {
