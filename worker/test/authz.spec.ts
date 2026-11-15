@@ -32,6 +32,13 @@ const GUARDED = [
   "DELETE /api/domains/:name",
   "GET /api/domains/:name/dns",
   "POST /api/domains/:name/dns/check",
+  "GET /api/addresses",
+  "POST /api/addresses",
+  "PATCH /api/addresses/:id",
+  "DELETE /api/addresses/:id",
+  "GET /api/forward-targets",
+  "POST /api/forward-targets",
+  "DELETE /api/forward-targets/:id",
 ];
 
 describe("authorization", () => {
