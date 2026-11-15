@@ -43,7 +43,11 @@ describe("DNS check", () => {
   it("reports every record found", async () => {
     const client = await ownerWithDomain();
     const fetch = mockDoh({
-      "example.com MX": { Status: 0, Answer: mx(CF_MX) },
+      // A resolver may put a CNAME in the answer before the records asked for.
+      "example.com MX": {
+        Status: 0,
+        Answer: [{ type: 5, data: "alias.example.net." }, ...mx(CF_MX)],
+      },
       "example.com TXT": {
         Status: 0,
         Answer: txt(
@@ -100,6 +104,11 @@ describe("DNS check", () => {
     expect(await client.json("POST", path, {}, 502)).toEqual({ error: "dns_check_failed" });
 
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("busy", { status: 503 }));
+    expect(await client.json("POST", path, {}, 502)).toEqual({ error: "dns_check_failed" });
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({ Status: 0 }, { status: 500 }),
+    );
     expect(await client.json("POST", path, {}, 502)).toEqual({ error: "dns_check_failed" });
 
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ Status: 2 }));

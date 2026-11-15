@@ -119,6 +119,9 @@ describe("addresses", () => {
     expect(await post({ localPart: "a", domain: "example.net" })).toEqual({
       error: "unknown_domain",
     });
+    expect(await post({ localPart: "a", domain: "not a domain" })).toEqual({
+      error: "invalid_domain",
+    });
     expect(await post({ localPart: "a", domain: "example.com", targetIds: [999] })).toEqual({
       error: "unknown_target",
     });
@@ -177,6 +180,13 @@ describe("addresses", () => {
     });
     const cleared = await client.json("PATCH", path, { forwardOnly: false, targetIds: [] });
     expect(cleared.address).toMatchObject({ forwardOnly: false, targetIds: [] });
+    expect(await client.json("PATCH", path, { note: "n".repeat(201) }, 400)).toEqual({
+      error: "invalid_note",
+    });
+    // Only a plain positive integer names an address.
+    expect(await client.json("PATCH", `${path}.0`, { enabled: false }, 404)).toEqual({
+      error: "not_found",
+    });
     expect(await client.json("PATCH", "/api/addresses/999", {}, 404)).toEqual({
       error: "not_found",
     });

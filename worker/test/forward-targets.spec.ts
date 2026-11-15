@@ -95,6 +95,9 @@ describe("forwarding targets", () => {
     const target = (
       await client.json("POST", "/api/forward-targets", { email: "me@out.test" }, 201)
     ).target as { id: number };
+    expect(
+      await client.json("DELETE", `/api/forward-targets/${target.id}.0`, undefined, 404),
+    ).toEqual({ error: "not_found" });
     expect(await client.json("DELETE", `/api/forward-targets/${target.id}`)).toEqual({ ok: true });
     expect(
       await client.json("DELETE", `/api/forward-targets/${target.id}`, undefined, 404),
