@@ -1,5 +1,7 @@
 import { AppShell } from "@astryxdesign/core/AppShell";
+import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { Icon } from "@astryxdesign/core/Icon";
 import { InternationalizationProvider } from "@astryxdesign/core/i18n";
 import jaJP from "@astryxdesign/core/locales/ja-JP.generated.js";
 import zhCN from "@astryxdesign/core/locales/zh-CN.generated.js";
@@ -100,12 +102,14 @@ export function App({ initialLocale }: { initialLocale: Locale }) {
             </SideNav>
           }
         >
-          <EmptyState
-            headingLevel={1}
-            icon={<InboxIcon />}
-            title={t("inbox.emptyTitle")}
-            description={t("inbox.emptyDescription")}
-          />
+          <Center height="100%">
+            <EmptyState
+              headingLevel={1}
+              icon={<Icon icon={InboxIcon} size="lg" color="secondary" />}
+              title={t("inbox.emptyTitle")}
+              description={t("inbox.emptyDescription")}
+            />
+          </Center>
         </AppShell>
       </InternationalizationProvider>
     </Theme>

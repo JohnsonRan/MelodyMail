@@ -5,6 +5,6 @@
     "includes": ["**", "!**/worker-configuration.d.ts", "!web/src/astryx-themes.ts", "!**/*.md"]
   },
   "formatter": { "indentStyle": "space", "lineWidth": 100 },
-  "linter": { "rules": { "recommended": true } },
+  "linter": { "rules": { "preset": "recommended" } },
   "assist": { "actions": { "source": { "organizeImports": "on" } } }
 }
