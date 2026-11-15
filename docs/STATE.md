@@ -784,7 +784,197 @@ None open from M3.
 - `has_attachments` is decided from the first 64 KB, so an attachment part that starts later is
   seen only through a `multipart/mixed` top-level type (ruling 7).
 
-## Next: M4 (web mailbox)
+## M4: web mailbox (in progress, branch `m4-mailbox`)
 
-See `docs/PLAN.md`, sections 4 and 7. Carry over from M3: wire `buildSearch` into a search route;
-parse raw mail in the browser for `parse_failed` rows and messages whose text starts after 64 KB.
+Design: `docs/M4-mailbox.md`. Risk class High (sender-controlled HTML rendered in the owner's
+origin, permanent delete, migration 0007). Not merged; waits for the independent review the risk
+class asks for and for the owner to see the screenshots.
+
+### Done
+
+- `001ff64` migration `0007_mailbox_indexes.sql`: folder keyset indexes `(trashed, archived,
+  received_at DESC, id DESC)` and `(starred, trashed, received_at DESC, id DESC)`, and a partial
+  unread index (`WHERE read = 0`) for the counts. `IF NOT EXISTS`, additive.
+- `9affb90` mailbox API (`worker/src/mail/routes.ts`): `GET /api/messages`, `PATCH
+  /api/messages`, `GET|PATCH|DELETE /api/messages/:id`, `GET /api/messages/:id/thread`, `GET
+  /api/messages/:id/raw`, `GET /api/search` (through a new `searchFilter` that `buildSearch` now
+  uses), `GET /api/counts`. All guarded and in the route walk.
+- `78821ec` `Hub` Durable Object (`worker/src/mail/hub.ts`, SQLite class in `wrangler.jsonc`
+  migrations tag `v1`): hibernatable sockets tagged with the session id hash, `ping`/`pong`
+  auto-response, `notify` after each parse in the consumer, `closeSessions` on logout, on
+  "sign out other sessions" (`DELETE ... RETURNING id`) and on recovery. `GET /api/events` checks
+  the session and that `Origin` equals the request's origin.
+- `2b09d3a` reader core (`web/src/reader/`): postal-mime in a Web Worker, DOMPurify, sandboxed
+  srcdoc frame with the CSP meta first, `cid:` to `data:` (2 MiB cap), remote images stripped and
+  blocked until allowed, octet-stream downloads with a cleaned file name; browser security suite.
+- `0e47732` screens: side navigation with counts (folders and one entry per address), search in
+  the app bar, list with selection and bulk actions, infinite scroll, reader with thread,
+  toolbar and attachments, side by side at 1280 px and wider, one pane below with the open message
+  in the URL (`?m=`), live updates, shortcuts `j k Enter e # s u /`. Copy in zh-CN, en, ja-JP.
+- `4d84c05` `scripts/seed-mail.ts`: posts every fixture to `wrangler dev`'s
+  `/cdn-cgi/local/email` (Cloudflare docs "Test email routing locally", read 2026-11-16), so the
+  real `email()`, R2, queue and consumer fill the local mailbox; README section "Mailbox".
+- `3e3f559` end-to-end suite against `web/dist` with an in-memory API stand-in; CI workflow
+  `.github/workflows/browser.yml`.
+
+Usability references: Gmail's two-pane reading layout and shortcuts
+(https://support.google.com/mail/answer/6594), Outlook's reading pane
+(https://support.microsoft.com/office/use-and-configure-the-reading-pane-to-preview-messages-2fd687ed-7fc4-4ae3-8eab-9f9b8c6d53f0),
+Fastmail's remote-images prompt. The shortcuts follow Gmail.
+
+### Playwright under Bun
+
+Works. `playwright` 1.65.0 (the library, not `@playwright/test`) is driven from `bun test`; it
+launches the installed `chromium_headless_shell-1254`, which is why 1.65.0 is pinned (1.65.1
+wants revision 1255, 1.64 wants 1248). `bunx --bun playwright install --dry-run
+chromium-headless-shell` also runs under Bun. No Node fallback is used anywhere. The test runner
+of `@playwright/test` was not tried.
+
+### Rendering-security results (`bun run test:browser`, 32 tests, all green)
+
+- Corpus, each through the real sanitizer and frame in Chromium: script tags (including a remote
+  `SRC`), `onerror`/`onload`/`onmouseover`, `<meta http-equiv="refresh">`, `<base href>`, forms
+  with inputs and `formaction`, `javascript:`/`data:text/html`/`vbscript:` and mixed-case
+  `javascript:` links, SVG with script, `onload` and `foreignObject` iframe, `iframe`/`object`/
+  `embed`/`video poster`/`link`, CSS `url()` (absolute and protocol-relative, in `<style>` and in
+  `style=`), `@import`, remote `<img>`, 1x1 pixel, `srcset`, `background=`, `<picture><source>`.
+  For each: the listed elements and attributes are gone, no `javascript:`/`vbscript:`/
+  `data:text/html` survives, the frame has exactly `sandbox="allow-popups
+  allow-popups-to-escape-sandbox"`, the srcdoc starts with the CSP meta, the referrer meta is
+  present, no sender script posted a message, no popup opened and no remote request left the page.
+- Links get `target="_blank" rel="noopener noreferrer"`; inline styles and `<style>` still apply.
+- `cid:` image becomes `data:image/png` and loads in the sandbox (naturalWidth 1); a 2 MiB + 1
+  byte inline part gets the placeholder; an unknown `cid:` keeps no source.
+- HTML attachment: downloaded as `application/octet-stream` with the name
+  `../../invoice<1>.html` cleaned to `_.._invoice_1_.html`; no popup, no navigation, no script.
+- Each layer alone: with no layer the probes fire (two script messages, remote requests), which
+  shows the checks can see a failure; the sandbox alone stops script; the CSP alone stops script
+  and every remote load; the sanitizer alone stops script and remote images.
+- End to end (built app): hostile message opens in the frame with the exact sandbox, CSP and
+  `referrerpolicy`, the frame content renders, nothing remote is requested from the frame,
+  opening marks it read, "Show remote images" then loads the pixel; the plain-text link opens a
+  new tab without opener or referrer; the HTML attachment downloads without a popup; `j` then
+  `Enter` opens, `s` stars, `e` archives and removes the row, `/` focuses search; bulk archive of
+  two selected rows sends one `PATCH /api/messages`; 390 px has no sideways scroll and Back
+  returns to the list; a Hub event puts the new message on top.
+
+### Verified, with the command
+
+- `bun run check` green at every commit; each commit was checked with the rest of the tree
+  stashed (`git stash push -u -- <paths>`).
+- `bun --bun vitest run` in `worker/`: 242 tests, 36 more than before M4 (`mailbox.spec.ts`,
+  `hub.spec.ts`; the route walk lists the 10 new routes, each answering 401 without a session).
+- `bun run test:browser`: 32 tests (23 security corpus, 3 file-name unit tests, 6 end to end),
+  3 runs 15.62–15.92 s wall including the build, CPU load 0–3%.
+- Merge gate `bun run check` at `a724ae4`, 3 runs: 6.80, 6.84, 6.90 s wall, CPU load 0–3% (limit
+  10 s); worker suite 5.80 s (vitest Duration, last run; limit 9 s).
+- Local `wrangler dev` (port 8787, started and stopped by this session): `bun
+  scripts/seed-mail.ts` stored and parsed all 15 fixtures through the real queue (15 `parsed`
+  rows); `db:migrate:local` then reported nothing to apply, and running `0007` again by hand
+  succeeded on the database with rows.
+- Screenshots, taken with Playwright against that `wrangler dev` and the seeded data (a session
+  row written to the local D1, no Passkey): list, a message with an attachment and the HTML-only
+  message, at 390, 1280 and 1920 px, light and dark, zh-CN, en and ja-JP (54 files, outside the
+  repository). `scrollWidth` equalled the viewport width in all 18 combinations. Found and fixed
+  from them: the bulk toolbar was cut off at 390 px (now icon buttons with tooltips), the date
+  column took too much width, the reader padded twice in one-pane mode, and the sender repeated.
+
+### Ablation
+
+A script applies one mutation at a time and runs the touched suite (worker: `mailbox`, `hub`,
+`authz`; web: the security corpus, or the end-to-end suite after a rebuild).
+
+Worker, 55 hunks: every folder filter, the address filter, the keyset comparison, the id
+tiebreak, the next-cursor rule, the limit, folder/cursor/address validation, boolean mapping, the
+sender fallback, the bulk limit, id validation and dedupe, `COALESCE` per flag, the empty-change
+refusal, both 404s, the thread trash split and order, each raw header, the streamed body, the
+missing object, delete only from trash, the FTS delete, the R2 delete and its contained failure,
+the audit row, 409 against 404, search without trash, the query length, the search cursor, both
+count queries, the events origin and upgrade checks, the session header, the socket tag, the ping
+auto-response, notify, the close code, both contained Hub failures, the Hub's own session check,
+the consumer notify and the three session closes. First pass: 51 red, 4 survivors:
+
+- the next-cursor rule (`>` against `>=`) and the Hub's refusal of an untagged upgrade: each got a
+  test (a list that fills its last page exactly; a direct Hub fetch without the session header),
+  both red when ablated;
+- the bulk dedupe could not change a result (`IN (json_each)` is a set test) and was removed;
+- `id DESC` in `ORDER BY` survives: the folder index already returns rows in `(received_at DESC,
+  id DESC)` order, so no test sees the difference. Kept, because the keyset comparison depends on
+  that order and a different query plan must not change it.
+
+Web, 35 hunks (reader core against the security corpus and the file-name tests; app wiring
+against the end-to-end suite after a rebuild): the sandbox value, the CSP `img-src`, the CSP meta,
+the referrer meta, `FORBID_TAGS` as a whole and per tag (meta, base, link, video, iframe, form),
+link `target` and `rel`, `cid:` to `data:`, the 2 MiB cap, the used Content-IDs, stripping and
+flagging remote attributes, remote CSS in `style=` and in `<style>`, `FORCE_BODY`, the
+octet-stream Blob, reserved characters and leading dots in file names; the frame's `sandbox` and
+`referrerPolicy` attributes, plain-text link target, the remote-images switch, mark read on open,
+removing a row that leaves the view, new mail on top, the `j` and `/` shortcuts, and the bulk
+endpoint. First pass: 27 red, 7 survivors, 1 mutation that did not apply (fixed and run: red).
+The style-attribute flag and both file-name rules got tests (`a724ae4`), now red. Four
+survivors kept: `meta`, `base`, `link` and `iframe` in `FORBID_TAGS`. DOMPurify 3.4.18 already
+drops these by default, so no test can tell; they stay so a change of DOMPurify defaults or
+options cannot let them through.
+
+Not ablated (no test reaches them): the download-progress state over 5 MiB, the error mapping in
+`fetchRaw`, the socket backoff and the redirect to sign-in after close code 4001 or a refused
+reconnect, infinite scroll, permanent delete from the reader UI (the route itself is covered by
+the worker suite), expanding older thread messages, and revoking the object URL.
+
+### Deviations from the design (decisions taken, open to the owner)
+
+1. The frame has a fixed height (`70dvh`) and scrolls inside. The parent cannot measure an
+   opaque-origin document and `allow-same-origin` is not added (the design's fallback).
+2. "Show remote images" also loads CSS background images: the CSP governs both through
+   `img-src`. Only `https:` is allowed after the switch. It applies to the open message only.
+3. The list shows one row per message, not one per conversation; toolbar actions act on the open
+   message, not the whole thread.
+4. An address entry shows that address's Inbox; its count is the unread Inbox mail of it.
+5. The thread view leaves trashed messages out unless the opened message is in Trash, where it
+   shows only the trashed ones. Search leaves Trash out and pages newest first (rank order cannot
+   be keyset-paged).
+6. The `table-inbox` template needs a StyleX compiler, which this project does not have; the
+   screens follow its structure (table with selection and row-status plugins, reading pane in
+   the Layout end slot) without its StyleX parts and without the resize handle.
+7. The browser suite is not in `bun run check` (16 s against the 10 s gate); it runs in its own
+   workflow on pull requests touching `web/` and nightly on main. REQUIREMENTS now has a
+   scheduled tier and an end-to-end wall time (limit 19 s, baseline 15.8 s).
+8. Screenshots were taken with Playwright, not with the owner-facing browser tools; the
+   orchestrator should show them to the owner (or retake them) before review.
+
+### Open questions for the owner
+
+1. Bundle total is 642.5 kB gzip against the 610 kB limit (568.4 kB before M4). The parse worker
+   (postal-mime, 30.6 kB) and the reader chunk (DOMPurify and the reader, 22.1 kB) load only when
+   a message is opened. Options: count lazy reading chunks apart from the total, raise the limit,
+   or cut elsewhere (the M1 analysis lists Astryx components and the router). First paint is
+   314.2 kB (limit 370 kB) and holds neither library.
+2. Found, not changed (outside M4): the app stylesheet from the Astryx theme loads the Figtree
+   font from `fonts.googleapis.com` on every page, so the browser talks to a third party and the
+   owner's IP reaches Google (`AGENTS.md`, "Frontend–backend mapping"). The end-to-end test
+   therefore checks remote requests from the mail frame only. Self-host the font or drop it?
+3. `GET /api/messages/:id` has no frontend caller (the reader uses the thread route). It is in
+   the design, so it stays, with a row in REQUIREMENTS "Exceptions". Remove it instead?
+
+### Deferred
+
+- Flag changes are not pushed to other open tabs (only new mail is); a tab refetches on its next
+  action or event. Source: this build; waits because the design sends only new-mail events.
+- A socket whose session expires on its own (30 days, or 7 idle) stays open until the page
+  reloads; its next API call answers 401 and goes to sign-in. Only logout, revoke and recovery
+  close sockets.
+- Permanent delete removes the FTS row by `message_id`, an UNINDEXED column, so it scans
+  `messages_fts`. Storing the FTS rowid on the message would make it a key lookup (M3 schema).
+- The `/` shortcut focuses the search field in the app bar; at phone width that field is inside
+  the navigation drawer and is not focused.
+
+### Not verified
+
+- Durable Object hibernation billing, real WebSocket behaviour behind Cloudflare, and real mail
+  arriving (need a deploy).
+- The `browser` workflow has not run in CI (nothing was pushed); `playwright install --with-deps`
+  under Bun on Linux is untested.
+- Firefox and Safari rendering of the sandboxed frame; only Chromium was driven.
+- A walkthrough with a real Passkey session in a real browser; the screenshots used a session row
+  written to the local D1.
+- WCAG contrast of the new screens was not measured.
