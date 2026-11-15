@@ -60,7 +60,7 @@ meanwhile.
 | Status check interval while several jobs run | 10 min | a setting, not measured | orchestrator |
 | Commit subject length | 72 characters | a setting, not measured | commit hook |
 | CPU time per Worker invocation, production | | | Workers Logs cpuTime, review |
-| Inbound header parse, JS time per message (Bun benchmark) | | | parse benchmark in the merge gate |
+| Inbound header parse, JS time per message (Bun benchmark) | 3 ms p95 per fixture | worst fixture p95 0.67–0.79 ms (the 256 KB slice of a 20 MiB message); all fixtures together median 0.03 ms, p95 0.36–0.37 ms; 3 runs of 200 per input (2026-11-16, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4, CPU load 23–35%). Not gated: a slice with no text part, both passes, median 1.9–2.0 ms, p95 3.0–3.3 ms | `bun worker/bench/parse.ts` (exits 1 over the limit), review |
 | Passkey assertion verification, JS time per login (Bun benchmark) | 3 ms p95 | median 0.19–0.20 ms, p95 0.44–0.70 ms, 3 runs of 200 (2026-11-15, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4, CPU load ~68%) | `bun worker/bench/auth.ts`, review |
 | TOTP check (3 HMAC-SHA-1 steps), JS time per recovery (Bun benchmark) | 3 ms p95 | median 0.07–0.08 ms, p95 0.17–0.32 ms, 3 runs of 200 (2026-11-15, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4, CPU load ~68%) | `bun worker/bench/auth.ts`, review |
 
@@ -150,7 +150,6 @@ body.
 | Numbers: Page frame width; readable column width | the shell has no content pages yet | measure once the mail list and settings pages exist (M4) | 2027-01-31 |
 | Numbers: Full end-to-end run, wall time | no end-to-end suite | measure when Playwright lands in M4 | 2027-01-31 |
 | Numbers: CPU time per Worker invocation, production | not deployed yet; Workers Free caps it at 10 ms | read cpuTime from Workers Logs after the first deploy | 2027-02-28 |
-| Numbers: Inbound header parse, JS time per message (Bun benchmark) | parser not written yet; planned budget 3 ms | add the benchmark with the M3 parser | 2027-01-31 |
 
 ## Example (illustrative values; measure your own)
 
