@@ -5,7 +5,7 @@ import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
 import { Code } from "@astryxdesign/core/Code";
 import { useClipboard } from "@astryxdesign/core/hooks";
 import { Icon } from "@astryxdesign/core/Icon";
-import { HStack, StackItem, VStack } from "@astryxdesign/core/Layout";
+import { VStack } from "@astryxdesign/core/Layout";
 import { CheckIcon, ClipboardDocumentIcon } from "@heroicons/react/24/outline";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -32,10 +32,10 @@ export function RecoveryKeyPanel({
     <VStack gap={4} hAlign="stretch">
       <Banner status="warning" title={t("recoveryKey.shownOnce")} description={notice} />
       <Card padding={4} width="100%">
-        <HStack gap={2} vAlign="center">
-          <StackItem size="fill">
-            <Code>{recoveryKey.replaceAll("-", " ")}</Code>
-          </StackItem>
+        {/* The key sits on its own row: beside it, the long key squeezed the button until its
+            label was cut off. */}
+        <VStack gap={3} hAlign="start">
+          <Code>{recoveryKey.replaceAll("-", " ")}</Code>
           <Button
             label={isCopied ? t("recoveryKey.copied") : t("recoveryKey.copy")}
             variant="secondary"
@@ -43,7 +43,7 @@ export function RecoveryKeyPanel({
             icon={<Icon icon={isCopied ? CheckIcon : ClipboardDocumentIcon} />}
             onClick={() => void copy(recoveryKey)}
           />
-        </HStack>
+        </VStack>
       </Card>
       <CheckboxInput label={t("recoveryKey.confirm")} value={saved} onChange={setSaved} />
       <Button
