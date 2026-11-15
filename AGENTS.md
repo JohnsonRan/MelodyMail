@@ -9,7 +9,7 @@ When two rules disagree, the higher one wins. Within a level, the more specific 
 general one, and the owner's newer statement wins over an older one.
 
 1. **Hard limits.** Nothing below overrides these:
-   - no secret or card number in logs, client storage or source;
+   - no secret in logs, client storage or source;
    - no production step without the owner's explicit go;
    - no test traffic to a real upstream unless the owner allows it;
    - no AI attribution (when an upstream project requires AI disclosure, stop and ask the owner;
@@ -26,7 +26,7 @@ general one, and the owner's newer statement wins over an older one.
 
 When the rules agree but the goals pull apart, weigh them in this order:
 
-1. correctness and security of money and login;
+1. correctness and security of login;
 2. integrity of stored data;
 3. not breaking existing users and clients;
 4. the agreed schedule;
@@ -44,7 +44,7 @@ settle a conflict, write it into the open-questions list and ask the owner.
 | `AGENTS.md` (this file) | every agent, loaded automatically | priority, hard limits, workflow, reporting, writing, commits |
 | `.github/AGENTS.md` | agents changing CI files | CI tiers and gate rules |
 | `web/AGENTS.md` | agents changing frontend files (loaded for files under `web/`) | layout, type, loading, i18n, accessibility |
-| `worker/AGENTS.md` | agents changing backend files (loaded for files under `worker/`) | security, money, data, operations |
+| `worker/AGENTS.md` | agents changing backend files (loaded for files under `worker/`) | security, data, operations |
 | `REVIEW.md` | reviewers; a review brief names it | how to review and report |
 | `REQUIREMENTS.md` | everyone | numbers, gates, exceptions |
 
@@ -67,8 +67,8 @@ A rule a tool can check belongs in a gate (lint, test, hook); prose is for rules
   a group without a row. Do not invent metrics for judgment rules. Use `###` only for rule groups;
   explanations go in a section's opening text.
 - A rule that needs its own gate, apart from its heading, carries a tag `[rule: <id>]` and gets
-  its own row, named `path#id`. Tag only a rule whose failure loses money, an account, a secret
-  or data.
+  its own row, named `path#id`. Tag only a rule whose failure loses an account, a secret or
+  data.
 
 ---
 
@@ -83,7 +83,7 @@ the change needs; it never relaxes a hard limit. When unsure between two classes
 | --- | --- | --- | --- | --- |
 | Low | copy, docs, styling, a test-only change | the commit message | the checks of the touched area | the author's own diff read and the automated checks |
 | Medium | a feature, an API change, a refactor | a short plan in the pull request | tests for the changed behaviour; impact checked | one diff review in a fresh context |
-| High | money, login, security, a data migration, a deletion | a written plan, reviewed before coding | a test that fails without the fix; every behaviour hunk ablated; integration tests against the dependencies the change touches (a real database, an upstream's sandbox, never a live upstream) | an independent review by a different model family |
+| High | login, security, a data migration, a deletion | a written plan, reviewed before coding | a test that fails without the fix; every behaviour hunk ablated; integration tests against the dependencies the change touches (a real database, an upstream's sandbox, never a live upstream) | an independent review by a different model family |
 
 ### Workflow
 
@@ -94,8 +94,8 @@ the change needs; it never relaxes a hard limit. When unsure between two classes
 - A change must be a real improvement, not added complexity or a scattered patch.
 - Fix a low-severity finding before release only when all three hold:
   - it is reachable;
-  - it does concrete harm: money lands wrong, a card number or secret reaches storage or logs, or
-    production is one mistyped command from a mistake;
+  - it does concrete harm: mail is lost, a secret reaches logs or client storage, or production is
+    one mistyped command from a mistake;
   - the fix is small.
 - Record every option or finding you set aside in the project's deferred-options list, with its
   source and the reason it waits. The owner decides from that list after release.
@@ -189,7 +189,7 @@ the change needs; it never relaxes a hard limit. When unsure between two classes
 The orchestrator applies these; a sub-agent cannot choose its own model.
 
 - Rank models by importance and pick the highest tier the change calls for:
-  - money, login, risk and architecture decisions get the strongest model;
+  - login, risk and architecture decisions get the strongest model;
   - non-core code and UI specs get the next tier;
   - mechanical, fully specified work, search and log triage get a cheaper tier.
 - Review a High-risk change with a different model family from the writer; for other changes, a

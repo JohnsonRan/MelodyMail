@@ -7,7 +7,7 @@ how to review against them and what a review report must contain. It does not re
 ## Rule priority
 
 The rule priority in the root `AGENTS.md` applies. For a review it means: a finding against a hard
-limit or a money or login invariant outranks every structure or style finding, and a style finding
+limit or a login invariant outranks every structure or style finding, and a style finding
 never blocks a fix of a higher goal.
 
 ## Before you start
@@ -48,8 +48,8 @@ never blocks a fix of a higher goal.
 
 ## Every finding has evidence
 
-- A behaviour finding says the code does the wrong thing when it runs: a wrong result, money,
-  login, data, a crash. Before it goes into the report, reproduce it yourself with one of:
+- A behaviour finding says the code does the wrong thing when it runs: a wrong result, login,
+  data, a crash. Before it goes into the report, reproduce it yourself with one of:
   - a failing test;
   - a query on a scratch database;
   - a command and its output;
@@ -83,7 +83,7 @@ never blocks a fix of a higher goal.
 
 | Severity | Meaning | Required evidence |
 | --- | --- | --- |
-| Blocker | Money lost or created, an account taken over, a secret or card number exposed, data destroyed, or production unable to run. | The trigger path: input, state, what happens. Reproduced, or a complete static trace under the exception above. |
+| Blocker | An account taken over, a secret exposed, mail or other data destroyed, or production unable to run. | The trigger path: input, state, what happens. Reproduced, or a complete static trace under the exception above. |
 | High | The same classes, behind a precondition an attacker or ordinary use can meet. Or a core flow that fails for a whole class of users. | Trigger path and reproduction, or a complete static trace under the exception above. |
 | Medium | A real defect with limited reach: a recoverable lockout, a wrong value an operator would notice, a security weakness that needs another failure first. | Reproduction, or a precise reading for a structure finding. |
 | Low | Correct but fragile, misleading or untidy. | Reproduction or a precise reading. |
@@ -121,14 +121,14 @@ rule. This section only says how to verify the rules a diff cannot show.
   - A shot of an error boundary or an empty state does not count.
 - **Copy and i18n.** Run the project's i18n check. Read every changed string in every locale.
 - **Accessibility.** Tab through the changed flow. Measure contrast with a tool.
-- **Money and state.**
+- **Retries and concurrency.**
   - Reproduce against a real database, with repeated and concurrent requests and out-of-order
     callbacks.
-  - A mock-only test never proves a money path.
+  - A mock-only test never proves a retried path.
 - **Authorization.** Call each changed endpoint as the wrong role and from the wrong surface.
   Check that every route without an authorization check is marked public.
-- **Sensitive data.** Write a planted card number through each changed free-text path, then search
-  every log of that run, the database's included.
+- **Sensitive data.** Send a planted secret and a planted mail body through each changed path, then
+  search every log of that run, the database's included.
 - **Migrations.** Apply on a database that holds rows, apply again, and compare the number with
   main.
 

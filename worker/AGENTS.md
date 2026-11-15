@@ -38,28 +38,21 @@ workflow, CI, writing, commits) applies as well; numbers are in `REQUIREMENTS.md
   - Operators who run the upstream connection see that detail, because they need it to
     troubleshoot.
 - **Sensitive values.** [rule: sensitive-values]
-  - Card numbers, secrets and tokens are refused or masked at the write boundary of every
-    free-text field, with a database constraint as the backstop.
-  - No log, including the database's own, echoes a refused value.
-- **Credentials.** Every credential and key file is loaded through one path that checks its owner
-  and mode. None is read ad hoc, or taken from a plain environment variable when the others are
-  files.
+  - Secrets, tokens and mail content never appear in a log, the database's own included.
+  - API keys are stored only as hashes.
+- **Credentials.** Every credential comes from a Worker secret; none is hardcoded or put in
+  `vars`.
 - **Lockouts and recovery.**
-  - Every lockout or ceiling has a defined way out, such as support's reset, and that way out is
-    tested.
+  - Every lockout or ceiling has a defined way out, such as a reset the owner runs with wrangler,
+    and that way out is tested.
   - An admin recovery leaves no old credential valid; the account opens only through the
     recovery's own step.
 - **Account enumeration.** Unknown and known accounts get the same answers and do the same work.
 
-### Money and state (if present)
+### Retries and concurrency
 
-- Every operation that moves money is idempotent and safe under concurrent requests and
-  out-of-order callbacks. [rule: money-idempotent]
-- Any other operation that a client, an upstream or a job may retry (a callback, a webhook, a
-  queued job) is idempotent; the rest is safe under concurrent requests.
-- The ledger balances to every balance it feeds, and a replay can rebuild and check it.
-  [rule: ledger]
-- An account or record cannot be closed while money is still in motion for it.
+- Every operation that a client, an upstream or a job may retry (a callback, a webhook, a queued
+  job, a send) is idempotent; the rest is safe under concurrent requests.
 
 ### Background work (if present)
 

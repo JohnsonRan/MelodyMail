@@ -55,7 +55,7 @@ are the rules those values must satisfy.
 - **Alignment.**
   - Everything on a page lines up on a few shared edges.
   - A column's content aligns with its header: text and actions from the header's start, numbers
-    and amounts at the end.
+    at the end.
   - Cells in a row of unequal height align to the top.
   - Labels and fields of one row share a baseline.
 - **Centring.**
@@ -65,7 +65,7 @@ are the rules those values must satisfy.
   - Icon and text inside a control are vertically centred. Check this with CJK text, whose metrics
     differ from Latin.
 - **Values never break.**
-  - Dates, times, amounts, ids and codes never wrap in the middle.
+  - Dates, times, ids, addresses and codes never wrap in the middle.
   - Truncated text shows its full value on hover, on focus and on touch (a phone has no hover).
 - **Skeletons.** Page-level loading uses the page's skeleton; an action on a control (a button, a
   row) shows its loading state on that control. Neither uses a full-page spinner.
@@ -100,7 +100,7 @@ are the rules those values must satisfy.
 
 - Generic and easy to use.
 - Before designing a user or admin flow, compare how mainstream products do it (GitHub, Google,
-  Apple, Microsoft; Stripe, Wise and Revolut for money). Link them, follow them, and justify any
+  Apple, Microsoft; Gmail, Outlook and Fastmail for mail). Link them, follow them, and justify any
   divergence.
 - Compatible across browsers, screen sizes and themes (if present).
 

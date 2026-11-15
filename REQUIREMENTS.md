@@ -106,9 +106,7 @@ tagged rule marked as not applying needs the owner's approval, quoted in the com
 | worker/AGENTS.md: Security (if present) |  | `REVIEW.md`, "Checking against the rules", Authorization |  |
 | worker/AGENTS.md#authz | `bun run test` | `REVIEW.md`, "Checking against the rules", Authorization |  |
 | worker/AGENTS.md#sensitive-values |  | `REVIEW.md`, "Checking against the rules", Sensitive data |  |
-| worker/AGENTS.md: Money and state (if present) |  |  | the service moves no money; it is a single-owner mail service |
-| worker/AGENTS.md#money-idempotent |  |  |  |
-| worker/AGENTS.md#ledger |  |  |  |
+| worker/AGENTS.md: Retries and concurrency | `bun run test` | `REVIEW.md`, "Checking against the rules", Retries and concurrency |  |
 | worker/AGENTS.md: Background work (if present) |  |  | no background work yet; queue consumers and cron arrive in M3 and M7 |
 | worker/AGENTS.md: Operations (if present) |  | `REVIEW.md`, "Checking against the rules" |  |
 | worker/AGENTS.md: Admin panel (if present) |  | `REVIEW.md`, "Pass bar" |  |
@@ -147,8 +145,6 @@ body.
 | Numbers: Page frame width; readable column width | the shell has no content pages yet | measure once the mail list and settings pages exist (M4) | 2027-01-31 |
 | Numbers: Supported widths (phone, laptop, wide) | not chosen | choose with the first screenshots in M4 | 2027-01-31 |
 | Numbers: Full end-to-end run, wall time | no end-to-end suite | measure when Playwright lands in M4 | 2027-01-31 |
-| Enforcement: worker/AGENTS.md#money-idempotent | no money moves in this service | owner to approve marking it as not applying, approval quoted in the commit body | 2026-12-15 |
-| Enforcement: worker/AGENTS.md#ledger | no money moves in this service | owner to approve marking it as not applying, approval quoted in the commit body | 2026-12-15 |
 
 ## Example (illustrative values; measure your own)
 
