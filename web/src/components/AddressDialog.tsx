@@ -135,7 +135,8 @@ export function AddressDialog({
         label={t("addresses.forwardOnly")}
         description={t("addresses.forwardOnlyDescription")}
         value={d.forwardOnly}
-        isDisabled={d.targetIds.length === 0}
+        // Stays usable while on, so a forward-only address whose targets were detached can be fixed.
+        isDisabled={d.targetIds.length === 0 && !d.forwardOnly}
         onChange={(forwardOnly) => set({ forwardOnly })}
       />
     </FormDialog>

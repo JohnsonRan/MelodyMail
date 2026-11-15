@@ -90,6 +90,33 @@ describe("forwarding targets", () => {
     expect(audit).toBe("me@out.test");
   });
 
+  it("lets a forward-only address left without targets be edited", async () => {
+    const client = await owner();
+    await client.json("POST", "/api/domains", { name: "example.com" }, 201);
+    const target = (
+      await client.json("POST", "/api/forward-targets", { email: "me@out.test" }, 201)
+    ).target as { id: number };
+    const created = await client.json(
+      "POST",
+      "/api/addresses",
+      { localPart: "shop", domain: "example.com", forwardOnly: true, targetIds: [target.id] },
+      201,
+    );
+    const path = `/api/addresses/${(created.address as { id: number }).id}`;
+    await client.json("DELETE", `/api/forward-targets/${target.id}?detach=1`);
+    const off = await client.json("PATCH", path, { enabled: false });
+    expect(off.address).toMatchObject({ enabled: false, forwardOnly: true, targetIds: [] });
+    // Turning forward-only on again, or keeping it with an empty target list, is still refused.
+    expect(await client.json("PATCH", path, { targetIds: [] }, 400)).toEqual({
+      error: "forward_only_needs_target",
+    });
+    const fixed = await client.json("PATCH", path, { forwardOnly: false });
+    expect(fixed.address).toMatchObject({ forwardOnly: false, targetIds: [] });
+    expect(await client.json("PATCH", path, { forwardOnly: true }, 400)).toEqual({
+      error: "forward_only_needs_target",
+    });
+  });
+
   it("removes an unused target and answers 404 for an unknown one", async () => {
     const client = await owner();
     const target = (

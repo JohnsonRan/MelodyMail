@@ -154,8 +154,12 @@ export function registerAddressRoutes(addresses: Hono<AppEnv>): void {
         ? null
         : await db.prepare(`${SELECT_ADDRESSES} WHERE a.id = ?`).bind(id).first<AddressRow>();
     if (!current) return fail(c, 404, "not_found");
+    // Checked only when this request turns forward-only on or replaces the targets: a detach can
+    // leave a forward-only address without targets, and the owner must still be able to edit it.
+    const forwardOnly = fields.forwardOnly ?? current.forwardOnly === 1;
     const targetIds = fields.targetIds ?? toAddress(current).targetIds;
-    if ((fields.forwardOnly ?? current.forwardOnly === 1) && targetIds.length === 0) {
+    const changesForwarding = fields.forwardOnly === true || fields.targetIds !== undefined;
+    if (changesForwarding && forwardOnly && targetIds.length === 0) {
       return fail(c, 400, "forward_only_needs_target");
     }
     if (fields.targetIds && (await unknownTargets(db, fields.targetIds))) {
