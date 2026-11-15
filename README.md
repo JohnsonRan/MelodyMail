@@ -27,6 +27,11 @@ bun run --cwd worker dev
 Open `http://localhost:8787/setup`. Use `localhost`, not `127.0.0.1`: browsers do not accept an
 IP address as a Passkey relying party, so Passkeys fail on `127.0.0.1`.
 
+`bun run dev` also starts Vite on its own port with hot reload; it proxies `/api`, including the
+live-update WebSocket (`/api/events`), to the Worker on port 8787. Running the app through Vite
+has not been checked against the Worker's same-origin checks; `http://localhost:8787` is the
+checked way.
+
 ## Authentication
 
 The owner signs in with a Passkey. The fallback is a recovery key plus a code from an
