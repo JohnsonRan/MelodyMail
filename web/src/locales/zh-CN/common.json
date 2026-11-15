@@ -262,6 +262,7 @@
     "emptyDescription": "添加一个可以接收转发邮件的地址，然后在地址设置中选择它。",
     "removeTitle": "要移除 {{email}} 吗？",
     "removeDescription": "不会再有邮件转发到此地址。",
-    "removeInUse": "它会从转发到它的地址（{{count}} 个）中移除。此操作无法撤消。"
+    "removeInUse": "它将从以下地址中移除：{{addresses}}。此操作无法撤消。",
+    "switchesToStore": "它是 {{addresses}} 的最后一个转发地址，因此这些地址将不再只转发，而是在 MelodyMail 中保存副本。"
   }
 }

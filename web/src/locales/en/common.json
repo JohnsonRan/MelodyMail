@@ -262,6 +262,7 @@
     "emptyDescription": "Add an address that mail can be forwarded to, then choose it on an address.",
     "removeTitle": "Remove {{email}}?",
     "removeDescription": "No mail is forwarded to this address any more.",
-    "removeInUse": "It is removed from the addresses that forward to it ({{count}}). This cannot be undone."
+    "removeInUse": "It is removed from these addresses: {{addresses}}. This cannot be undone.",
+    "switchesToStore": "This was the last forwarding address of {{addresses}}, so they stop being forward-only and keep a copy in MelodyMail."
   }
 }

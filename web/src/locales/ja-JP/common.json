@@ -262,6 +262,7 @@
     "emptyDescription": "メールの転送先にするアドレスを追加し、アドレスの設定で選択してください。",
     "removeTitle": "{{email}} を削除しますか?",
     "removeDescription": "このアドレスにはメールが転送されなくなります。",
-    "removeInUse": "このアドレスに転送しているアドレス ({{count}} 件) から削除されます。この操作は元に戻せません。"
+    "removeInUse": "次のアドレスから削除されます: {{addresses}}。この操作は元に戻せません。",
+    "switchesToStore": "{{addresses}} の最後の転送先アドレスのため、これらのアドレスは転送のみではなくなり、MelodyMail にコピーを保存します。"
   }
 }

@@ -13,7 +13,7 @@ import {
 } from "../domains/validate";
 import type { AppEnv } from "../env";
 import { fail, readJson } from "../http";
-import { forwardsInsert, unknownTargets } from "./targets";
+import { forwardsInsert, keepForwardOnlyTargeted, unknownTargets } from "./targets";
 
 type AddressRow = {
   id: number;
@@ -123,6 +123,8 @@ export function registerAddressRoutes(addresses: Hono<AppEnv>): void {
             now,
           ),
         forwardsInsert(db, domain.value, local.value, targetIds),
+        // A target removed after the check above leaves no link to insert.
+        keepForwardOnlyTargeted(db, domain.value, local.value),
         audit(c, "address_added", now, address),
       ]);
     } catch (err) {
@@ -184,6 +186,7 @@ export function registerAddressRoutes(addresses: Hono<AppEnv>): void {
         forwardsInsert(db, current.domain, current.localPart, fields.targetIds),
       );
     }
+    steps.push(keepForwardOnlyTargeted(db, current.domain, current.localPart));
     await db.batch(steps);
     const row = await db
       .prepare(`${SELECT_ADDRESSES} WHERE a.id = ?`)

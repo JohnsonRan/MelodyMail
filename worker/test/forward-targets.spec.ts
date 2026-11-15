@@ -74,7 +74,10 @@ describe("forwarding targets", () => {
     expect(list[0]?.addressCount).toBe(1);
 
     const path = `/api/forward-targets/${target.id}`;
-    expect(await client.json("DELETE", path, undefined, 409)).toEqual({ error: "target_in_use" });
+    expect(await client.json("DELETE", path, undefined, 409)).toEqual({
+      error: "target_in_use",
+      addresses: ["shop@example.com"],
+    });
     expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM address_forwards").first("n")).toBe(1);
 
     expect(await client.json("DELETE", `${path}?detach=1`)).toEqual({ ok: true });
@@ -90,28 +93,50 @@ describe("forwarding targets", () => {
     expect(audit).toBe("me@out.test");
   });
 
-  it("lets a forward-only address left without targets be edited", async () => {
+  it("switches a forward-only address that loses its last target to store and forward", async () => {
     const client = await owner();
     await client.json("POST", "/api/domains", { name: "example.com" }, 201);
-    const target = (
-      await client.json("POST", "/api/forward-targets", { email: "me@out.test" }, 201)
-    ).target as { id: number };
-    const created = await client.json(
-      "POST",
-      "/api/addresses",
-      { localPart: "shop", domain: "example.com", forwardOnly: true, targetIds: [target.id] },
-      201,
-    );
-    const path = `/api/addresses/${(created.address as { id: number }).id}`;
-    await client.json("DELETE", `/api/forward-targets/${target.id}?detach=1`);
-    const off = await client.json("PATCH", path, { enabled: false });
-    expect(off.address).toMatchObject({ enabled: false, forwardOnly: true, targetIds: [] });
-    // Turning forward-only on again, or keeping it with an empty target list, is still refused.
-    expect(await client.json("PATCH", path, { targetIds: [] }, 400)).toEqual({
-      error: "forward_only_needs_target",
+    const add = async (email: string) =>
+      ((await client.json("POST", "/api/forward-targets", { email }, 201)).target as { id: number })
+        .id;
+    const only = await add("only@out.test");
+    const other = await add("other@out.test");
+    const post = (localPart: string, targetIds: number[]) =>
+      client.json(
+        "POST",
+        "/api/addresses",
+        { localPart, domain: "example.com", forwardOnly: true, targetIds },
+        201,
+      );
+    await post("solo", [only]);
+    await post("pair", [only, other]);
+    await client.json("DELETE", `/api/forward-targets/${only}?detach=1`);
+    const list = (await client.json("GET", "/api/addresses")).addresses as Json[];
+    expect(list.find((x) => x.localPart === "solo")).toMatchObject({
+      enabled: true,
+      forwardOnly: false,
+      targetIds: [],
     });
-    const fixed = await client.json("PATCH", path, { forwardOnly: false });
-    expect(fixed.address).toMatchObject({ forwardOnly: false, targetIds: [] });
+    expect(list.find((x) => x.localPart === "pair")).toMatchObject({
+      enabled: true,
+      forwardOnly: true,
+      targetIds: [other],
+    });
+  });
+
+  it("lets a forward-only address without targets from before the ruling be edited", async () => {
+    const client = await owner();
+    await client.json("POST", "/api/domains", { name: "example.com" }, 201);
+    // A row that only an earlier build could write: forward-only with no target.
+    const id = await env.DB.prepare(
+      "INSERT INTO addresses (local_part, domain, forward_only, created_at) VALUES ('shop', 'example.com', 1, ?) RETURNING id",
+    )
+      .bind(Date.now())
+      .first<number>("id");
+    const path = `/api/addresses/${id}`;
+    // Any edit leaves it as store and forward, and forward-only cannot come back without a target.
+    const off = await client.json("PATCH", path, { enabled: false });
+    expect(off.address).toMatchObject({ enabled: false, forwardOnly: false, targetIds: [] });
     expect(await client.json("PATCH", path, { forwardOnly: true }, 400)).toEqual({
       error: "forward_only_needs_target",
     });
@@ -140,14 +165,14 @@ describe("forwarding targets", () => {
         .bind(target.id)
         .first("n");
       expect(links).toBe(0);
-      // Create first, then detach: the address exists, forward-only, without targets (M3 keeps a
-      // copy then). Detach first: the create is refused. No other outcome.
+      // Create first, then detach: the address exists and is back to store and forward. Detach
+      // first: the create is refused. Never a forward-only address without a target.
       if (created.status === 201) {
         const body = (await created.json()) as { address: { id: number } };
         const row = await env.DB.prepare("SELECT forward_only AS f FROM addresses WHERE id = ?")
           .bind(body.address.id)
           .first("f");
-        expect(row).toBe(1);
+        expect(row).toBe(0);
       } else {
         expect(created.status).toBe(400);
         expect(await created.json()).toEqual({ error: "unknown_target" });
