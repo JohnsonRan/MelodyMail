@@ -2,47 +2,40 @@
 
 Working state for the current milestone. The plan is in `docs/PLAN.md`.
 
-## M0: repository skeleton (in progress)
+## M0: repository skeleton (done 2026-11-15)
 
-Updated 2026-11-15.
-
-Done:
-
-- Bun workspaces `worker` and `web`; `bun.lock` committed; Bun pinned to 1.4.4 in `package.json`.
+- Bun workspaces `worker` and `web`; Bun pinned to 1.4.4. wrangler alone runs on Node (owner
+  ruling); `bun run dev` starts the Worker and Vite, `bun run deploy` builds and deploys.
 - Worker: Hono app with `GET /api/health` and a JSON 404 for unknown API routes; `email()` rejects
   every recipient until the address list exists (M2/M3). Static assets from `web/dist`, with
   `/api/*` always reaching the Worker.
-- Worker tests: `@cloudflare/vitest-plugin` under `bun --bun vitest`, 3 tests pass.
-- Web: React 19, Vite, Astryx 0.7.16 with the neutral theme, `AppShell` with top bar, folder
-  navigation and an empty inbox state; language selector (zh-CN, en, ja-JP) and theme selector
-  (system, light, dark), both remembered in `localStorage`.
-- Gates: `bun run check` runs lint (Biome), typecheck, worker tests, script tests, the i18n check,
-  the build and the requirements check. CI runs the same command (`.github/workflows/ci.yml`).
-- `scripts/check-i18n.ts` with tests; shown to fail on a planted missing key (exit 1) and on an
-  empty locale set (exit 2).
-- `REQUIREMENTS.md` filled: Commands, Numbers, Enforcement, Exceptions, Not yet enforced.
+- Web: React 19, Vite, Astryx 0.7.16 (neutral theme), `AppShell` with folder navigation and a
+  centred empty inbox state; language (zh-CN, en, ja-JP) and theme (system, light, dark)
+  selectors, remembered in `localStorage`.
+- Gate: `bun run check` (lint, typecheck, worker tests, script tests, i18n check, build,
+  requirements check) passes locally in 4.6–5.9 s and in CI.
+- CI: first run on GitHub (`JohnsonRan/MelodyMail`, run 43715005562) passed; the job took 17 s.
+- Rules that do not apply (money, ledger, card numbers, key files) were deleted by owner ruling.
 
-Blocked or unverified:
+Verified by screenshot (wrangler dev, Chrome on Windows):
 
-- No screenshots: the browser extension was not connected. The build was served with
-  `vite preview` and returned the page (HTTP 200, SPA fallback works), but nothing was looked at.
-- CI has not run: the repository has no remote yet.
-- Free-plan availability of Queues, Durable Objects and Rate Limiting is not checked yet.
+- Desktop: zh-CN light, en dark, ja-JP light render; CJK text uses the system fallback fonts with
+  the right glyph forms for each `lang`.
+- Phone width (390 px, through an iframe because the window could not be resized): no horizontal
+  scroll (scrollWidth 389 = viewport), the side navigation collapses into a menu button.
+- Found and fixed: the empty state sat at the top of the content area and its icon did not render.
+  It is now wrapped in Astryx `Center` with an `Icon`; re-shot centred on desktop and phone.
 
-Owner rulings (2026-11-15):
+Not verified:
 
-- wrangler alone runs on Node (`bun run dev` / `bun run deploy` call it without `--bun`).
-  `wrangler dev` verified: `/api/health` returns `{"ok":true}`, `/api/nope` the JSON 404, and
-  `/inbox` the SPA (HTTP 200).
-- Rules that do not apply were deleted: the money and ledger rules, card-number handling and the
-  key-file credential rule. The retry rule stays as `worker/AGENTS.md`, "Retries and concurrency".
+- CJK fallback on macOS, iOS and Android (only Windows was checked).
+- Phone width on a real device or a resized window; only the iframe was checked.
 
-- Running the requirements check was allowed. `bun run check:requirements` exits 0; its 53 tests
-  pass; a copy of `REQUIREMENTS.md` without the "AGENTS.md: Waiting" row exits 1 and names it.
-  The full `bun run check` passes in 4.6–5.9 s.
+Free-plan research: results and design changes are in `docs/PLAN.md`, section 9. The open risk is
+10 ms CPU per invocation for MIME parsing; M3 measures it on real samples.
 
-Next:
+## Next: M1 (authentication)
 
-- CJK font fallback in the theme (Astryx's Figtree has no CJK glyphs); do it with the theme editor.
-- Astryx catalogs for zh-CN and ja-JP are imported statically; load them per locale to shrink the
-  entry chunk (224 kB gzip baseline).
+- Owner setup with `SETUP_TOKEN`, password, Passkey, TOTP, sessions, login rate limiting.
+- Strict login lockout counts in D1, because the Rate Limiting binding is approximate.
+- Load the Astryx zh-CN / ja-JP catalogs per locale to shrink the entry chunk (224 kB gzip).
