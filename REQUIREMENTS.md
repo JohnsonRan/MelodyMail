@@ -60,6 +60,8 @@ meanwhile.
 | Commit subject length | 72 characters | a setting, not measured | commit hook |
 | CPU time per Worker invocation, production | | | Workers Logs cpuTime, review |
 | Inbound header parse, JS time per message (Bun benchmark) | | | parse benchmark in the merge gate |
+| Passkey assertion verification, JS time per login (Bun benchmark) | 3 ms p95 | median 0.19–0.20 ms, p95 0.44–0.70 ms, 3 runs of 200 (2026-11-15, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4, CPU load ~68%) | `bun worker/bench/auth.ts`, review |
+| TOTP check (3 HMAC-SHA-1 steps), JS time per recovery (Bun benchmark) | 3 ms p95 | median 0.07–0.08 ms, p95 0.17–0.32 ms, 3 runs of 200 (2026-11-15, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4, CPU load ~68%) | `bun worker/bench/auth.ts`, review |
 
 ## Enforcement
 
