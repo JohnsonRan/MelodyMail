@@ -57,7 +57,6 @@ function useParsedMail(message: MessageDetail): Load {
 
 function Header({ message, mail }: { message: MessageDetail; mail: ParsedMail | null }) {
   const { t, i18n } = useTranslation();
-  const from = mail?.from.length ? addressList(mail.from) : message.from;
   const to = mail?.to.length ? addressList(mail.to) : (message.to ?? message.envelopeTo);
   const cc = mail?.cc.length ? addressList(mail.cc) : message.cc;
   const rows: [string, string][] = [
@@ -67,10 +66,11 @@ function Header({ message, mail }: { message: MessageDetail; mail: ParsedMail | 
   ];
   return (
     <VStack gap={1}>
-      <HStack gap={2} vAlign="center" wrap="wrap">
-        <Text type="supporting">{from}</Text>
-        {message.tag && <Token size="sm" label={`+${message.tag}`} description={t("mail.tag")} />}
-      </HStack>
+      {message.tag && (
+        <HStack>
+          <Token size="sm" label={`+${message.tag}`} description={t("mail.tag")} />
+        </HStack>
+      )}
       {rows.map(([label, value]) => (
         <HStack key={label} gap={2}>
           <Text type="supporting" color="secondary" textWrap="nowrap">

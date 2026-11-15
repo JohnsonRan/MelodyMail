@@ -20,7 +20,13 @@ import {
 import { StarIcon } from "@heroicons/react/24/solid";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { type Folder, getThread, type MessageDetail, senderName } from "../mailbox/api";
+import {
+  type Folder,
+  getThread,
+  type MessageDetail,
+  senderAddress,
+  senderName,
+} from "../mailbox/api";
 import { formatListDate } from "../mailbox/format";
 import { MessageView } from "./MessageView";
 
@@ -238,9 +244,14 @@ export default function Reader({
               trigger={
                 <HStack gap={2} vAlign="center">
                   <StackItem size="fill">
-                    <Text maxLines={1} weight={m.read ? "normal" : "semibold"}>
-                      {senderName(m.from)}
-                    </Text>
+                    <HStack gap={2} vAlign="center" wrap="wrap">
+                      <Text weight={m.read ? "normal" : "semibold"}>{senderName(m.from)}</Text>
+                      {senderAddress(m.from) !== senderName(m.from) && (
+                        <Text type="supporting" color="secondary">
+                          {senderAddress(m.from)}
+                        </Text>
+                      )}
+                    </HStack>
                   </StackItem>
                   <Text type="supporting" textWrap="nowrap">
                     {formatListDate(m.receivedAt, i18n.language)}
