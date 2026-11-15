@@ -115,7 +115,9 @@
     "regenerateKey": "Regenerate recovery key",
     "regenerateKeyTitle": "Regenerate your recovery key?",
     "regenerateKeyDescription": "Your current recovery key stops working. The new key is shown once.",
-    "recoveryKeySaved": "Done"
+    "recoveryKeySaved": "Done",
+    "ipAddress": "IP address {{ip}}",
+    "localNetwork": "This device or local network"
   },
   "errors": {
     "generic": "Something went wrong. Try again.",

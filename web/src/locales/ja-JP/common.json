@@ -115,7 +115,9 @@
     "regenerateKey": "回復キーを再生成",
     "regenerateKeyTitle": "回復キーを再生成しますか?",
     "regenerateKeyDescription": "現在の回復キーは使用できなくなります。新しいキーは一度だけ表示されます。",
-    "recoveryKeySaved": "完了"
+    "recoveryKeySaved": "完了",
+    "ipAddress": "IP アドレス {{ip}}",
+    "localNetwork": "このデバイスまたはローカル ネットワーク"
   },
   "errors": {
     "generic": "問題が発生しました。もう一度お試しください。",

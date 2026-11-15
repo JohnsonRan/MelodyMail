@@ -15,10 +15,16 @@ import { Meta, RowsSkeleton, SecuritySection } from "../components/SecuritySecti
 import { errorMessage } from "../errors";
 import { addPasskey, withReauth } from "../passkeys";
 import { usePreferences } from "../preferences";
+import { placeLines, type SessionPlace } from "../sessionPlace";
 import { describeUserAgent } from "../userAgent";
 
 type Passkey = { id: string; label: string; createdAt: number; lastUsedAt: number | null };
-type Session = { createdAt: number; lastSeenAt: number; userAgent: string; current: boolean };
+type Session = SessionPlace & {
+  createdAt: number;
+  lastSeenAt: number;
+  userAgent: string;
+  current: boolean;
+};
 type Data = { passkeys: Passkey[]; sessions: Session[] };
 type Confirm = { kind: "passkey"; passkey: Passkey } | { kind: "sessions" };
 type ConfirmSpec = { title: string; description: string; actionLabel: string; done: string };
@@ -201,7 +207,10 @@ export function SecurityPage() {
                       label={describeUserAgent(s.userAgent) ?? t("security.unknownDevice")}
                       description={
                         <Meta
-                          lines={[t("security.lastSeen", { date: formatDate(s.lastSeenAt) })]}
+                          lines={[
+                            t("security.lastSeen", { date: formatDate(s.lastSeenAt) }),
+                            ...placeLines(t, locale, s),
+                          ]}
                         />
                       }
                       endContent={
