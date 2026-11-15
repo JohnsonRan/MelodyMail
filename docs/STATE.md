@@ -36,7 +36,12 @@ limits and the CPU budget: no JS work proportional to mail size in the Worker, m
 browser, a bounded 256 KB header parse server-side, and no user-chosen password (slow hashes break
 the 10 ms CPU cap).
 
-## Next: M1 (authentication)
+## M1: authentication (in progress)
+
+Design: `docs/M1-auth.md` (written 2026-11-15). Work happens on branch `m1-auth`; it merges only
+after the owner reviews it.
+
+Planned:
 
 - Owner setup with `SETUP_TOKEN`: register the first Passkey, show a recovery key once, enrol TOTP.
 - Passkey login; recovery key + TOTP fallback; sessions as hashed random tokens in D1.
