@@ -32,8 +32,8 @@ as the baseline; then the limit, as the baseline plus a margin (start at 20%).
 
 | Tier | Command | Runs (where, when) | Wall-time limit | Baseline (date, host, load) |
 | --- | --- | --- | --- | --- |
-| Pre-commit | | | | |
-| Merge gate | | | | |
+| Pre-commit | `bun run lint` | locally, before each commit (no hook yet) | 1 s | 0.34 s, 3 runs 0.34–0.46 s (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load ~80%) |
+| Merge gate | `bun run check` | CI on every pull request and push to main; locally before push | 6 s | 4.3 s, 3 runs 4.1–4.6 s, without check:requirements (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load ~80%) |
 | Scheduled run on main | | | | |
 | Release | | | | |
 
@@ -45,18 +45,18 @@ meanwhile.
 
 | Item | Limit | Baseline (date, host, load) | Enforced by |
 | --- | --- | --- | --- |
-| Type scale (role: size / line height) | | | design system |
-| Spacing scale (section, card, inside card, label to field) | | | design system |
+| Type scale (role: size / line height) | Astryx theme-neutral type tokens only; no literal font size | a setting, not measured | design system |
+| Spacing scale (section, card, inside card, label to field) | Astryx spacing tokens only; no literal pixel value | a setting, not measured | design system |
 | Page frame width; readable column width | | | e2e page-width check |
 | Supported widths (phone, laptop, wide) | | | screenshots |
 | Full end-to-end run, wall time | | | |
-| Slowest test package | | | |
-| Frontend entry chunk, gzip | | | |
-| Frontend total JS + CSS, gzip | | | |
-| Source file size, p90 of this repository (pass bar) | | | review |
-| Wait timeout before a stuck step is recorded and left | | a setting, not measured | agent |
-| Context handoff limit (share of the model's window) | | a setting, not measured | orchestrator |
-| Status check interval while several jobs run | | a setting, not measured | orchestrator |
+| Slowest test package | 2 s | 1.2 s, worker suite (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load ~80%) | review |
+| Frontend entry chunk, gzip | 270 kB | 224 kB (2026-11-15, vite build, gzip -6) | review |
+| Frontend total JS + CSS, gzip | 460 kB | 381 kB (2026-11-15, vite build, gzip -6) | review |
+| Source file size, p90 of this repository (pass bar) | 314 lines | 314 lines over 15 .ts/.tsx/.py files (2026-11-15) | review |
+| Wait timeout before a stuck step is recorded and left | 30 min | a setting, not measured | agent |
+| Context handoff limit (share of the model's window) | 60% | a setting, not measured | orchestrator |
+| Status check interval while several jobs run | 10 min | a setting, not measured | orchestrator |
 | Commit subject length | 72 characters | a setting, not measured | commit hook |
 
 ## Enforcement
@@ -76,44 +76,44 @@ tagged rule marked as not applying needs the owner's approval, quoted in the com
 
 | Rule group | Gate command | Review criterion | Does not apply because |
 | --- | --- | --- | --- |
-| AGENTS.md: Change risk | | | |
-| AGENTS.md: Workflow | | | |
-| AGENTS.md: When unsure | | | |
-| AGENTS.md: Waiting | | | |
-| AGENTS.md: Reporting | | | |
-| AGENTS.md: Code quality | | | |
-| AGENTS.md: Impact and edge cases | | | |
-| AGENTS.md: Secrets | | | |
-| AGENTS.md: Performance baseline | | | |
-| AGENTS.md: Tests (if present) | | | |
-| AGENTS.md: Merging | | | |
-| AGENTS.md: Model usage | | | |
-| AGENTS.md: Documentation | | | |
-| AGENTS.md: Writing (docs, comments, reports, PR and issue text) | | | |
-| AGENTS.md: Commits and pull requests | | | |
-| AGENTS.md: Frontend–backend mapping (when both exist) | | | |
-| .github/AGENTS.md: Tiers, jobs and gates | | | |
-| web/AGENTS.md: Components and modularity | | | |
-| web/AGENTS.md: Consistency | | | |
-| web/AGENTS.md: Layout, type and loading | | | |
-| web/AGENTS.md: i18n (if present) | | | |
-| web/AGENTS.md: Usability | | | |
-| web/AGENTS.md: Accessibility | | | |
-| web/AGENTS.md: Performance | | | |
-| worker/AGENTS.md: APIs and modularity | | | |
-| worker/AGENTS.md: Compatibility | | | |
-| worker/AGENTS.md: Logging | | | |
-| worker/AGENTS.md: Security (if present) | | | |
-| worker/AGENTS.md#authz | | | |
-| worker/AGENTS.md#sensitive-values | | | |
-| worker/AGENTS.md: Money and state (if present) | | | |
-| worker/AGENTS.md#money-idempotent | | | |
-| worker/AGENTS.md#ledger | | | |
-| worker/AGENTS.md: Background work (if present) | | | |
-| worker/AGENTS.md: Operations (if present) | | | |
-| worker/AGENTS.md: Admin panel (if present) | | | |
-| worker/AGENTS.md: Performance | | | |
-| worker/AGENTS.md: Verification | | | |
+| AGENTS.md: Change risk |  | `REVIEW.md`, "Scope" |  |
+| AGENTS.md: Workflow |  | `REVIEW.md`, "Pass bar" |  |
+| AGENTS.md: When unsure |  | `REVIEW.md`, "Before you start" |  |
+| AGENTS.md: Waiting |  |  | it governs how an agent spends a session and leaves nothing in the repository to check |
+| AGENTS.md: Reporting |  | `REVIEW.md`, "Every finding has evidence" |  |
+| AGENTS.md: Code quality | `bun run lint` | `REVIEW.md`, "Pass bar" |  |
+| AGENTS.md: Impact and edge cases |  | `REVIEW.md`, "Scope" |  |
+| AGENTS.md: Secrets |  | `REVIEW.md`, "Checking against the rules", Sensitive data |  |
+| AGENTS.md: Performance baseline |  | `REVIEW.md`, "Checking against the rules" |  |
+| AGENTS.md: Tests (if present) | `bun run test` | `REVIEW.md`, "Every finding has evidence" |  |
+| AGENTS.md: Merging |  | `REVIEW.md`, "Report" |  |
+| AGENTS.md: Model usage |  | `REVIEW.md`, "Before you start" |  |
+| AGENTS.md: Documentation |  | `REVIEW.md`, "CI, docs and commits" |  |
+| AGENTS.md: Writing (docs, comments, reports, PR and issue text) |  | `REVIEW.md`, "CI, docs and commits" |  |
+| AGENTS.md: Commits and pull requests |  | `REVIEW.md`, "CI, docs and commits" |  |
+| AGENTS.md: Frontend–backend mapping (when both exist) |  | `REVIEW.md`, "Checking against the rules", Authorization |  |
+| .github/AGENTS.md: Tiers, jobs and gates |  | `REVIEW.md`, "CI, docs and commits" |  |
+| web/AGENTS.md: Components and modularity |  | `REVIEW.md`, "Pass bar" |  |
+| web/AGENTS.md: Consistency |  | `REVIEW.md`, "Checking against the rules", Layout, type and loading |  |
+| web/AGENTS.md: Layout, type and loading |  | `REVIEW.md`, "Checking against the rules", Layout, type and loading |  |
+| web/AGENTS.md: i18n (if present) | `bun scripts/check-i18n.ts` | `REVIEW.md`, "Checking against the rules", Copy and i18n |  |
+| web/AGENTS.md: Usability |  | `REVIEW.md`, "Checking against the rules" |  |
+| web/AGENTS.md: Accessibility |  | `REVIEW.md`, "Checking against the rules", Accessibility |  |
+| web/AGENTS.md: Performance |  | `REVIEW.md`, "Pass bar" |  |
+| worker/AGENTS.md: APIs and modularity |  | `REVIEW.md`, "Pass bar" |  |
+| worker/AGENTS.md: Compatibility |  | `REVIEW.md`, "Checking against the rules", Migrations |  |
+| worker/AGENTS.md: Logging |  | `REVIEW.md`, "Checking against the rules", Sensitive data |  |
+| worker/AGENTS.md: Security (if present) |  | `REVIEW.md`, "Checking against the rules", Authorization |  |
+| worker/AGENTS.md#authz | `bun run test` | `REVIEW.md`, "Checking against the rules", Authorization |  |
+| worker/AGENTS.md#sensitive-values |  | `REVIEW.md`, "Checking against the rules", Sensitive data |  |
+| worker/AGENTS.md: Money and state (if present) |  |  | the service moves no money; it is a single-owner mail service |
+| worker/AGENTS.md#money-idempotent |  |  |  |
+| worker/AGENTS.md#ledger |  |  |  |
+| worker/AGENTS.md: Background work (if present) |  |  | no background work yet; queue consumers and cron arrive in M3 and M7 |
+| worker/AGENTS.md: Operations (if present) |  | `REVIEW.md`, "Checking against the rules" |  |
+| worker/AGENTS.md: Admin panel (if present) |  | `REVIEW.md`, "Pass bar" |  |
+| worker/AGENTS.md: Performance |  | `REVIEW.md`, "Pass bar" |  |
+| worker/AGENTS.md: Verification | `bun run test` | `REVIEW.md`, "Checking against the rules" |  |
 
 ## Exceptions
 
@@ -121,6 +121,7 @@ Backend endpoints with no frontend caller:
 
 | Endpoint | Caller | Reason |
 | --- | --- | --- |
+| GET /api/health | deploy and uptime checks | liveness probe; carries no data |
 
 Intentional designs that look like defects:
 
@@ -141,6 +142,13 @@ body.
 
 | Row | Current state | Plan | Due |
 | --- | --- | --- | --- |
+| Commands: Scheduled run on main | no heavy suites exist yet | add when the Playwright suite lands in M4 | 2027-01-31 |
+| Commands: Release | no release flow yet | add with the deploy rehearsal in M7 | 2027-03-31 |
+| Numbers: Page frame width; readable column width | the shell has no content pages yet | measure once the mail list and settings pages exist (M4) | 2027-01-31 |
+| Numbers: Supported widths (phone, laptop, wide) | not chosen | choose with the first screenshots in M4 | 2027-01-31 |
+| Numbers: Full end-to-end run, wall time | no end-to-end suite | measure when Playwright lands in M4 | 2027-01-31 |
+| Enforcement: worker/AGENTS.md#money-idempotent | no money moves in this service | owner to approve marking it as not applying, approval quoted in the commit body | 2026-12-15 |
+| Enforcement: worker/AGENTS.md#ledger | no money moves in this service | owner to approve marking it as not applying, approval quoted in the commit body | 2026-12-15 |
 
 ## Example (illustrative values; measure your own)
 
