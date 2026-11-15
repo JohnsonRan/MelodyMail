@@ -125,6 +125,19 @@ describe("message lists", () => {
     expect(pages).toBe(Math.ceil(count / 7));
   });
 
+  it("ends a list that fills its last page exactly without an empty page", async () => {
+    const { client } = await setupOwner();
+    await seedMany(Array.from({ length: 4 }, (_, i) => ({ id: `e${i}`, receivedAt: 1000 + i })));
+    const first = await client.json("GET", "/api/messages?limit=2");
+    expect((first.messages as Item[]).map((m) => m.id)).toEqual(["e3", "e2"]);
+    const second = await client.json(
+      "GET",
+      `/api/messages?limit=2&cursor=${encodeURIComponent(first.nextCursor as string)}`,
+    );
+    expect((second.messages as Item[]).map((m) => m.id)).toEqual(["e1", "e0"]);
+    expect(second.nextCursor).toBeNull();
+  });
+
   it("refuses a bad folder, cursor, limit or address", async () => {
     const { client } = await setupOwner();
     for (const query of [

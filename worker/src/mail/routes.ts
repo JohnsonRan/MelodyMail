@@ -161,7 +161,8 @@ export function registerMessageRoutes(messages: Hono<AppEnv>): void {
       return fail(c, 400, "bad_request");
     }
     if (ids.length > BULK_MAX) return fail(c, 400, "too_many_ids");
-    const result = await updateFlags(c, [...new Set(ids)], flags);
+    // A repeated id matches its row once: IN (json_each) is a set test.
+    const result = await updateFlags(c, ids, flags);
     return c.json({ updated: result.meta.changes });
   });
 

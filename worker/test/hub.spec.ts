@@ -95,6 +95,14 @@ describe("events upgrade", () => {
     expect(res.status).toBe(426);
   });
 
+  it("does not accept a socket that the Worker did not tag with a session", async () => {
+    const res = await env.HUB.getByName("hub").fetch("https://hub/", {
+      headers: { upgrade: "websocket" },
+    });
+    expect(res.status).toBe(400);
+    expect(res.webSocket).toBeNull();
+  });
+
   it("answers ping without a handler", async () => {
     const { client } = await setupOwner();
     const socket = await connect(client);
