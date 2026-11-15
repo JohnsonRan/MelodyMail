@@ -234,6 +234,14 @@ describe("hostile HTML corpus", () => {
     ]);
   });
 
+  test("notices a remote url() in a style attribute alone", async () => {
+    const { result, s } = await render({
+      html: `<div style="background:url(${TRACKER}/only-inline.png)">x</div>`,
+    });
+    expect(result.hasRemoteContent).toBe(true);
+    expect(s.remote).toEqual([]);
+  });
+
   test("keeps inline styles and <style> for the layout", async () => {
     const { result, s } = await render({
       html: `<style>.box{color:rgb(1, 2, 3)}</style><p class="box" style="font-weight:700">styled</p>`,
