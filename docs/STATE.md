@@ -342,8 +342,8 @@ Validation decisions:
 - Display name: at most 100 characters, no control characters (it becomes a header in M5).
   Note: at most 200 characters.
 - "Forward only" needs at least one forward target, so an address can never drop mail by
-  configuration. Detaching a target can still leave a forward-only address without targets; M3
-  then keeps the copy (recorded for M3).
+  configuration. Removing a forward-only address's last target switches it back to store and
+  forward in the same batch (owner ruling 5 below).
 
 Expected DNS records (Cloudflare docs "Domain configuration",
 https://developers.cloudflare.com/email-service/configuration/domains/, read 2026-11-16): MX
@@ -353,7 +353,7 @@ assigned by Cloudflare), SPF `v=spf1 include:_spf.mx.cloudflare.net ~all`, DMARC
 from the Resend dashboard (M5). The DoH endpoint is a `vars` entry (`DOH_URL`), not code.
 
 Impact: new tables only; existing auth tables untouched except the nullable `audit_log.detail`.
-Three DoH subrequests per check (limit 50). Web: three new Settings pages and their side
+Four DoH subrequests per check (MX, SPF, DKIM, DMARC) (limit 50). Web: three new Settings pages and their side
 navigation items; `api()` gains `PATCH`.
 
 Verification: `bun run check` at every commit; worker tests for every endpoint (happy path,
@@ -370,7 +370,7 @@ hunk; gate timed 3 times with the load recorded. Gate before M2: 9.1 s (one run)
   in `wrangler.jsonc` `vars`.
 - `31e2c7a` address and forwarding-target routes (`worker/src/addresses/`).
 - `8003ab1` web: Settings > Domains, Domains > DNS records, Addresses, Forwarding; shared
-  `PageFrame`, `DataTable` (Astryx `Table`, stacked list rows at 640 px and below),
+  `PageFrame`, `DataTable` (Astryx `Table`, stacked list rows below 640 px),
   `FormDialog`, `useSettingsPage`; side navigation items; copy in zh-CN, en, ja-JP.
 - `a082b3e` tests for the hunks the first ablation pass missed.
 - README section "Domains and addresses".
@@ -386,7 +386,7 @@ addresses as an account-level list, verified once and shared by every address.
 
 - `bun run check` green at every commit; intermediate commits checked with the rest of the tree
   stashed (`git stash push --keep-index -u`).
-- `bun --bun vitest run` in `worker/`: 128 tests (27 new in `domains.spec.ts`,
+- `bun --bun vitest run` in `worker/` (at `fea4c99`): 128 tests (27 new in `domains.spec.ts`,
   `dns-check.spec.ts`, `addresses.spec.ts`, `forward-targets.spec.ts`; the route walk in
   `authz.spec.ts` lists the 13 new routes as guarded and answers 401 on each without a session).
 - `fetch` stays mocked to reject by default; the DNS tests replace it with a fake DoH zone and
@@ -418,23 +418,47 @@ addresses as an account-level list, verified once and shared by every address.
   merge.
 - Real DoH answers from `cloudflare-dns.com` (tests use a fake zone only; no test traffic to a
   real upstream).
-- The stacked layout at 640 px and below, and that `Value` (no wrapping) never overflows: a value
+- The stacked layout below 640 px, and that `Value` (no wrapping) never overflows: a value
   longer than the phone width (for example a 64-character prefix) would overflow its row.
 
-### Open questions for the owner
+### Owner rulings (2026-11-16, answer "同意" to the five open questions)
 
-1. Removing a domain together with its addresses, deleting an address and detaching a target
-   are confirmed in the UI but need no step-up re-authentication (owner ruling B covers only
-   Passkeys, sessions and the recovery key). Should the forced domain delete need it?
-2. Forwarding targets are stored lowercase in full, so `Me@x.test` and `me@x.test` are one
-   target. The local part is case-sensitive by RFC 5321, but providers treat it as
-   case-insensitive in practice.
-3. The 640 px stacking breakpoint was chosen here; `REQUIREMENTS.md` "Supported widths" is still
-   open (due 2027-01-31).
-4. The DNS check does not look up the Email Routing DKIM record (`cf2024-1._domainkey`), which
-   Cloudflare adds itself; one more subrequest would cover it.
-5. For M3: a forward-only address whose last target was detached has no target; M3 should keep
-   the copy then rather than drop the message.
+1. Removing a domain together with its addresses (`?deleteAddresses=1`) needs step-up
+   re-authentication; a stale session gets 403 `reauth_required` and the web app runs
+   `withReauth`. Removing a domain without addresses does not (`fe6af35`).
+2. Forwarding targets stay stored lowercase in full. Unverified risk (raised by the reviewer): a
+   destination address verified at Cloudflare in mixed case may not match the lowercase target
+   at `forward()` time. Check on a real account in M3.
+3. Supported widths: phone 390 px, laptop 1280 px, wide 1920 px (`REQUIREMENTS.md`, Numbers).
+   Tables stack below Astryx's sm breakpoint, 640 px (`DEFAULT_WIDTH_BREAKPOINTS.sm`); the
+   media query now excludes 640 itself (`00f8945`).
+4. The DNS check also looks up `cf2024-1._domainkey.<domain>` (TXT), the key Email Routing
+   signs forwarded mail with. Name and form from the Cloudflare page cited in `dns.ts`
+   (`v=DKIM1; h=sha256; k=rsa; p=<key>`): one v=DKIM1 record with a non-empty `p=` is found,
+   none is missing, anything else is different (`4a14924`, `83bd958`).
+5. A forward-only address never loses its last target: `DELETE /forward-targets/:id?detach=1`
+   switches each forward-only address whose last target it was to store and forward in the same
+   batch, and address create and update run the same correction in their batch. The 409 that
+   asks for `?detach=1` lists the addresses, and the web confirmation names them and the ones
+   that start keeping a copy (`0a01fdb`).
+
+### Verified after the review and the rulings
+
+- `bun --bun vitest run` in `worker/`: 132 tests.
+- Red before, green after: "lets a forward-only address left without targets be edited"
+  (review item 2, `expected 400 to be 200` before `bcc40dd`); "switches a forward-only address
+  that loses its last target to store and forward", "lets a forward-only address without
+  targets from before the ruling be edited" and the 409 address list (3 tests red with the
+  `worker/src/addresses` changes of `0a01fdb` stashed).
+- Ablation of the new hunks (14): PATCH check only when changing forwarding (3 hunks), forced
+  delete step-up and its condition, the DKIM name, missing rule, key rule and version tag, the
+  detach switch and its last-target condition, the PATCH correction, the 409 address list: 13
+  red. The version tag first survived and got a test (`83bd958`). Survivor: the correction in
+  the create batch. It covers a target removed between the target check and the batch; the
+  parallel test (20 pairs per run) always saw the detach first, so the window was never hit.
+  By reading, without it that window could still create a forward-only address with no link.
+- `bun run check` green at every commit; `bun run check:requirements` green with the widths
+  row filled and its "Not yet enforced" row removed.
 
 ### Review of fea4c99 ("FIX FIRST")
 
@@ -451,7 +475,7 @@ addresses as an account-level list, verified once and shared by every address.
    with the detach first and the create refused (`unknown_target`). By reading: a create that
    passes its target check before the detach and writes after it ends with the address
    forward-only and without links, the same state as create-then-detach, so no atomic guard was
-   added. Owner ruling 5 below removes that state altogether.
+   added then. Owner ruling 5 above removed that state altogether (`0a01fdb`).
 4. README: migration 0004 must be applied right after the deploy, because setup, sign-in and
    recovery depend on it.
 5. `NOTE_MAX` is one export in `domains/validate.ts` (`468a7c6`).
