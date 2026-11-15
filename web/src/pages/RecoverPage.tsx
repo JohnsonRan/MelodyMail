@@ -8,7 +8,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { useToast } from "@astryxdesign/core/Toast";
 import { FingerPrintIcon } from "@heroicons/react/24/outline";
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { AuthFrame } from "../components/AuthFrame";
@@ -30,7 +30,12 @@ export function RecoverPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // One action at a time. onEnter fires on every keydown, key repeat included, and busy is
+  // state that updates only after a render, so a ref is the guard.
+  const inFlight = useRef(false);
   const run = async (action: () => Promise<void>) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -38,6 +43,7 @@ export function RecoverPage() {
     } catch (err) {
       setError(errorMessage(t, err));
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };
