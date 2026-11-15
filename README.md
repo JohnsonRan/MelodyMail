@@ -122,3 +122,30 @@ bun run wrangler queues create melodymail-inbound
 5. If a message cannot be stored, an address with forwarding targets forwards it to them instead
    (recorded in the audit log); an address without targets refuses it, and the sender gets a
    bounce.
+
+## Mailbox
+
+Apply migration 0007 after deploying this version (`bun run --cwd worker db:migrate:remote`).
+It only adds indexes, so the mailbox works before it is applied, just slower. The deploy also
+creates the `Hub` Durable Object (SQLite-backed, as Workers Free requires) that pushes new-mail
+events to open pages.
+
+Messages are parsed in the browser. Sender HTML is shown in a sandboxed frame without scripts,
+remote images stay blocked until "Show remote images" is chosen for that message, and
+attachments are always downloaded, never opened in the app.
+
+To fill a local mailbox with the test fixtures, start the Worker and run the seed script. It
+sends every `.eml` in `worker/test/fixtures` through the real `email()` handler of `wrangler dev`
+and creates `shop@example.com` and `news@example.com` in the local database:
+
+```sh
+bun run --cwd worker dev          # in one terminal
+bun scripts/seed-mail.ts          # in another
+```
+
+The browser security suite needs Chromium for Playwright once:
+`bunx playwright@1.65.0 install chromium-headless-shell`. Then run it from `web/`:
+
+```sh
+bun run --cwd web test:browser
+```
