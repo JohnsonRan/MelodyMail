@@ -46,14 +46,18 @@ is on branch `m1-auth`; it merges only after the owner reviews it. Not pushed; n
 - A. Recovery lockout counts per client IP (5 failures / 15 min lock that IP) and globally (20
   failures / 15 min lock everyone). Both reservations are atomic and come before verification.
   The README `wrangler d1 execute` command clears both. Numbers as proposed; unchanged.
-- B. Step-up re-authentication: adding (checked at options) or deleting a Passkey, signing out
-  other sessions and regenerating the recovery key need a Passkey assertion on the current
-  session within 5 minutes (`sessions.reauth_at`); else 403 `reauth_required`. `POST /auth/reauth/options` and
+- B. Step-up re-authentication: adding (checked at options) or deleting a Passkey, signing out other
+  sessions and regenerating the recovery key need a Passkey assertion on the current session within
+  5 minutes (`sessions.reauth_at`); else 403 `reauth_required`. `POST /auth/reauth/options` and
   `/auth/reauth/verify` refresh it. Sessions created by setup, sign-in or recovery start fresh.
 - C. A successful recovery signs out every other session.
 - D. `POST /auth/recovery-key` regenerates the recovery key while signed in (needs B); Settings >
   Security has "Regenerate recovery key" with confirmation.
 - E. Reduce size and time before any limit is raised; limits in `REQUIREMENTS.md` stay as they are.
+- F. A session opened by a successful recovery stays fresh for step-up until the first Passkey
+  is added on that session, or at most 30 minutes after the recovery, whichever comes first.
+  Setup and sign-in sessions keep the 5-minute window (`sessions.recovery_fresh_until`,
+  migration 0002, `26082c2`; copy says 30 minutes, `1cd4169`). Was open question 1.
 
 ### Done
 
@@ -133,20 +137,20 @@ Where the time and bytes go, and what getting under would take:
 
 - `bun run check`: green at every commit; intermediate commits were checked with the rest of the
   tree stashed.
-- `bun --bun vitest run` in `worker/`: 88 tests against the D1 in workerd.
-- Ablation (`AGENTS.md`, Tests), script removes or inverts one hunk per run:
-  85 hunks, 84 turned at least one test red. Covered: every hunk listed in the first M1 report
-  (origin check, authorization, rate limit, setup, challenges, sign-in, recovery, sessions,
-  Passkeys, TOTP, input and error handling), plus the review fixes (atomic reservation, window
-  prune, retryAfter, passkey_exists re-check, both log redactions) and the rulings (per-IP limit,
-  global limit, global row only with the per-IP row, retryAfter per counter, clearing both
-  counters, recovery ending other sessions, fresh-auth null and expiry checks, sessions starting
-  fresh, reauth updating only the current session, regenerated key stored, and requireFreshAuth
-  on each of its routes; five then, four after the second review). Survivor: the explicit `if (!passkey)` in `checkAssertion`;
-  without it `verifyAuthentication` throws inside its own `try` and also answers 401. Kept as
-  the explicit check. The counter-regression rule is enforced by `@simplewebauthn/server` and
-  covered by a test. The web in-flight guard has no test (the web app has no test runner); it was
-  checked by reading.
+- `bun --bun vitest run` in `worker/`: 94 tests against the D1 in workerd.
+- Ablation (`AGENTS.md`, Tests), script removes or inverts one hunk per run: 85 hunks, 84 turned at
+  least one test red; ruling F added 7 more, all red (91 entries after dropping the /passkeys/verify
+  guard). Covered: every hunk listed in the first M1 report (origin check, authorization, rate
+  limit, setup, challenges, sign-in, recovery, sessions, Passkeys, TOTP, input and error handling),
+  plus the review fixes (atomic reservation, window prune, retryAfter, passkey_exists re-check, both
+  log redactions) and the rulings (per-IP limit, global limit, global row only with the per-IP row,
+  retryAfter per counter, clearing both counters, recovery ending other sessions, fresh-auth null
+  and expiry checks, sessions starting fresh, reauth updating only the current session, regenerated
+  key stored, and requireFreshAuth on each of its routes; five then, four after the second review).
+  Survivor: the explicit `if (!passkey)` in `checkAssertion`; without it `verifyAuthentication`
+  throws inside its own `try` and also answers 401. Kept as the explicit check. The
+  counter-regression rule is enforced by `@simplewebauthn/server` and covered by a test. The web
+  in-flight guard has no test (the web app has no test runner); it was checked by reading.
 - `wrangler dev` (local, port 8788, before the rulings): state, setup token, login options,
   403 and 401 paths, SPA routes. `db:migrate:local` applies without `database_id` and reruns as
   a no-op on a database with rows.
@@ -166,12 +170,9 @@ Where the time and bytes go, and what getting under would take:
 
 ### Open questions for the owner
 
-1. Should a recovery session stay fresh until the first Passkey is added? Today it is fresh for
-   5 minutes like any other; after that, adding a Passkey asks for a Passkey the recovered owner
-   may not have. The new-key screen now says to add one within 5 minutes (second review).
-2. The recovery lock is a sliding window: it lasts until the oldest counted attempt is 15
+1. The recovery lock is a sliding window: it lasts until the oldest counted attempt is 15
    minutes old, so at most 15 minutes, not exactly 15 minutes after the latest failure.
-3. `/api/auth/state` is fetched on every route change (one small request); no cache.
+2. `/api/auth/state` is fetched on every route change (one small request); no cache.
 
 Limits: re-baselined by the owner in `ef2b073` (merge gate 10 s, slowest test package 6 s, bundle
 total re-baselined); no longer open.
@@ -190,8 +191,8 @@ total re-baselined); no longer open.
 3. Deferred (source: second review): commit `4820d98` re-wrapped one-line objects in the three
    locale files together with the new keys. Not rewritten, because the branch history stays as
    reviewed; a later formatting-only commit can restore one-line objects if wanted.
-4. The new-key screen after a recovery says to add a Passkey within 5 minutes (`e844f2f`);
-   the deeper question is open question 1.
+4. The new-key screen after a recovery said to add a Passkey within 5 minutes (`e844f2f`); owner
+   ruling F replaced that with a 30-minute recovery window and 30-minute copy.
 5. Merge gate on a warm tree, `bun run check`, 3 runs: 8.43 s, 8.63 s, 8.65 s (CPU load 48%,
    74%, 88% before each run; 62% after). Limit 10 s, unchanged. The reviewer saw 10.9 s on one
    cold run.

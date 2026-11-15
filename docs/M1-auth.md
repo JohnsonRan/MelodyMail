@@ -42,11 +42,10 @@ marker described under "Authorization"; everything else needs a valid session.
 | `POST /reauth/options`, `POST /reauth/verify` | no | Passkey assertion for the current session (purpose `reauth`); sets `sessions.reauth_at`. |
 | `POST /recovery-key` | no | Needs fresh re-authentication. Replaces the recovery key and returns `{ recoveryKey }` once; the old key stops working. |
 
-Errors use one shape: `{ error: "<code>" }` with codes such as `unauthorized`, `already_initialized`,
-`invalid_setup_token`, `setup_disabled` (503, `SETUP_TOKEN` missing or under 32 characters),
-`verification_failed`, `locked`, `rate_limited`, `last_passkey`, `passkey_exists`,
-`reauth_required` (403). They carry no
-internal detail (`worker/AGENTS.md`, Security).
+Errors use one shape: `{ error: "<code>" }` with codes such as `unauthorized`,
+`already_initialized`, `invalid_setup_token`, `setup_disabled` (503, `SETUP_TOKEN` missing or under
+32 characters), `verification_failed`, `locked`, `rate_limited`, `last_passkey`, `passkey_exists`,
+`reauth_required` (403). They carry no internal detail (`worker/AGENTS.md`, Security).
 
 ## Sessions and cookies
 
@@ -59,7 +58,10 @@ internal detail (`worker/AGENTS.md`, Security).
   assertion or recovery on the session. Adding a Passkey (checked at `/passkeys/options`),
   deleting a Passkey, signing out other sessions and regenerating the recovery key need it within
   the last 5 minutes, else 403 `reauth_required`; the web app then runs `/reauth` and retries. A
-  session created by setup, sign-in or recovery starts fresh.
+  session created by setup, sign-in or recovery starts fresh. A session opened by a recovery also
+  stays fresh until the first Passkey is added on it, at most 30 minutes after the recovery
+  (`sessions.recovery_fresh_until`, owner ruling 2026-11-15), so an owner without Passkeys can
+  register one.
 
 ## CSRF and origin
 
@@ -78,15 +80,15 @@ internal detail (`worker/AGENTS.md`, Security).
 
 ## Lockout and rate limits
 
-- `POST /recover` (owner ruling 2026-11-15): two counters in D1 `login_attempts`, because the
-  Rate Limiting binding is approximate. Per client IP (`cf-connecting-ip`, scope
-  `recover:ip:<ip>`): 5 failures within 15 minutes lock that IP. Global (scope `recover`): 20
-  failures within 15 minutes lock recovery for everyone. Both are reserved atomically in one D1
-  batch before the credentials are checked; a locked attempt is counted in neither. A lock lasts
-  until the oldest counted attempt is 15 minutes old (at most 15 minutes); the answer is 429
-  `locked` with `retryAfter` seconds. Success clears this IP's counter and the global one. Way out: wait for the window, or the owner clears the table
-  with `wrangler d1 execute`; document the command in the README section M1 adds and test the
-  time-based way out.
+- `POST /recover` (owner ruling 2026-11-15): two counters in D1 `login_attempts`, because the Rate
+  Limiting binding is approximate. Per client IP (`cf-connecting-ip`, scope `recover:ip:<ip>`): 5
+  failures within 15 minutes lock that IP. Global (scope `recover`): 20 failures within 15 minutes
+  lock recovery for everyone. Both are reserved atomically in one D1 batch before the credentials
+  are checked; a locked attempt is counted in neither. A lock lasts until the oldest counted attempt
+  is 15 minutes old (at most 15 minutes); the answer is 429 `locked` with `retryAfter` seconds.
+  Success clears this IP's counter and the global one. Way out: wait for the window, or the owner
+  clears the table with `wrangler d1 execute`; document the command in the README section M1 adds
+  and test the time-based way out.
 - A wrong TOTP code and a wrong recovery key count the same and return the same error, so the
   response does not tell which factor was wrong.
 - TOTP: RFC 6238, SHA-1, 6 digits, 30-second step, accept the previous, current and next step,
@@ -99,11 +101,11 @@ internal detail (`worker/AGENTS.md`, Security).
 `owner` (single row, `id = 1` enforced by a CHECK), `passkeys`, `sessions`, `auth_challenges`,
 `login_attempts`, `audit_log` (event, created_at, ip, user agent; never a secret). Use Drizzle for
 the schema and `drizzle-kit generate` for the SQL migrations in `worker/migrations/` (the Worker
-queries D1 with prepared SQL; `drizzle-orm` is a dev dependency); `0001` adds
-`sessions.reauth_at`; apply it in
-tests with `readD1Migrations` / `applyD1Migrations` from `@cloudflare/vitest-plugin`. Add the D1
-binding `DB` to `wrangler.jsonc` without an id (wrangler provisions it on first deploy). If
-drizzle-kit does not run under `bun --bun`, stop and record it; do not fall back to Node.
+queries D1 with prepared SQL; `drizzle-orm` is a dev dependency); `0001` adds `sessions.reauth_at`
+and `0002` adds `sessions.recovery_fresh_until`; apply them in tests with `readD1Migrations` /
+`applyD1Migrations` from `@cloudflare/vitest-plugin`. Add the D1 binding `DB` to `wrangler.jsonc`
+without an id (wrangler provisions it on first deploy). If drizzle-kit does not run under `bun
+--bun`, stop and record it; do not fall back to Node.
 
 ## Libraries
 
