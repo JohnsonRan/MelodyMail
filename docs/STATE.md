@@ -201,3 +201,17 @@ Resolved by the owner rulings above: global lockout abuse (A), step-up re-authen
 recovery ending other sessions (C, was OQ6), recovery-key regeneration (D). Earlier design
 questions are now in `docs/M1-auth.md`: RP ID on `localhost`, recovery key of 160 bits, optional
 `label` on Passkey registration, `setup_disabled` (503).
+
+### Final review (2026-11-15, "PASS")
+
+Fresh-context Opus review of `ef2b073..23fb694` passed; the owner ruled that this review stands in
+for a different model family. Deferred under the Low rule:
+
+1. `worker/src/auth/account.ts:16-18` header comment still says sensitive actions need a Passkey
+   assertion in the last 5 minutes; since ruling F a recovery session also passes for up to 30
+   minutes. Point it at `requireFreshAuth` when the file is next touched.
+2. The `4820d98` locale re-wrap (second review, item 3).
+3. Gate timing margin: the reviewer's warm runs took 9.68-9.95 s against the 10 s limit.
+
+Still unverified: the Rate Limiting binding's per-location counting in production (needs a deploy),
+and every signed-in page in a real browser with a real authenticator.
