@@ -43,14 +43,14 @@ export const sessions = sqliteTable(
     // Set only by a recovery: until then (at most 30 minutes) the session counts as fresh, and
     // adding a Passkey on it ends that early.
     recoveryFreshUntil: integer("recovery_fresh_until"),
-    // Where the session was opened (owner request 2026-11-15). The IP comes from
-    // cf-connecting-ip; the rest from ip.sb, or request.cf when ip.sb fails.
+    // Where the session was opened (owner ruling G, amended 2026-11-16): the IP from
+    // cf-connecting-ip, the rest from request.cf, written with the session.
     ip: text("ip"),
     country: text("country"),
     region: text("region"),
     city: text("city"),
     organization: text("organization"),
-    // "ip.sb", "cf", "local" (private or loopback address, no lookup) or null (not looked up yet).
+    // "cf" (location from request.cf), "local" (private or loopback address) or null (none).
     geoSource: text("geo_source"),
   },
   (t) => [index("sessions_expires_at").on(t.expiresAt)],

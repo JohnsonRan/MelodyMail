@@ -5,7 +5,6 @@ import { publicRoute } from "../routing";
 import { checkAssertion, counterUpdate } from "./assertion";
 import { clearChallengeCookie, findChallenge, saveChallenge } from "./challenge";
 import { secretsEqual } from "./crypto";
-import { scheduleLocate } from "./geo";
 import { clearFailures, reserveAttempt } from "./lockout";
 import { readSession, setSessionCookie, startSession } from "./session";
 import { audit, hashRecoveryKey, newRecoveryKey, passkeyInsert, passkeyLabel } from "./store";
@@ -103,7 +102,6 @@ export function registerAuthRoutes(auth: Hono<AppEnv>): void {
     }
     clearChallengeCookie(c);
     setSessionCookie(c, session.token);
-    scheduleLocate(c, session.id, session.ip);
     return c.json({ recoveryKey });
   });
 
@@ -127,7 +125,6 @@ export function registerAuthRoutes(auth: Hono<AppEnv>): void {
       audit(c, "login", now),
     ]);
     setSessionCookie(c, session.token);
-    scheduleLocate(c, session.id, session.ip);
     return c.json({ ok: true });
   });
 
@@ -177,7 +174,6 @@ export function registerAuthRoutes(auth: Hono<AppEnv>): void {
       audit(c, "recover", now),
     ]);
     setSessionCookie(c, session.token);
-    scheduleLocate(c, session.id, session.ip);
     return c.json({ recoveryKey });
   });
 }

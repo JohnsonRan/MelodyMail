@@ -4,7 +4,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { AppEnv } from "../env";
 import { clientInfo, fail } from "../http";
 import { randomBytes, sha256Hex } from "./crypto";
-import { clientIp, isLocalIp } from "./geo";
+import { sessionLocation } from "./geo";
 
 const SESSION_COOKIE = "mm_session";
 const HOUR = 3_600_000;
@@ -25,9 +25,9 @@ export async function startSession(c: Context<AppEnv>, now: number, fromRecovery
   const token = isoBase64URL.fromBuffer(randomBytes(32));
   const id = await sha256Hex(token);
   const recoveryFreshUntil = fromRecovery ? now + RECOVERY_FRESH_MS : null;
-  const ip = clientIp(c);
+  const where = sessionLocation(c);
   const insert = c.env.DB.prepare(
-    "INSERT INTO sessions (id, created_at, expires_at, last_seen_at, user_agent, reauth_at, recovery_fresh_until, ip, geo_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO sessions (id, created_at, expires_at, last_seen_at, user_agent, reauth_at, recovery_fresh_until, ip, country, region, city, organization, geo_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   ).bind(
     id,
     now,
@@ -36,10 +36,14 @@ export async function startSession(c: Context<AppEnv>, now: number, fromRecovery
     clientInfo(c).userAgent,
     now,
     recoveryFreshUntil,
-    ip,
-    ip && isLocalIp(ip) ? "local" : null,
+    where.ip,
+    where.country,
+    where.region,
+    where.city,
+    where.organization,
+    where.geoSource,
   );
-  return { id, token, insert, ip };
+  return { id, token, insert };
 }
 
 export function setSessionCookie(c: Context<AppEnv>, token: string): void {
