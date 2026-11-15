@@ -1,7 +1,9 @@
 # web/AGENTS.md: frontend rules
 
 Rules for every change to the files under this directory. The root `AGENTS.md` (rule priority,
-workflow, CI, writing, commits) applies as well; numbers are in `REQUIREMENTS.md`.
+workflow, CI, writing, commits) applies as well; numbers are in `REQUIREMENTS.md`. The design
+system is Astryx; read `web/ASTRYX.md` for its component index, workflow and CLI before building
+UI (run the CLI as `bun run astryx -- <cmd>` from `web/`).
 
 ## Frontend
 

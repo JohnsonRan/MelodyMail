@@ -1,0 +1,18 @@
+{
+  "app": { "name": "MelodyMail" },
+  "nav": { "main": "Main navigation", "mail": "Mail", "manage": "Manage", "settings": "Settings" },
+  "folder": {
+    "inbox": "Inbox",
+    "sent": "Sent",
+    "drafts": "Drafts",
+    "archive": "Archive",
+    "trash": "Trash"
+  },
+  "inbox": {
+    "emptyTitle": "No mail yet",
+    "emptyDescription": "Mail sent to the addresses you add appears here."
+  },
+  "settings": { "language": "Language", "theme": "Theme" },
+  "language": { "zh-CN": "简体中文", "en": "English", "ja-JP": "日本語" },
+  "theme": { "system": "System", "light": "Light", "dark": "Dark" }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "@melodymail/web",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@astryxdesign/core": "^0.7.16",
+    "@astryxdesign/theme-neutral": "^0.7.16",
+    "@heroicons/react": "^2.2.0",
+    "@stylexjs/stylex": "^0.19.2",
+    "i18next": "^27.1.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-i18next": "^18.0.1"
+  },
+  "devDependencies": {
+    "@astryxdesign/cli": "^0.7.16",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  },
+  "scripts": {
+    "dev": "bun --bun vite",
+    "typecheck": "bun --bun tsc -p .",
+    "build": "bun --bun vite build",
+    "astryx": "bun --bun node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs"
+  }
+}
