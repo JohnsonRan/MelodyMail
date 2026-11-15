@@ -10,6 +10,7 @@ const KNOWN = new Set([
   "rate_limited",
   "last_passkey",
   "passkey_exists",
+  "reauth_required",
   "network",
 ]);
 

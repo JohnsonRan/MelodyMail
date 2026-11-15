@@ -1,5 +1,7 @@
 {
-  "app": { "name": "MelodyMail" },
+  "app": {
+    "name": "MelodyMail"
+  },
   "nav": {
     "main": "メインナビゲーション",
     "mail": "メール",
@@ -17,9 +19,20 @@
     "emptyTitle": "まだメールはありません",
     "emptyDescription": "追加したアドレス宛てのメールがここに表示されます。"
   },
-  "settings": { "language": "言語", "theme": "テーマ" },
-  "language": { "zh-CN": "简体中文", "en": "English", "ja-JP": "日本語" },
-  "theme": { "system": "システム設定に合わせる", "light": "ライト", "dark": "ダーク" },
+  "settings": {
+    "language": "言語",
+    "theme": "テーマ"
+  },
+  "language": {
+    "zh-CN": "简体中文",
+    "en": "English",
+    "ja-JP": "日本語"
+  },
+  "theme": {
+    "system": "システム設定に合わせる",
+    "light": "ライト",
+    "dark": "ダーク"
+  },
   "passkeyDefaultLabel": "パスキー",
   "setup": {
     "title": "MelodyMail のセットアップ",
@@ -95,7 +108,13 @@
     "signOut": "サインアウト",
     "signOutDescription": "このブラウザーのセッションを終了します。",
     "cancel": "キャンセル",
-    "loadFailed": "セキュリティ設定を読み込めませんでした。ページを再読み込みしてください。"
+    "loadFailed": "セキュリティ設定を読み込めませんでした。ページを再読み込みしてください。",
+    "recoveryKey": "回復キー",
+    "recoveryKeyDescription": "パスキーをすべて失った場合、認証アプリのコードと組み合わせてサインインできます。",
+    "regenerateKey": "回復キーを再生成",
+    "regenerateKeyTitle": "回復キーを再生成しますか?",
+    "regenerateKeyDescription": "現在の回復キーは使用できなくなります。新しいキーは一度だけ表示されます。",
+    "recoveryKeySaved": "完了"
   },
   "errors": {
     "generic": "問題が発生しました。もう一度お試しください。",
@@ -109,6 +128,7 @@
     "locked": "失敗した回数が多すぎます。{{minutes}} 分後にもう一度お試しください。",
     "rate_limited": "要求が多すぎます。1 分待ってから、もう一度お試しください。",
     "last_passkey": "唯一のパスキーは削除できません。先に別のパスキーを追加してください。",
-    "passkey_exists": "このパスキーは既に登録されています。"
+    "passkey_exists": "このパスキーは既に登録されています。",
+    "reauth_required": "続行するには、パスキーで確認してください。"
   }
 }

@@ -1,6 +1,7 @@
 import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
+import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Divider } from "@astryxdesign/core/Divider";
 import { Grid } from "@astryxdesign/core/Grid";
 import { HStack, Layout, LayoutContent, LayoutHeader, VStack } from "@astryxdesign/core/Layout";
@@ -12,15 +13,20 @@ import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError, api } from "../api";
+import { RecoveryKeyPanel } from "../components/RecoveryKeyPanel";
 import { errorMessage } from "../errors";
-import { addPasskey } from "../passkeys";
+import { addPasskey, withReauth } from "../passkeys";
 import { usePreferences } from "../preferences";
 import { describeUserAgent } from "../userAgent";
 
 type Passkey = { id: string; label: string; createdAt: number; lastUsedAt: number | null };
 type Session = { createdAt: number; lastSeenAt: number; userAgent: string; current: boolean };
 type Data = { passkeys: Passkey[]; sessions: Session[] };
-type Confirm = { kind: "passkey"; passkey: Passkey } | { kind: "sessions" } | null;
+type Confirm =
+  | { kind: "passkey"; passkey: Passkey }
+  | { kind: "sessions" }
+  | { kind: "recoveryKey" }
+  | null;
 
 function Section({
   title,
@@ -66,6 +72,7 @@ export function SecurityPage() {
   const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
+  const [newRecoveryKey, setNewRecoveryKey] = useState<string | null>(null);
 
   const formatDate = (ms: number) =>
     new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(ms);
@@ -120,11 +127,17 @@ export function SecurityPage() {
   const onConfirm = () =>
     act("confirm", async () => {
       if (confirm?.kind === "passkey") {
-        await api("DELETE", `/auth/passkeys/${encodeURIComponent(confirm.passkey.id)}`);
+        const path = `/auth/passkeys/${encodeURIComponent(confirm.passkey.id)}`;
+        await withReauth(() => api("DELETE", path));
         toast({ body: t("security.passkeyRemoved") });
       } else if (confirm?.kind === "sessions") {
-        await api("DELETE", "/auth/sessions/others");
+        await withReauth(() => api("DELETE", "/auth/sessions/others"));
         toast({ body: t("security.signedOutOthers") });
+      } else if (confirm?.kind === "recoveryKey") {
+        const done = await withReauth(() =>
+          api<{ recoveryKey: string }>("POST", "/auth/recovery-key", {}),
+        );
+        setNewRecoveryKey(done.recoveryKey);
       }
       setConfirm(null);
       await load();
@@ -231,6 +244,21 @@ export function SecurityPage() {
 
             <Divider />
 
+            <Section
+              title={t("security.recoveryKey")}
+              description={t("security.recoveryKeyDescription")}
+            >
+              <HStack>
+                <Button
+                  label={t("security.regenerateKey")}
+                  variant="secondary"
+                  onClick={() => setConfirm({ kind: "recoveryKey" })}
+                />
+              </HStack>
+            </Section>
+
+            <Divider />
+
             <Section title={t("security.signOut")} description={t("security.signOutDescription")}>
               <HStack>
                 <Button
@@ -249,22 +277,47 @@ export function SecurityPage() {
             title={
               confirm?.kind === "sessions"
                 ? t("security.signOutOthersTitle")
-                : t("security.removeTitle", {
-                    label: confirm?.kind === "passkey" ? confirm.passkey.label : "",
-                  })
+                : confirm?.kind === "recoveryKey"
+                  ? t("security.regenerateKeyTitle")
+                  : t("security.removeTitle", {
+                      label: confirm?.kind === "passkey" ? confirm.passkey.label : "",
+                    })
             }
             description={
               confirm?.kind === "sessions"
                 ? t("security.signOutOthersDescription")
-                : t("security.removeDescription")
+                : confirm?.kind === "recoveryKey"
+                  ? t("security.regenerateKeyDescription")
+                  : t("security.removeDescription")
             }
             actionLabel={
-              confirm?.kind === "sessions" ? t("security.signOutOthers") : t("security.remove")
+              confirm?.kind === "sessions"
+                ? t("security.signOutOthers")
+                : confirm?.kind === "recoveryKey"
+                  ? t("security.regenerateKey")
+                  : t("security.remove")
             }
             cancelLabel={t("security.cancel")}
             isActionLoading={busy === "confirm"}
             onAction={() => void onConfirm()}
           />
+
+          <Dialog
+            isOpen={newRecoveryKey !== null}
+            onOpenChange={() => {}}
+            purpose="required"
+            padding={6}
+          >
+            <DialogHeader title={t("recover.newKeyTitle")} />
+            {newRecoveryKey && (
+              <RecoveryKeyPanel
+                recoveryKey={newRecoveryKey}
+                notice={t("recoveryKey.rotatedNotice")}
+                continueLabel={t("security.recoveryKeySaved")}
+                onContinue={() => setNewRecoveryKey(null)}
+              />
+            )}
+          </Dialog>
         </LayoutContent>
       }
     />
