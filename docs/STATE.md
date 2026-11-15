@@ -504,7 +504,11 @@ addresses as an account-level list, verified once and shared by every address.
 - Resend domain verification state (`domains` column) waits for M5, which owns its shape.
 - The send switch is stored but has no effect until M5.
 
-## M3: inbound mail (in progress, branch `m3-inbound`)
+## M3: inbound mail (done 2026-11-16)
+
+Merged through pull request #3 as `84a903f` after a third-round review PASS and CI green. Risk
+class High. The "Not verified" list below needs a real Cloudflare account and stays open until the
+first deploy.
 
 Design: `docs/M3-inbound.md`. Risk class High (stored data, mail delivery, migration 0005). Not
 merged; waits for the independent review the risk class asks for.
@@ -779,3 +783,8 @@ None open from M3.
 - The Durable Object notification after a parse arrives with the mail UI (M4).
 - `has_attachments` is decided from the first 64 KB, so an attachment part that starts later is
   seen only through a `multipart/mixed` top-level type (ruling 7).
+
+## Next: M4 (web mailbox)
+
+See `docs/PLAN.md`, sections 4 and 7. Carry over from M3: wire `buildSearch` into a search route;
+parse raw mail in the browser for `parse_failed` rows and messages whose text starts after 64 KB.
