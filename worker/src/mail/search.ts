@@ -1,4 +1,4 @@
-// The search over messages_fts (owner ruling 2026-11-16). The M4 search route builds its query
+// The search over messages_fts (owner ruling 2026-11-16). GET /api/search builds its query
 // here. The trigram tokenizer only matches terms of at least 3 characters, so a shorter term
 // (a 2-character Chinese word such as 邮件) is matched with LIKE over the same columns instead.
 // User input never becomes FTS5 syntax or a LIKE wildcard: each long term is one quoted phrase,
@@ -7,9 +7,6 @@
 /** Characters a trigram MATCH term needs. */
 const TRIGRAM = 3;
 const MAX_TERMS = 8;
-export const SEARCH_LIMIT = 50;
-
-export type SearchQuery = { sql: string; params: (string | number)[] };
 
 /** An FTS5 string: double quotes doubled, so the term is one literal phrase. */
 function phrase(term: string): string {
@@ -21,11 +18,11 @@ function contains(term: string): string {
   return `%${term.replace(/[\\%_]/g, "\\$&")}%`;
 }
 
-export type SearchFilter = { where: string; params: string[]; ranked: boolean };
+export type SearchFilter = { where: string; params: string[] };
 
 /**
  * The WHERE clause over messages_fts that matches every whitespace-separated term of `input`.
- * `ranked` is true when a long term makes FTS5's rank meaningful. Null for blank input.
+ * Null for blank input. GET /api/search pages its matches newest first.
  */
 export function searchFilter(input: string): SearchFilter | null {
   const terms = input.trim().split(/\s+/).filter(Boolean).slice(0, MAX_TERMS);
@@ -45,19 +42,5 @@ export function searchFilter(input: string): SearchFilter | null {
     );
     params.push(pattern, pattern, pattern);
   }
-  return { where: where.join(" AND "), params, ranked: long.length > 0 };
-}
-
-/**
- * The query for the message ids matching every whitespace-separated term of `input`, best match
- * first when a long term is present, else newest first. Null for blank input.
- */
-export function buildSearch(input: string, limit = SEARCH_LIMIT): SearchQuery | null {
-  const filter = searchFilter(input);
-  if (!filter) return null;
-  const order = filter.ranked ? "rank" : "rowid DESC";
-  return {
-    sql: `SELECT message_id FROM messages_fts WHERE ${filter.where} ORDER BY ${order} LIMIT ?`,
-    params: [...filter.params, limit],
-  };
+  return { where: where.join(" AND "), params };
 }

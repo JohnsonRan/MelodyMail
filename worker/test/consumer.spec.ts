@@ -4,7 +4,7 @@ import type { Env } from "../src/env";
 import { handleQueue, MAX_ATTEMPTS, RETRY_DELAY_SECONDS } from "../src/mail/consumer";
 import { handleEmail } from "../src/mail/inbound";
 import { SLICE_BYTES } from "../src/mail/parse";
-import { buildSearch } from "../src/mail/search";
+import { searchFilter } from "../src/mail/search";
 import { fixture } from "./fixtures";
 import { attachmentFirst, craftedMessages, deeplyNested, largeMessage } from "./fixtures/generated";
 import { addAddress, asMessage, inbound, messageRows } from "./mail-helpers";
@@ -235,12 +235,14 @@ describe("queue consumer", () => {
   });
 });
 
-describe("search query builder", () => {
+describe("search filter", () => {
   async function search(input: string): Promise<string[]> {
-    const query = buildSearch(input);
-    if (!query) return [];
-    const { results } = await env.DB.prepare(query.sql)
-      .bind(...query.params)
+    const filter = searchFilter(input);
+    if (!filter) return [];
+    const { results } = await env.DB.prepare(
+      `SELECT message_id FROM messages_fts WHERE ${filter.where}`,
+    )
+      .bind(...filter.params)
       .all<{ message_id: string }>();
     return results.map((r) => r.message_id).sort();
   }
@@ -308,7 +310,7 @@ describe("search query builder", () => {
     }
   });
 
-  it("returns no query for blank input", () => {
-    expect(buildSearch("   ")).toBeNull();
+  it("returns no filter for blank input", () => {
+    expect(searchFilter("   ")).toBeNull();
   });
 });
