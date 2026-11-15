@@ -16,5 +16,19 @@ export default defineConfig({
       },
     }),
   ],
-  test: { setupFiles: ["./test/apply-migrations.ts"] },
+  test: {
+    setupFiles: ["./test/apply-migrations.ts"],
+    // @simplewebauthn/server and its @peculiar/asn1-* packages are about 240 small modules, and
+    // each test file's runner transformed them all. Pre-bundled once, the suite takes about half
+    // the time.
+    // Hono stays unbundled: bundling "hono" apart from "hono/route" splits its internal symbols.
+    deps: {
+      optimizer: {
+        ssr: {
+          enabled: true,
+          include: ["@simplewebauthn/server", "@simplewebauthn/server/helpers"],
+        },
+      },
+    },
+  },
 });
