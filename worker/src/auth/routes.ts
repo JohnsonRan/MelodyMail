@@ -1,11 +1,12 @@
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import type { AppEnv } from "../env";
-import { clientInfo, fail, readJson, str } from "../http";
+import { fail, readJson, str } from "../http";
 import { publicRoute } from "../routing";
 import { clearChallengeCookie, findChallenge, saveChallenge, takeChallenge } from "./challenge";
-import { base32Encode, base64url, randomBytes, secretsEqual, sha256Hex } from "./crypto";
+import { base32Encode, randomBytes, secretsEqual, sha256Hex } from "./crypto";
 import { clearFailures, reserveAttempt } from "./lockout";
 import { readSession, setSessionCookie, startSession } from "./session";
+import { audit, passkeyInsert, passkeyLabel } from "./store";
 import { newTotpSecret, totpUri, verifyTotp } from "./totp";
 import {
   authenticationOptions,
@@ -30,13 +31,6 @@ const rateLimit: MiddlewareHandler<AppEnv> = async (c, next) => {
   return next();
 };
 
-export function audit(c: Ctx, event: string, now: number): D1PreparedStatement {
-  const { ip, userAgent } = clientInfo(c);
-  return c.env.DB.prepare(
-    "INSERT INTO audit_log (event, created_at, ip, user_agent) VALUES (?, ?, ?, ?)",
-  ).bind(event, now, ip, userAgent);
-}
-
 async function isInitialized(c: Ctx): Promise<boolean> {
   return (await c.env.DB.prepare("SELECT 1 AS one FROM owner WHERE id = 1").first()) !== null;
 }
@@ -59,30 +53,6 @@ function newRecoveryKey(): string {
 
 function hashRecoveryKey(key: string): Promise<string> {
   return sha256Hex(key.replace(/[^0-9a-z]/gi, "").toUpperCase());
-}
-
-export function passkeyInsert(c: Ctx, credential: StoredPasskeyInput, label: string, now: number) {
-  return c.env.DB.prepare(
-    "INSERT INTO passkeys (id, public_key, counter, transports, label, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-  ).bind(
-    credential.id,
-    base64url(credential.publicKey),
-    credential.counter,
-    JSON.stringify(credential.transports ?? []),
-    label,
-    now,
-  );
-}
-
-type StoredPasskeyInput = {
-  id: string;
-  publicKey: Uint8Array;
-  counter: number;
-  transports?: string[];
-};
-
-export function passkeyLabel(value: unknown): string {
-  return str(typeof value === "string" ? value.trim() : value, 64) ?? "Passkey";
 }
 
 export function registerAuthRoutes(auth: Hono<AppEnv>): void {

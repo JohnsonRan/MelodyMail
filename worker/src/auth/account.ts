@@ -2,8 +2,8 @@ import type { Hono } from "hono";
 import type { AppEnv } from "../env";
 import { fail, readJson } from "../http";
 import { saveChallenge, takeChallenge } from "./challenge";
-import { audit, passkeyInsert, passkeyLabel } from "./routes";
 import { clearSessionCookie, SESSION_IDLE_MS } from "./session";
+import { audit, passkeyInsert, passkeyLabel } from "./store";
 import { registrationOptions, type StoredPasskey, verifyRegistration } from "./webauthn";
 
 /** Routes for the signed-in owner. None is public; the session middleware guards them all. */
