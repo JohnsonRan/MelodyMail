@@ -39,3 +39,19 @@ export function RowsSkeleton() {
     </VStack>
   );
 }
+
+/**
+ * A list row's secondary lines, one fact per line and never truncated: a plain string
+ * description would be cut to one line with an ellipsis, hiding dates (web/AGENTS.md).
+ */
+export function Meta({ lines }: { lines: string[] }) {
+  return (
+    <VStack gap={0}>
+      {lines.map((line) => (
+        <Text key={line} type="supporting" color="secondary">
+          {line}
+        </Text>
+      ))}
+    </VStack>
+  );
+}

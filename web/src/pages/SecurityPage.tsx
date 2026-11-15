@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError, api } from "../api";
 import { RecoveryKeySection } from "../components/RecoveryKeySection";
-import { RowsSkeleton, SecuritySection } from "../components/SecuritySection";
+import { Meta, RowsSkeleton, SecuritySection } from "../components/SecuritySection";
 import { errorMessage } from "../errors";
 import { addPasskey, withReauth } from "../passkeys";
 import { usePreferences } from "../preferences";
@@ -146,11 +146,16 @@ export function SecurityPage() {
                       key={p.id}
                       itemKey={p.id}
                       label={p.label}
-                      description={`${t("security.created", { date: formatDate(p.createdAt) })} · ${
-                        p.lastUsedAt
-                          ? t("security.lastUsed", { date: formatDate(p.lastUsedAt) })
-                          : t("security.neverUsed")
-                      }`}
+                      description={
+                        <Meta
+                          lines={[
+                            t("security.created", { date: formatDate(p.createdAt) }),
+                            p.lastUsedAt
+                              ? t("security.lastUsed", { date: formatDate(p.lastUsedAt) })
+                              : t("security.neverUsed"),
+                          ]}
+                        />
+                      }
                       endContent={
                         <Button
                           label={t("security.remove")}
@@ -194,7 +199,11 @@ export function SecurityPage() {
                     <ListItem
                       key={`${s.createdAt}-${s.userAgent}`}
                       label={describeUserAgent(s.userAgent) ?? t("security.unknownDevice")}
-                      description={t("security.lastSeen", { date: formatDate(s.lastSeenAt) })}
+                      description={
+                        <Meta
+                          lines={[t("security.lastSeen", { date: formatDate(s.lastSeenAt) })]}
+                        />
+                      }
                       endContent={
                         s.current ? (
                           <Text type="supporting" color="secondary">
