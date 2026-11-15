@@ -1,0 +1,2 @@
+# Copy to .dev.vars for `wrangler dev`. Generate a token with: openssl rand -base64 32
+SETUP_TOKEN=replace-with-at-least-32-random-characters
