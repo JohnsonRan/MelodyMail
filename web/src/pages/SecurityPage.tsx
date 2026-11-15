@@ -1,19 +1,17 @@
 import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Divider } from "@astryxdesign/core/Divider";
-import { Grid } from "@astryxdesign/core/Grid";
 import { HStack, Layout, LayoutContent, LayoutHeader, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
-import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { useNavigate } from "@tanstack/react-router";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError, api } from "../api";
-import { RecoveryKeyPanel } from "../components/RecoveryKeyPanel";
+import { RecoveryKeySection } from "../components/RecoveryKeySection";
+import { RowsSkeleton, SecuritySection } from "../components/SecuritySection";
 import { errorMessage } from "../errors";
 import { addPasskey, withReauth } from "../passkeys";
 import { usePreferences } from "../preferences";
@@ -22,47 +20,10 @@ import { describeUserAgent } from "../userAgent";
 type Passkey = { id: string; label: string; createdAt: number; lastUsedAt: number | null };
 type Session = { createdAt: number; lastSeenAt: number; userAgent: string; current: boolean };
 type Data = { passkeys: Passkey[]; sessions: Session[] };
-type Confirm =
-  | { kind: "passkey"; passkey: Passkey }
-  | { kind: "sessions" }
-  | { kind: "recoveryKey" }
-  | null;
+type Confirm = { kind: "passkey"; passkey: Passkey } | { kind: "sessions" };
+type ConfirmSpec = { title: string; description: string; actionLabel: string; done: string };
 
-function Section({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: ReactNode;
-}) {
-  return (
-    <Grid columns={{ minWidth: 320 }} gap={10}>
-      <VStack gap={1}>
-        <Heading level={2}>{title}</Heading>
-        <Text type="supporting" color="secondary">
-          {description}
-        </Text>
-      </VStack>
-      <VStack gap={4} hAlign="stretch">
-        {children}
-      </VStack>
-    </Grid>
-  );
-}
-
-function RowsSkeleton() {
-  return (
-    <VStack gap={2} hAlign="stretch">
-      {[0, 1].map((i) => (
-        <Skeleton key={i} height="var(--size-control-lg)" index={i} />
-      ))}
-    </VStack>
-  );
-}
-
-/** Settings > Security: Passkeys, sessions and sign-out. */
+/** Settings > Security: Passkeys, sessions, recovery key and sign-out. */
 export function SecurityPage() {
   const { t } = useTranslation();
   const { locale } = usePreferences();
@@ -71,8 +32,7 @@ export function SecurityPage() {
   const [data, setData] = useState<Data | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<Confirm>(null);
-  const [newRecoveryKey, setNewRecoveryKey] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<Confirm | null>(null);
 
   const formatDate = (ms: number) =>
     new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(ms);
@@ -124,21 +84,30 @@ export function SecurityPage() {
       await load();
     });
 
-  const onConfirm = () =>
+  // What each confirmation says, and the request it confirms.
+  const specOf = (c: Confirm): ConfirmSpec =>
+    c.kind === "passkey"
+      ? {
+          title: t("security.removeTitle", { label: c.passkey.label }),
+          description: t("security.removeDescription"),
+          actionLabel: t("security.remove"),
+          done: t("security.passkeyRemoved"),
+        }
+      : {
+          title: t("security.signOutOthersTitle"),
+          description: t("security.signOutOthersDescription"),
+          actionLabel: t("security.signOutOthers"),
+          done: t("security.signedOutOthers"),
+        };
+  const pathOf = (c: Confirm) =>
+    c.kind === "passkey"
+      ? `/auth/passkeys/${encodeURIComponent(c.passkey.id)}`
+      : "/auth/sessions/others";
+
+  const onConfirm = (c: Confirm) =>
     act("confirm", async () => {
-      if (confirm?.kind === "passkey") {
-        const path = `/auth/passkeys/${encodeURIComponent(confirm.passkey.id)}`;
-        await withReauth(() => api("DELETE", path));
-        toast({ body: t("security.passkeyRemoved") });
-      } else if (confirm?.kind === "sessions") {
-        await withReauth(() => api("DELETE", "/auth/sessions/others"));
-        toast({ body: t("security.signedOutOthers") });
-      } else if (confirm?.kind === "recoveryKey") {
-        const done = await withReauth(() =>
-          api<{ recoveryKey: string }>("POST", "/auth/recovery-key", {}),
-        );
-        setNewRecoveryKey(done.recoveryKey);
-      }
+      await withReauth(() => api("DELETE", pathOf(c)));
+      toast({ body: specOf(c).done });
       setConfirm(null);
       await load();
     });
@@ -151,6 +120,7 @@ export function SecurityPage() {
 
   const onlyOne = data?.passkeys.length === 1;
   const others = data ? data.sessions.filter((s) => !s.current).length : 0;
+  const spec = confirm ? specOf(confirm) : null;
 
   return (
     <Layout
@@ -165,7 +135,10 @@ export function SecurityPage() {
           <VStack gap={4}>
             {loadError && <Banner status="error" title={t("security.loadFailed")} />}
 
-            <Section title={t("security.passkeys")} description={t("security.passkeysDescription")}>
+            <SecuritySection
+              title={t("security.passkeys")}
+              description={t("security.passkeysDescription")}
+            >
               {data ? (
                 <List>
                   {data.passkeys.map((p) => (
@@ -207,11 +180,14 @@ export function SecurityPage() {
                   onClick={() => void onAddPasskey()}
                 />
               </HStack>
-            </Section>
+            </SecuritySection>
 
             <Divider />
 
-            <Section title={t("security.sessions")} description={t("security.sessionsDescription")}>
+            <SecuritySection
+              title={t("security.sessions")}
+              description={t("security.sessionsDescription")}
+            >
               {data ? (
                 <List>
                   {data.sessions.map((s) => (
@@ -240,26 +216,18 @@ export function SecurityPage() {
                   onClick={() => setConfirm({ kind: "sessions" })}
                 />
               </HStack>
-            </Section>
+            </SecuritySection>
 
             <Divider />
 
-            <Section
-              title={t("security.recoveryKey")}
-              description={t("security.recoveryKeyDescription")}
+            <RecoveryKeySection onError={handleError} />
+
+            <Divider />
+
+            <SecuritySection
+              title={t("security.signOut")}
+              description={t("security.signOutDescription")}
             >
-              <HStack>
-                <Button
-                  label={t("security.regenerateKey")}
-                  variant="secondary"
-                  onClick={() => setConfirm({ kind: "recoveryKey" })}
-                />
-              </HStack>
-            </Section>
-
-            <Divider />
-
-            <Section title={t("security.signOut")} description={t("security.signOutDescription")}>
               <HStack>
                 <Button
                   label={t("security.signOut")}
@@ -268,56 +236,19 @@ export function SecurityPage() {
                   onClick={() => void onSignOut()}
                 />
               </HStack>
-            </Section>
+            </SecuritySection>
           </VStack>
 
           <AlertDialog
             isOpen={confirm !== null}
             onOpenChange={(open) => !open && setConfirm(null)}
-            title={
-              confirm?.kind === "sessions"
-                ? t("security.signOutOthersTitle")
-                : confirm?.kind === "recoveryKey"
-                  ? t("security.regenerateKeyTitle")
-                  : t("security.removeTitle", {
-                      label: confirm?.kind === "passkey" ? confirm.passkey.label : "",
-                    })
-            }
-            description={
-              confirm?.kind === "sessions"
-                ? t("security.signOutOthersDescription")
-                : confirm?.kind === "recoveryKey"
-                  ? t("security.regenerateKeyDescription")
-                  : t("security.removeDescription")
-            }
-            actionLabel={
-              confirm?.kind === "sessions"
-                ? t("security.signOutOthers")
-                : confirm?.kind === "recoveryKey"
-                  ? t("security.regenerateKey")
-                  : t("security.remove")
-            }
+            title={spec?.title ?? ""}
+            description={spec?.description ?? ""}
+            actionLabel={spec?.actionLabel ?? ""}
             cancelLabel={t("security.cancel")}
             isActionLoading={busy === "confirm"}
-            onAction={() => void onConfirm()}
+            onAction={() => confirm && void onConfirm(confirm)}
           />
-
-          <Dialog
-            isOpen={newRecoveryKey !== null}
-            onOpenChange={() => {}}
-            purpose="required"
-            padding={6}
-          >
-            <DialogHeader title={t("recover.newKeyTitle")} />
-            {newRecoveryKey && (
-              <RecoveryKeyPanel
-                recoveryKey={newRecoveryKey}
-                notice={t("recoveryKey.rotatedNotice")}
-                continueLabel={t("security.recoveryKeySaved")}
-                onContinue={() => setNewRecoveryKey(null)}
-              />
-            )}
-          </Dialog>
         </LayoutContent>
       }
     />
