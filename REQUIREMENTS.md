@@ -48,7 +48,7 @@ meanwhile.
 | Type scale (role: size / line height) | Astryx theme-neutral type tokens only; no literal font size | a setting, not measured | design system |
 | Spacing scale (section, card, inside card, label to field) | Astryx spacing tokens only; no literal pixel value | a setting, not measured | design system |
 | Page frame width; readable column width | | | e2e page-width check |
-| Supported widths (phone, laptop, wide) | | | screenshots |
+| Supported widths (phone, laptop, wide) | phone 390 px, laptop 1280 px, wide 1920 px; tables stack below Astryx's sm breakpoint (640 px) | a setting, not measured (owner ruling 2026-11-16) | screenshots |
 | Full end-to-end run, wall time | | | |
 | Slowest test package | 6 s | 4.7 s, worker suite (vitest Duration), 3 runs 4.54–4.91 s, of which about 2 s is fixed workerd startup (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load 67–70%) | review |
 | Frontend entry chunk, gzip | 270 kB | 14 kB (2026-11-15, vite build, gzip -6) | review |
@@ -148,7 +148,6 @@ body.
 | Commands: Scheduled run on main | no heavy suites exist yet | add when the Playwright suite lands in M4 | 2027-01-31 |
 | Commands: Release | no release flow yet | add with the deploy rehearsal in M7 | 2027-03-31 |
 | Numbers: Page frame width; readable column width | the shell has no content pages yet | measure once the mail list and settings pages exist (M4) | 2027-01-31 |
-| Numbers: Supported widths (phone, laptop, wide) | not chosen | choose with the first screenshots in M4 | 2027-01-31 |
 | Numbers: Full end-to-end run, wall time | no end-to-end suite | measure when Playwright lands in M4 | 2027-01-31 |
 | Numbers: CPU time per Worker invocation, production | not deployed yet; Workers Free caps it at 10 ms | read cpuTime from Workers Logs after the first deploy | 2027-02-28 |
 | Numbers: Inbound header parse, JS time per message (Bun benchmark) | parser not written yet; planned budget 3 ms | add the benchmark with the M3 parser | 2027-01-31 |

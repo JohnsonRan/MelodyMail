@@ -13,8 +13,10 @@ export type DataColumn<T> = {
   width?: ColumnWidth;
 };
 
-// Below this width the table stacks: each row becomes a list item with its fields one per line.
-const STACKED = "(max-width: 640px)";
+// Below Astryx's sm breakpoint (640 px, DEFAULT_WIDTH_BREAKPOINTS) the table stacks: each row
+// becomes a list item with its fields one per line. The phone width (390 px, REQUIREMENTS.md)
+// stacks; laptop (1280 px) and wide (1920 px) get the table.
+const STACKED = "(max-width: 639.98px)";
 
 /**
  * A settings table that spans the frame at desktop width and stacks at phone width, so no value
