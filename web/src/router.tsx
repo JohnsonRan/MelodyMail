@@ -9,6 +9,8 @@ import { RootLayout } from "./App";
 import { getAuthState } from "./api";
 import type { AstryxMessages, Locale } from "./i18n";
 
+type MailSearch = { m?: string; q?: string };
+
 // Each page and the signed-in shell are their own chunks, so the first paint loads only what
 // the page it shows needs; the sign-in pages do not download the app shell.
 export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessages) {
@@ -27,11 +29,25 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
       if (!state.authenticated) throw redirect({ to: "/login" });
     },
   });
-  const inboxRoute = createRoute({
-    getParentRoute: () => shellRoute,
-    path: "/",
-    component: lazyRouteComponent(() => import("./pages/InboxPage"), "InboxPage"),
-  });
+  // Mailbox views. `m` names the open message, so the browser's back button closes it.
+  const mailbox = <P extends string>(path: P, page: keyof typeof import("./pages/MailboxPages")) =>
+    createRoute({
+      getParentRoute: () => shellRoute,
+      path,
+      validateSearch: (search: Record<string, unknown>): MailSearch => ({
+        ...(typeof search.m === "string" ? { m: search.m } : {}),
+        ...(typeof search.q === "string" ? { q: search.q } : {}),
+      }),
+      component: lazyRouteComponent(() => import("./pages/MailboxPages"), page),
+    });
+  const mailboxRoutes = [
+    mailbox("/", "InboxPage"),
+    mailbox("/starred", "StarredPage"),
+    mailbox("/archive", "ArchivePage"),
+    mailbox("/trash", "TrashPage"),
+    mailbox("/address/$id", "AddressPage"),
+    mailbox("/search", "SearchPage"),
+  ];
   const securityRoute = createRoute({
     getParentRoute: () => shellRoute,
     path: "/settings/security",
@@ -90,7 +106,7 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
 
   const routeTree = rootRoute.addChildren([
     shellRoute.addChildren([
-      inboxRoute,
+      ...mailboxRoutes,
       securityRoute,
       domainsRoute,
       domainDnsRoute,

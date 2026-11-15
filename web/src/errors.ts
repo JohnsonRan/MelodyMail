@@ -26,6 +26,7 @@ const KNOWN = new Set([
   "invalid_email",
   "target_exists",
   "target_in_use",
+  "not_in_trash",
   "network",
 ]);
 

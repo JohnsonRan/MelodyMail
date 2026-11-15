@@ -13,14 +13,71 @@
   },
   "folder": {
     "inbox": "Inbox",
-    "sent": "Sent",
-    "drafts": "Drafts",
+    "starred": "Starred",
     "archive": "Archive",
     "trash": "Trash"
   },
-  "inbox": {
-    "emptyTitle": "No mail yet",
-    "emptyDescription": "Mail sent to the addresses you add appears here."
+  "mail": {
+    "search": "Search mail",
+    "searchPlaceholder": "Search mail",
+    "searchTitle": "Search: {{query}}",
+    "unread": "unread",
+    "message": "Message",
+    "date": "Date",
+    "to": "To",
+    "cc": "Cc",
+    "from": "From",
+    "tag": "Sub-address tag",
+    "noSubject": "(no subject)",
+    "noPreview": "No preview",
+    "hasAttachments": "Has attachments",
+    "starred": "Starred",
+    "refresh": "Refresh",
+    "retry": "Try again",
+    "listActions": "Actions on selected messages",
+    "messageActions": "Message actions",
+    "selected": "Selected: {{count}}",
+    "archive": "Archive",
+    "moveToInbox": "Move to Inbox",
+    "trash": "Move to Trash",
+    "restore": "Restore",
+    "star": "Star",
+    "unstar": "Remove star",
+    "markRead": "Mark as read",
+    "markUnread": "Mark as unread",
+    "backToList": "Back to the list",
+    "showRemoteImages": "Show remote images",
+    "remoteBlocked": "Remote images and styles in this message are blocked to protect your privacy.",
+    "deleteForever": "Delete forever",
+    "deleteForeverTitle": "Delete this message forever?",
+    "deleteForeverDescription": "The message and its attachments are removed and cannot be restored.",
+    "reader": "Reading pane",
+    "nothingOpen": "Select a message to read it",
+    "listFailed": "The messages could not be loaded.",
+    "threadFailed": "This conversation could not be loaded. Try again.",
+    "readFailed": "This message could not be read",
+    "readFailedDescription": "Download the original message to open it in another mail app.",
+    "downloadOriginal": "Download original",
+    "downloading": "Downloading the message",
+    "attachments": "Attachments",
+    "download": "Download",
+    "unnamedAttachment": "attachment",
+    "imageTooLarge": "Image too large to show",
+    "noContent": "This message has no text.",
+    "noResults": "No messages match",
+    "noResultsDescription": "Try other words. Messages in Trash are not searched.",
+    "empty": {
+      "inbox": "No mail yet",
+      "starred": "No starred messages",
+      "archive": "No archived messages",
+      "trash": "Trash is empty"
+    },
+    "done": {
+      "archived": "Archived ({{count}})",
+      "trashed": "Moved to Trash ({{count}})",
+      "restored": "Restored ({{count}})",
+      "deleted": "Deleted forever ({{count}})"
+    }
   },
   "settings": {
     "language": "Language",
@@ -150,7 +207,8 @@
     "invalid_display_name": "The sender name is too long or has a line break. Use at most 100 characters on one line.",
     "invalid_email": "This is not a valid email address. Check it and try again.",
     "target_exists": "This forwarding address is already added.",
-    "target_in_use": "Addresses still forward to this address. Confirm removing it from them."
+    "target_in_use": "Addresses still forward to this address. Confirm removing it from them.",
+    "not_in_trash": "Only messages in Trash can be deleted forever. Move it to Trash first."
   },
   "common": {
     "cancel": "Cancel"
