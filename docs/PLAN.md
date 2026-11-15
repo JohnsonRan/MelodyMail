@@ -12,6 +12,8 @@
 - 发信只接 Resend。Cloudflare Email Service 以后需要时再加。
 - 界面三语：简体中文（zh-CN）、英语（en）、日语（ja）。
 - 前端设计系统用 Astryx（`@astryxdesign/core`）。
+- 只有面板中添加的地址前缀能收信，其余拒收。
+- 所有 Node 相关操作只用 Bun。
 
 不做：
 
@@ -23,7 +25,7 @@
 | 关注点 | 选型 | 理由 |
 | --- | --- | --- |
 | 运行平台 | 一个 Worker 同时提供 API 和静态前端（Workers Static Assets） | 单次部署，前后端同源 |
-| 收信 | Email Routing catch-all → Email Worker（`email()` 处理器） | 原生能力；单封上限 25 MiB |
+| 收信 | Email Routing catch-all → Email Worker（`email()` 处理器），只收面板中添加的前缀，其余拒收 | 原生能力；单封上限 25 MiB |
 | 发信 | Resend API，用 Resend Webhook（Svix 签名）回写投递状态 | 已确认先只接 Resend；用一个 `sendMail()` 模块，不预先抽象多提供方 |
 | 数据库 | D1 + Drizzle ORM + FTS5 全文搜索 | D1 支持 FTS5；Drizzle 管理迁移与类型 |
 | 缓存 | KV，只缓存设置和域名表 | KV 最终一致，不用于会话和计数 |
@@ -38,19 +40,20 @@
 | 样式 | Astryx 主题 token，加上 CSS Modules 补少量自定义样式；不用 Tailwind | `web/AGENTS.md` 要求一套 token，避免两套设计系统并存 |
 | i18n | i18next + react-i18next，按语言懒加载；`<html lang>` 随语言切换 | 中日共用汉字但字形不同，`lang` 属性决定浏览器选用哪种字形 |
 | 测试 | Vitest + `@cloudflare/vitest-pool-workers`；Playwright 端到端 | 测试跑在本地模拟的 D1、R2、Queues 上 |
-| 包管理 | pnpm workspaces | |
+| 包管理与运行时 | Bun（workspaces、脚本、测试运行）；所有 Node 相关操作只用 Bun | 负责人指定 |
 
 已知风险：
 
 - Astryx 处于 Beta（0.4.x），API 可能变化。应对：固定版本号，升级时用 `astryx upgrade` 跑 codemod。
 - Astryx 主题默认字体 Figtree 不含 CJK 字形。应对：字体栈追加系统 CJK 字体（中文用 PingFang SC / Microsoft YaHei，日文用 Hiragino Sans / Yu Gothic），不加载 CJK 网络字体。
+- wrangler 和 `@cloudflare/vitest-pool-workers` 官方以 Node 为运行时，在 Bun 下（`bun --bun`）能否正常运行尚未核实。M0 先验证；跑不通就停下报告，不悄悄换回 Node。
 - 改用 Resend 后可能不再需要 Workers Paid，但 Queues、Durable Objects、Rate Limiting 在 Free 计划下是否可用、额度多少，尚未核实，M0 时确认。
 
 ## 3. 架构
 
 ```text
 入站：外部 MTA → Email Routing(catch-all) → email() 处理器
-        ├─ 收件地址在屏蔽列表 → setReject()
+        ├─ 收件地址不在已添加的地址中，或该地址已停用 → setReject()，不落盘
         ├─ 原始邮件写入 R2  raw/{yyyy}/{mm}/{id}.eml
         └─ 投递 Queue: inbound
       inbound 消费者 → postal-mime 解析 → 附件写 R2 → D1 写 messages / attachments / FTS
@@ -65,7 +68,13 @@
         其余    → 静态资源（SPA 回退）
 ```
 
-地址模型：catch-all 意味着域名下任何地址都能收信。某个地址第一次收到邮件时自动记下，之后可以给它设备注、设屏蔽、设规则。这样就不需要"临时邮箱"功能，泄露的地址直接屏蔽即可。
+地址模型：只有在面板中添加过的前缀才能收信，其他地址一律拒收（负责人 2026-11-15 决定）。
+
+- 一个地址就是"前缀 + 域名"，如 `shop@example.com`；在面板中添加、停用或删除。
+- 收信时按收件地址精确匹配，前缀不区分大小写。
+- 子地址：`shop+github@example.com` 按 `shop` 匹配，标签记入邮件，方便筛选。这是默认行为，可以在设置中关闭。
+- 已停用的地址拒收；拒收发生在落盘之前，被拒的邮件不占存储。
+- Email Routing 仍配置为 catch-all 交给 Worker，因为由 Worker 判断收不收，比在 Cloudflare 面板逐条维护路由规则更方便，也不受每个域名 200 条规则的上限限制。
 
 ## 4. 目录结构
 
@@ -94,7 +103,7 @@ MelodyMail/
 
 - `user`、`session`、`account`、`passkey`、`two_factor`：由 Better Auth 管理，表中只会有所有者一行。
 - `domains`：域名、收信开关、发信开关、Resend 域名验证状态。
-- `addresses`：地址、所属域名、备注、是否屏蔽、默认发件名、首次 / 最近收信时间。
+- `addresses`：前缀、所属域名（两者联合唯一）、备注、是否启用、默认发件名、最近收信时间。
 - `messages`：地址、方向（in/out）、Message-ID、线程键、发件人、收件人、主题、摘要、大小、标志（已读、星标、归档、垃圾箱）、R2 原始对象键、出站状态（queued/sent/delivered/bounced/failed）、幂等键。
 - `messages_fts`：FTS5 虚表，索引主题、发件人、正文文本。
 - `attachments`：消息、文件名、MIME、大小、R2 键、Content-ID。
@@ -109,10 +118,10 @@ MelodyMail/
 
 | 编号 | 内容 | 验证 |
 | --- | --- | --- |
-| M0 | 仓库骨架：pnpm workspace、wrangler 配置、Drizzle、Vitest、lint、Astryx 与 i18n 接入、CI 合并门禁；填写 `REQUIREMENTS.md` 的 Commands 行；核实各组件在 Free 计划下的可用性 | 本地与 CI 运行同一个 `pnpm check` 并通过；空白页在三种语言和亮暗主题下都能渲染 |
+| M0 | 仓库骨架：Bun workspaces、wrangler 配置、Drizzle、Vitest、lint、Astryx 与 i18n 接入、CI 合并门禁；填写 `REQUIREMENTS.md` 的 Commands 行；核实各组件在 Free 计划下的可用性；核实 wrangler 和 `@cloudflare/vitest-pool-workers` 能在 Bun 下运行 | 本地与 CI 运行同一个 `bun run check` 并通过；空白页在三种语言和亮暗主题下都能渲染 |
 | M1 | 认证：首次运行初始化所有者（凭 `SETUP_TOKEN` secret）、登录、Passkey、TOTP、会话、登录限流 | 集成测试：未登录访问每个端点都返回 401；初始化只能执行一次 |
-| M2 | 域名与地址：添加域名、DNS 记录指引（MX、SPF、DKIM、DMARC）、地址列表、备注、屏蔽 | |
-| M3 | 收信：email 处理器、R2 落盘、队列解析、附件、FTS 索引、屏蔽地址拒收 | 真实 `.eml` 样本：多种编码、大附件、畸形 MIME |
+| M2 | 域名与地址：添加域名、DNS 记录指引（MX、SPF、DKIM、DMARC）、添加 / 停用 / 删除地址（前缀 + 域名）、备注 | |
+| M3 | 收信：email 处理器、R2 落盘、队列解析、附件、FTS 索引、未添加或已停用地址拒收 | 真实 `.eml` 样本：多种编码、大附件、畸形 MIME |
 | M4 | Web 邮箱：收件箱、会话线程、阅读（HTML 放进沙箱 iframe，默认拦截远程图片）、搜索、标记、实时推送 | Playwright 截图：手机和桌面宽度、亮暗主题、三种语言 |
 | M5 | 发信：撰写、回复 / 转发（线程头）、附件、草稿、出站队列与重试、Resend Webhook 状态回写 | 重复提交和并发提交都只发出一封（幂等键） |
 | M6 | 规则与 API：收信规则、REST API + API Key、OpenAPI 文档 | |
