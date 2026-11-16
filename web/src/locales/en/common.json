@@ -11,7 +11,8 @@
     "addresses": "Addresses",
     "forwarding": "Forwarding",
     "notifications": "Notifications",
-    "rules": "Rules"
+    "rules": "Rules",
+    "apiKeys": "API keys"
   },
   "folder": {
     "inbox": "Inbox",
@@ -289,7 +290,8 @@
     "too_many_rules": "You can have up to 50 rules. Delete one first.",
     "order_mismatch": "The rules changed in the meantime. Reload the page and try again.",
     "no_raw": "This message can't be used for a test. Choose a message you received.",
-    "too_many_header_names": "The rules that are on can check at most 20 different headers. Use a header that another rule already checks, or turn a rule off."
+    "too_many_header_names": "The rules that are on can check at most 20 different headers. Use a header that another rule already checks, or turn a rule off.",
+    "too_many_keys": "You can have up to 20 API keys. Revoke one first."
   },
   "common": {
     "cancel": "Cancel"
@@ -495,5 +497,8 @@
   },
   "rulesPage": {
     "create": "Create rule"
+  },
+  "apiKeysPage": {
+    "create": "Create key"
   }
 }

@@ -1,0 +1,51 @@
+{
+  "title": "API 密钥",
+  "create": "创建密钥",
+  "createTitle": "创建 API 密钥",
+  "intro": "脚本和其他程序使用 API 密钥通过 REST API 读取、标记和发送邮件。密钥无法访问设置、规则或登录。",
+  "openapi": "下载 OpenAPI 文档",
+  "loadFailed": "无法加载此页面。请重新加载页面后重试。",
+  "emptyTitle": "还没有 API 密钥",
+  "emptyDescription": "为每个需要访问你邮件的程序创建一个密钥，只授予它需要的权限。",
+  "actionsHeader": "操作",
+  "label": "名称",
+  "labelDescription": "说明哪个程序使用此密钥，例如“备份脚本”。",
+  "labelRequired": "请输入名称。",
+  "labelTooLong": "最多 {{max}} 个字符。",
+  "key": "密钥",
+  "scopes": "权限",
+  "scopesRequired": "请至少选择一项权限。",
+  "scope": {
+    "read": "读取邮件",
+    "write": "更改邮件标记",
+    "send": "发送邮件"
+  },
+  "scopeDescription": {
+    "read": "列出、搜索和下载邮件，并列出你的地址。",
+    "write": "标为已读、加星标、归档和移到废纸篓。",
+    "send": "从你的地址发送邮件，不含附件。"
+  },
+  "expiry": "有效期",
+  "expiryOption": {
+    "30": "30 天",
+    "90": "90 天",
+    "365": "365 天",
+    "never": "永不过期"
+  },
+  "created": "创建时间",
+  "expires": "过期时间",
+  "expired": "已过期",
+  "neverExpires": "永不过期",
+  "lastUsed": "上次使用",
+  "neverUsed": "从未使用",
+  "createdTitle": "复制你的 API 密钥",
+  "createdNotice": "请立即复制密钥，并与使用它的程序一起保存。如果丢失，请吊销它并创建新密钥。",
+  "copiedConfirm": "我已复制密钥",
+  "done": "完成",
+  "revoke": "吊销",
+  "revokeFor": "吊销 {{label}}",
+  "revokeTitle": "要吊销密钥 {{label}} 吗？",
+  "revokeDescription": "使用此密钥的程序会立即停止工作。此操作无法撤销。",
+  "revoked": "已吊销密钥",
+  "cancel": "取消"
+}

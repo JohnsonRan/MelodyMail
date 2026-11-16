@@ -60,6 +60,7 @@ const KNOWN = new Set([
   "no_rule_action",
   "too_many_rule_targets",
   "too_many_rules",
+  "too_many_keys",
   "order_mismatch",
   "no_raw",
   "too_many_header_names",

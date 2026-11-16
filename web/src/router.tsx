@@ -88,6 +88,11 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
     path: "/settings/rules",
     component: lazyRouteComponent(() => import("./pages/RulesPage"), "RulesPage"),
   });
+  const apiKeysRoute = createRoute({
+    getParentRoute: () => shellRoute,
+    path: "/settings/api-keys",
+    component: lazyRouteComponent(() => import("./pages/ApiKeysPage"), "ApiKeysPage"),
+  });
 
   const setupRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -132,6 +137,7 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
       addressesRoute,
       forwardingRoute,
       rulesRoute,
+      apiKeysRoute,
     ]),
     setupRoute,
     loginRoute,
