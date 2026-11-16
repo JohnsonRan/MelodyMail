@@ -1250,7 +1250,7 @@ language choice of the worker's fallback copy.
 1. **Browser-tier limit after the split.** `bun run test:browser` (47 tests) measures 21.44,
    21.59 and 22.30 s against 21 s. Main before M4b measured 19.9 s on the same host the same day,
    so the host is slower than at the 17.4 s baseline, and the new dark-reading tests add about 2 s.
-   Proposed: 26 s (21.8 s plus 20%). The limit is unchanged until you decide.
+   Proposed: 26 s (21.8 s plus 20%). **Ruled 2026-11-16 ("改"): 26 s.**
 
 ### Deferred
 
