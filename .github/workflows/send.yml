@@ -18,6 +18,7 @@ on:
       - "web/src/mailbox/SendStatusLabel.tsx"
       - "web/test/compose.test.ts"
       - "web/test/markdown.test.ts"
+      - "web/test/sent-status.test.ts"
       - "web/test/stub-send.ts"
       - "web/vite.config.ts"
       - "web/package.json"
