@@ -3230,7 +3230,7 @@ Done:
   brackets, symbols such as / @ : = and commas) in zh-CN, en and ja-JP.
 - Ruling 3: REQUIREMENTS "Slowest test package" 13 s (docs commit).
 
-Stopped and reported, not committed:
+Stopped and reported in that round, then settled by the owner rulings below:
 
 - **Ruling 1, benchmark.** With the new inputs the bench exits 1. Worst p95 per input, 3 runs of
   200, after `5cc5211`, CPU load 8–14% (the quietest the host was):
@@ -3257,6 +3257,23 @@ Stopped and reported, not committed:
   ran 8.0 and 7.8 s at 57–62% (6.0 s baseline at 0–5%). The rename (scripts, `settings.yml`,
   REQUIREMENTS row) is kept outside the repository as `m6-settings-tier.patch`; the Rules suite
   stays outside every tier.
+
+### Owner rulings on the stopped items (2026-11-17) and their result
+
+1. **Rule budget.** The adversarial inputs (100-address From, To and Cc with the encoded subject
+   and the repeated header, alone or with the 20 capped header names) have a 2 ms p95 budget;
+   every other input keeps 1 ms. `605ce27`: `bench:rules` checks each input against its own
+   budget and exits 1 when any input reaches it; the design and the REQUIREMENTS row state both.
+   Three runs of 200 at CPU load 5–10%: adversarial inputs p95 1.17–1.48 ms (budget 2 ms);
+   plain headers 0.23–0.31 ms and the 20 capped names 0.43–0.62 ms (budget 1 ms); exit 0 each
+   run. Three more runs at load 67–77%: adversarial 1.06–1.74 ms, others 0.25–0.78 ms, exit 0.
+   A planted slow input (ten times the rules, budget 1 ms) gave p95 2.26 ms and exit 1 at load 4%.
+2. **Settings tier.** `7430082`: `test:telegram` is now `test:settings` (root and web scripts,
+   `.github/workflows/settings.yml` with its name, job and concurrency group renamed and the same
+   path filter) and runs the Telegram suites and the Rules suite; limit 13 s (owner approval
+   2026-11-17). Three runs: 10.90, 10.79, 10.51 s, 15 tests, all passing, CPU load 64–69%. The
+   coordinator measured 11.22, 11.14 and 10.44 s at about 21%. `test:browser` still excludes the
+   Rules suite, so no suite runs twice.
 
 ### Deferred (added)
 
