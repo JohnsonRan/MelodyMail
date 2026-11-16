@@ -65,9 +65,13 @@ function headerValue(source: MailSource, name: string): string | null {
 /**
  * An address header cut before its `max`-th top-level separator, so the parser sees at most `max`
  * addresses. A separator is a comma or a semicolon outside a quoted string, a comment in
- * parentheses and angle brackets. Commas inside a group (`name: a, b;`) count too, so a group
- * cannot hide more addresses; a header may then keep fewer than `max`, never more. One linear
- * pass, no regular expression.
+ * parentheses and angle brackets. A semicolon also ends an angle bracket left open: postal-mime's
+ * tokenizer ends an open angle-addr at a group's ";" (node_modules/postal-mime/src/
+ * address-parser.ts, checkChar, `if (!nested && chr === ';' && this.inGroup)`, 4.2.1 line 1326),
+ * and counting it everywhere only cuts earlier. Commas inside a group (`name: a, b;`) count too,
+ * so a group cannot hide more addresses; a header may then keep fewer than `max` (a prefix of
+ * them). One linear pass, no regular expression. addressValues still keeps only the first `max`
+ * parsed addresses in case the scanner and the tokenizer disagree elsewhere.
  */
 export function cutAddressList(raw: string, max: number): string {
   let separators = 0;
@@ -83,9 +87,12 @@ export function cutAddressList(raw: string, max: number): string {
       else if (!quoted && ch === ")") comment--;
     } else if (ch === '"') quoted = true;
     else if (ch === "(") comment = 1;
-    else if (angle) angle = ch !== ">";
+    else if (angle && ch !== ";") angle = ch !== ">";
     else if (ch === "<") angle = true;
-    else if ((ch === "," || ch === ";") && ++separators === max) return raw.slice(0, i);
+    else if (ch === "," || ch === ";") {
+      angle = false;
+      if (++separators === max) return raw.slice(0, i);
+    }
   }
   return raw;
 }
@@ -93,12 +100,12 @@ export function cutAddressList(raw: string, max: number): string {
 /**
  * The first ADDRESSES_MAX addresses of one header, each with its display name. Owner ruling
  * (2026-11-17): later addresses are not read: the header is cut before parsing, so the parser's
- * work is bounded too.
+ * work is bounded too, and the slice after parsing is the backstop for the rule itself.
  */
 function addressValues(raw: string): string[] {
-  return addressParser(cutAddressList(raw, ADDRESSES_MAX), { flatten: true }).flatMap((a) =>
-    [a.name, a.address].filter((v): v is string => Boolean(v)),
-  );
+  return addressParser(cutAddressList(raw, ADDRESSES_MAX), { flatten: true })
+    .slice(0, ADDRESSES_MAX)
+    .flatMap((a) => [a.name, a.address].filter((v): v is string => Boolean(v)));
 }
 
 /**

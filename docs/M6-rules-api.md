@@ -105,9 +105,12 @@ Matching rules:
   `worker/src/mail/parse.ts`. `Headers.get` joins repeated headers with `, `.
 - Of each of `From`, `To` and `Cc`, only the first 50 addresses are read (owner ruling
   2026-11-17); an address after the 50th never matches. The raw value is cut before parsing, at
-  its 50th comma or semicolon outside quoted strings, comments and angle brackets; commas inside a
-  group count, so a group cannot hide more addresses (the header may then keep fewer than 50).
-  This bounds both the parse and the comparisons per header.
+  its 50th comma or semicolon outside quoted strings, comments and angle brackets; a semicolon also
+  ends an angle bracket left open, as postal-mime ends an open angle-addr at a group's `;`.
+  Commas inside a group count, so a group cannot hide more addresses (the header may then keep
+  fewer than 50, always a prefix of them). This bounds both the parse and the comparisons per
+  header. The first 50 parsed addresses are kept as a backstop, in case the cut and the parser
+  disagree on some other input.
 - `subject` and display names are decoded with postal-mime's `decodeWords`; addresses are split
   with its `addressParser`. postal-mime 4.2.1, already a Worker dependency, exports both
   (`worker/node_modules/postal-mime/README.md`, "addressParser()", "decodeWords()").

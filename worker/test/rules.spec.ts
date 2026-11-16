@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { addressParser } from "postal-mime";
 import { describe, expect, it } from "vitest";
 import { handleEmail } from "../src/mail/inbound";
 import {
@@ -105,6 +106,58 @@ describe("rule conditions", () => {
     const s = source({ To: to });
     expect(hits({ field: "to", op: "equals", value: "a50@x.io" }, s)).toBe(true);
     expect(hits({ field: "to", op: "equals", value: "a51@x.io" }, s)).toBe(false);
+  });
+
+  it("cuts a group's unclosed angle bracket at its semicolon, as the parser does", () => {
+    expect(
+      addressParser(cutAddressList("g:<;a@x,b@x,c@x", 2), { flatten: true }).length,
+    ).toBeLessThanOrEqual(2);
+    const to = `g:<;${Array.from({ length: 60 }, (_, i) => `a${i + 1}@x.io`).join(",")}`;
+    expect(hits({ field: "to", op: "equals", value: "a60@x.io" }, source({ To: to }))).toBe(false);
+  });
+
+  it("never leaves more addresses than the cut allows (seeded differential fuzz)", () => {
+    // Header values built from the tokens the address grammar reacts to; the parser must never
+    // find more than N addresses in what the scanner keeps. Deterministic: a fixed seed.
+    const TOKENS = [
+      "a@x,",
+      "a@x,",
+      "a@x",
+      "b@y.z",
+      "Name <c@x>",
+      ",",
+      ";",
+      "g:",
+      "<",
+      ">",
+      " ",
+      '"q, \\" r"',
+      '"',
+      "(c, (d) e)",
+      "(",
+      ")",
+      "@[1.2.3.4]",
+      "[",
+      "]",
+      "\\",
+      ":",
+      "@",
+    ];
+    let seed = 0x5eed;
+    const random = () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const N = 5;
+    for (let n = 0; n < 3000; n++) {
+      let value = "";
+      const length = 1 + Math.floor(random() * 60);
+      for (let k = 0; k < length; k++) value += TOKENS[Math.floor(random() * TOKENS.length)];
+      const kept = addressParser(cutAddressList(value, N), { flatten: true }).length;
+      expect(kept, JSON.stringify(value)).toBeLessThanOrEqual(N);
+    }
   });
 
   it("cuts an address list before parsing, at separators outside quotes, comments and <>", () => {

@@ -5,7 +5,8 @@
  * performance.now() during computation, so the budget is measured here with the same code under
  * Bun. Inputs: 50 enabled rules of 10 conditions that never match (every condition runs, no
  * stop), mixing every field and operator, against the worst headers below (From, To and Cc of 100
- * addresses each, or of 2,000 characters of short addresses or of groups, with an encoded
+ * addresses each, or of 2,000 characters of short addresses, of short addresses behind "g:<;", or
+ * of groups, with an encoded
  * 2,000-character subject and a header repeated 50 times), against plain
  * headers, against 20 distinct header names (the HEADER_NAMES_MAX cap), each holding 2,000
  * characters dense with white space, and against the worst headers and the 20 names together;
@@ -62,6 +63,8 @@ const ADDRESS_LIST = Array.from(
 const SHORT_LIST = Array.from({ length: 600 }, (_, i) => `a${i}@b`)
   .join(",")
   .slice(0, 2000);
+/** The short addresses behind a group's unclosed angle bracket, which postal-mime ends at the ";". */
+const GROUP_ANGLE_LIST = `g:<;${SHORT_LIST}`.slice(0, 2000);
 /** Groups of short addresses filling 2,000 characters. */
 const GROUP_LIST = Array.from(
   { length: 100 },
@@ -253,6 +256,18 @@ const inputs: [string, MailSource, RuleRow[], number][] = [
     ruleRows(true),
     ADVERSARIAL_BUDGET_MS,
   ],
+  [
+    "50 x 10 conditions, g:<; short addresses, no match",
+    source(worstHeaders(GROUP_ANGLE_LIST)),
+    ruleRows(false),
+    ADVERSARIAL_BUDGET_MS,
+  ],
+  [
+    "50 x 10 conditions, g:<; short addresses, all match",
+    source(worstHeaders(GROUP_ANGLE_LIST)),
+    ruleRows(true),
+    ADVERSARIAL_BUDGET_MS,
+  ],
 ];
 
 let over = false;
@@ -271,7 +286,7 @@ for (const [name, src, rows, budget] of inputs) {
     samples[Math.min(samples.length - 1, Math.floor(q * samples.length))] ?? 0;
   if (at(0.95) >= budget) over = true;
   console.log(
-    `${name.padEnd(48)} median ${at(0.5).toFixed(3)} ms, p95 ${at(0.95).toFixed(3)} ms, max ${at(1).toFixed(3)} ms, ${matched ? "matched" : "no match"}, budget ${budget} ms`,
+    `${name.padEnd(52)} median ${at(0.5).toFixed(3)} ms, p95 ${at(0.95).toFixed(3)} ms, max ${at(1).toFixed(3)} ms, ${matched ? "matched" : "no match"}, budget ${budget} ms`,
   );
 }
 if (over) {
