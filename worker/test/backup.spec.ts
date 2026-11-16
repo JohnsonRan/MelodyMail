@@ -226,17 +226,18 @@ describe("daily export", () => {
     await env.DB.prepare(
       "UPDATE backup_exports SET status = 'running' WHERE id = '2026-11-19T0300Z'",
     ).run();
+    // Its parts are removed in the same run, so failing exports do not pile up in R2.
+    const stuck = "backups/d1/2026-11-19T0300Z/";
+    expect((await env.MAIL.list({ prefix: stuck })).objects.length).toBeGreaterThan(0);
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     await runExport(env, START + 3 * DAY);
-    const rows = await env.DB.prepare(
-      "SELECT id, status, error FROM backup_exports ORDER BY id",
-    ).all();
-    expect(rows.results).toEqual([
-      { id: "2026-11-18T0300Z", status: "complete", error: null },
-      { id: "2026-11-19T0300Z", status: "failed", error: "timeout" },
-      expect.objectContaining({ id: "2026-11-21T0300Z" }),
-    ]);
     expect(error.mock.calls.join(" ")).toContain('"error":"timeout"');
+    expect((await env.MAIL.list({ prefix: stuck })).objects).toEqual([]);
+    const ids = async () =>
+      (await env.DB.prepare("SELECT id FROM backup_exports ORDER BY id").all()).results;
+    expect(await ids()).toEqual([{ id: "2026-11-18T0300Z" }]);
+    await runExport(env, START + 3 * DAY + 15 * MINUTE);
+    expect(await ids()).toEqual([{ id: "2026-11-18T0300Z" }, { id: "2026-11-21T0315Z" }]);
   });
 
   it("does nothing before migration 0015", async () => {

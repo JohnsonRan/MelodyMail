@@ -2,7 +2,8 @@ import type { Env } from "../env";
 import { errorText, log } from "../http";
 import { EXPORT_PREFIX } from "./sql";
 
-// Retention (docs/M7-ops.md, "Retention and pruning"). Runs once after each export completes.
+// Retention (docs/M7-ops.md, "Retention and pruning"). Runs once after each export completes,
+// and when a stuck export is marked failed.
 // Only exports with a backup_exports row are ever removed, so after a restore into a fresh
 // database the exports already in R2 stay until the owner removes them.
 
@@ -45,10 +46,11 @@ export function exportsToDrop(rows: ExportRow[], now: number): string[] {
 }
 
 /**
- * Removes up to PRUNE_MAX exports, then marks `newestId` as pruned; what is left waits for the
- * next completed export. A failed delete (a bucket lock, for one) is logged and skipped.
+ * Removes up to PRUNE_MAX exports, then marks `newestId` (the completed export that triggered the
+ * pass, if any) as pruned; what is left waits for the next pass. A failed delete (a bucket lock,
+ * for one) is logged and skipped.
  */
-export async function pruneExports(env: Env, now: number, newestId: string): Promise<void> {
+export async function pruneExports(env: Env, now: number, newestId: string | null): Promise<void> {
   const { results } = await env.DB.prepare(
     "SELECT id, status, started_at AS startedAt FROM backup_exports",
   ).all<ExportRow>();
@@ -66,8 +68,10 @@ export async function pruneExports(env: Env, now: number, newestId: string): Pro
       log("warn", "backup_prune_failed", { exportId: id, error: errorText(err) });
     }
   }
-  await env.DB.prepare("UPDATE backup_exports SET pruned_at = ? WHERE id = ?")
-    .bind(now, newestId)
-    .run();
+  if (newestId) {
+    await env.DB.prepare("UPDATE backup_exports SET pruned_at = ? WHERE id = ?")
+      .bind(now, newestId)
+      .run();
+  }
   if (removed > 0) log("info", "backup_pruned", { count: removed });
 }

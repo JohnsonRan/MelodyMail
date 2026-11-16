@@ -191,7 +191,11 @@ async function finish(env: Env, id: string, now: number): Promise<void> {
   });
 }
 
-/** The cursor to work on this run: the running export, or a new one when the day's is due. */
+/**
+ * The cursor to work on this run: the running export, or a new one when the day's is due. An
+ * export running for 48 hours is marked failed and pruned with any other dead export, so failed
+ * parts do not pile up while exports keep failing; the next run starts a new one.
+ */
 async function cursorFor(env: Env, latest: Latest | null, now: number): Promise<Cursor | null> {
   if (latest?.status === "running") {
     if (latest.startedAt > now - RUNNING_MAX_MS) return { ...latest };
@@ -201,6 +205,8 @@ async function cursorFor(env: Env, latest: Latest | null, now: number): Promise<
       .bind(now, latest.id)
       .run();
     log("error", "backup_export_failed", { exportId: latest.id, error: "timeout" });
+    await pruneExports(env, now, null);
+    return null;
   } else if (latest && latest.startedAt >= dayStart(now)) {
     return null;
   }
