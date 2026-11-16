@@ -129,15 +129,20 @@ export function registerDraftRoutes(drafts: Hono<AppEnv>): void {
     const draft = body && parseDraft(body);
     if (!id || !draft) return fail(c, 400, "bad_request");
     const db = c.env.DB;
-    // A message already sent with this key means another tab sent it; saving again would bring
-    // the draft back.
+    // A message sent (or later) with this key means another tab sent it; saving again would
+    // bring the draft back. A failed or still sending message leaves the draft editable.
     const sent = await db
-      .prepare("SELECT 1 AS one FROM messages WHERE idempotency_key = ?")
+      .prepare(
+        "SELECT 1 AS one FROM messages WHERE idempotency_key = ? AND status NOT IN ('sending', 'failed')",
+      )
       .bind(draft.key)
       .first();
     if (sent) return fail(c, 409, "already_sent");
     const now = Date.now();
     let changes = 0;
+    // The key changes only after a final rejection (send_rejected): the compose session then
+    // takes a new key, so the corrected message is a new send. Any other failure keeps the key,
+    // so a retry can never send twice.
     try {
       const result = await db
         .prepare(
@@ -146,8 +151,11 @@ export function registerDraftRoutes(drafts: Hono<AppEnv>): void {
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (id) DO UPDATE SET address_id = excluded.address_id,
              to_list = excluded.to_list, cc_list = excluded.cc_list, bcc_list = excluded.bcc_list,
-             subject = excluded.subject, text = excluded.text, updated_at = excluded.updated_at
-           WHERE drafts.idempotency_key = excluded.idempotency_key`,
+             subject = excluded.subject, text = excluded.text, updated_at = excluded.updated_at,
+             idempotency_key = excluded.idempotency_key
+           WHERE drafts.idempotency_key = excluded.idempotency_key
+             OR EXISTS (SELECT 1 FROM messages WHERE idempotency_key = drafts.idempotency_key
+               AND status = 'failed' AND error = 'send_rejected')`,
         )
         .bind(
           id,

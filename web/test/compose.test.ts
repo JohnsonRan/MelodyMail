@@ -156,6 +156,29 @@ describe("compose end to end", () => {
     expect(app.send.sends[1]?.idempotencyKey).toBe(app.send.sends[0]?.idempotencyKey);
   });
 
+  test("sends the corrected message under a new key after a rejection", async () => {
+    const s = await open();
+    app.send.answers = ["rejected"];
+    await s.page.keyboard.press("c");
+    await addRecipient(s, "To", "friend@example.org");
+    await compose(s).getByLabel("Subject").fill("Typo");
+    await compose(s).getByRole("button", { name: "Send", exact: true }).click();
+    await compose(s).getByText("The mail service refused this message").waitFor();
+    expect(await compose(s).getByRole("button", { name: "Send again" }).count()).toBe(0);
+    const firstKey = app.send.sends[0]?.idempotencyKey;
+    // The draft moves to the new key at once, so autosave keeps working.
+    const moved = () => app.send.draftSaves.find((d) => d.idempotencyKey !== firstKey);
+    for (let i = 0; i < 100 && !moved(); i++) await Bun.sleep(20);
+    const newKey = moved()?.idempotencyKey;
+    expect(newKey).toBeString();
+
+    await compose(s).getByLabel("Subject").fill("Fixed");
+    await compose(s).getByRole("button", { name: "Send", exact: true }).click();
+    await compose(s).waitFor({ state: "detached" });
+    expect(app.send.sends).toHaveLength(2);
+    expect(app.send.sends[1]).toMatchObject({ subject: "Fixed", idempotencyKey: newKey });
+  });
+
   test("explains a delivery failure that Resend reported, without Retry", async () => {
     const s = await open();
     await s.page.keyboard.press("c");

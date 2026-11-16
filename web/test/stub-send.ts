@@ -25,7 +25,7 @@ export class SendStub {
   uploads = new Map<string, Upload>();
   sends: Record<string, unknown>[] = [];
   /** Answers for the next sends, in order; "ok" when empty. */
-  answers: ("ok" | "fail" | "quota")[] = [];
+  answers: ("ok" | "fail" | "quota" | "rejected")[] = [];
   /** Milliseconds each send waits before it answers. */
   sendDelay = 0;
 
@@ -90,6 +90,7 @@ export class SendStub {
     const answer = this.answers.shift() ?? "ok";
     if (answer === "fail") return json({ error: "send_failed", id: "failed-1" }, 502);
     if (answer === "quota") return json({ error: "daily_quota_exceeded", id: "failed-1" }, 429);
+    if (answer === "rejected") return json({ error: "send_rejected", id: "failed-1" }, 422);
     const id = `sent-${this.sends.length}`;
     const to = (body.to as string[]) ?? [];
     const copy = {

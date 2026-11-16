@@ -84,3 +84,59 @@ describe("Resend's idempotency conflicts", () => {
     },
   );
 });
+
+describe("drafts after a failed send", () => {
+  const draft = (key: string, extra = {}) => ({
+    to: ["friend@example.org"],
+    subject: "Hello",
+    text: "Draft",
+    idempotencyKey: key,
+    ...extra,
+  });
+
+  it("keeps autosave working and the key fixed after a send that may be retried", async () => {
+    const client = await signedIn();
+    const from = await sender();
+    stubResend(() => resendError(500, "application_error"));
+    const body = sendBody(from);
+    await client.json("PUT", "/api/drafts/draft-k1", draft(body.idempotencyKey));
+    expect((await send(client, body)).status).toBe(502);
+
+    const saved = await client.request("PUT", "/api/drafts/draft-k1", draft(body.idempotencyKey));
+    expect(saved.status).toBe(200);
+    // Not a final rejection: the session must keep its key, so a retry cannot send twice.
+    const moved = await client.request("PUT", "/api/drafts/draft-k1", draft(crypto.randomUUID()));
+    expect(moved.status).toBe(409);
+    expect(await moved.json()).toEqual({ error: "draft_conflict" });
+  });
+
+  it("sends the corrected message under a new key after a final rejection", async () => {
+    const client = await signedIn();
+    const from = await sender();
+    const res = await upload(client, "attachment bytes", { "x-draft-id": "draft-r1" });
+    const fileId = ((await res.json()) as { upload: { id: string } }).upload.id;
+    const calls = stubResend((n) => (n === 0 ? resendError(422, "validation_error") : resendOk()));
+    const rejected = sendBody(from, { uploadIds: [fileId] });
+    expect((await send(client, rejected)).status).toBe(422);
+
+    // The compose session takes a new key; autosave moves the draft to it.
+    const key = crypto.randomUUID();
+    await client.json("PUT", "/api/drafts/draft-r1", draft(key, { subject: "Fixed" }));
+    const reopened = await client.json("GET", "/api/drafts/draft-r1");
+    expect(reopened.draft).toMatchObject({
+      idempotencyKey: key,
+      subject: "Fixed",
+      attachments: [{ id: fileId }],
+    });
+
+    const fixed = await send(client, { ...rejected, subject: "Fixed", idempotencyKey: key });
+    expect(fixed.status).toBe(200);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.headers.get("idempotency-key")).toBe(key);
+    expect(calls[1]?.body).toMatchObject({
+      subject: "Fixed",
+      attachments: [{ filename: "notes.txt" }],
+    });
+    expect((await client.json("GET", "/api/drafts")).drafts).toEqual([]);
+  });
+});

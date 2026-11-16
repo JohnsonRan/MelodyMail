@@ -14,6 +14,7 @@ import { useToast } from "@astryxdesign/core/Toast";
 import { XMarkIcon } from "@heroicons/react/24/outline";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ApiError } from "../api";
 import { errorMessage } from "../errors";
 import { useMailbox } from "../mailbox/MailboxContext";
 import { MailFrame } from "../reader/MailFrame";
@@ -219,13 +220,16 @@ export default function ComposeView({ draftId, source, onClose, isPanel }: Props
           title={t("sendFailed")}
           description={errorMessage(tc, c.sendError)}
           endContent={
-            <Button
-              label={t("retry")}
-              variant="secondary"
-              size="sm"
-              isLoading={c.sending}
-              onClick={() => void c.send()}
-            />
+            // A rejected message is corrected and sent anew, not retried as it is.
+            !(c.sendError instanceof ApiError && c.sendError.code === "send_rejected") && (
+              <Button
+                label={t("retry")}
+                variant="secondary"
+                size="sm"
+                isLoading={c.sending}
+                onClick={() => void c.send()}
+              />
+            )
           }
         />
       )}

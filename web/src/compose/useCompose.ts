@@ -20,7 +20,8 @@ import { startFromSource } from "./start";
 
 // One compose session (docs/M5-sending.md, "Screens" and "Sending"): the draft id and the
 // idempotency key are fixed when it opens, so a double click, a retry and a second tab send one
-// email. Autosave waits AUTOSAVE_MS after the last change, far below D1's daily write budget.
+// email. Only a final rejection (send_rejected) gives the session a new key: the corrected
+// message is a new send. Autosave waits AUTOSAVE_MS after the last change, far below D1's daily write budget.
 
 export const AUTOSAVE_MS = 2000;
 const MIB = 1024 * 1024;
@@ -245,6 +246,10 @@ export function useCompose(options: {
       opts.current.onSent();
     } catch (err) {
       setSendError(err);
+      if (err instanceof ApiError && err.code === "send_rejected") {
+        key.current = crypto.randomUUID();
+        void persist(true);
+      }
       getQuota()
         .then(setQuota)
         .catch(() => {});
@@ -252,7 +257,7 @@ export function useCompose(options: {
       busySend.current = false;
       setSending(false);
     }
-  }, [entries]);
+  }, [entries, persist]);
 
   const discard = useCallback(async () => {
     closed.current = true;

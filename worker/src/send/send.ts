@@ -95,7 +95,7 @@ async function insertSending(
   await c.env.MAIL.put(r2Key, json, { httpMetadata: { contentType: "application/json" } });
   if (copy.attachments.length > 0) {
     await c.env.DB.prepare(
-      `UPDATE uploads SET message_id = ?, draft_id = NULL
+      `UPDATE uploads SET message_id = ?
        WHERE id IN (SELECT value FROM json_each(?)) AND message_id IS NULL`,
     )
       .bind(id, JSON.stringify(copy.attachments.map((a) => a.uploadId)))
@@ -159,7 +159,12 @@ async function deliver(c: Context<AppEnv>, id: string, key: string, copy: SentCo
       return fail(c, 409, "send_in_progress");
     }
     log("warn", "send_failed", fields);
-    await db.batch([...quota, failedUpdate(db, id, outcome.code)]);
+    // A final rejection hands the attachments back to the draft for the corrected message.
+    const release =
+      outcome.code === "send_rejected"
+        ? [db.prepare("UPDATE uploads SET message_id = NULL WHERE message_id = ?").bind(id)]
+        : [];
+    await db.batch([...quota, failedUpdate(db, id, outcome.code), ...release]);
     await notifyHub(env, { type: "changed", id });
     return c.json({ error: outcome.code, id }, HTTP_STATUS[outcome.code]);
   }

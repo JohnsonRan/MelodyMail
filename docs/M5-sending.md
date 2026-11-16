@@ -100,6 +100,10 @@ marker with a reason, and the walk asserts that nothing else is public.
 
 The client creates the idempotency key once per compose session (stored on the draft), so a
 double click, a retry after a timeout and two tabs sending the same draft all send one email.
+After a final rejection (`send_rejected`) the session takes a new key and the draft moves to it;
+the rejected row hands its attachments back, so the corrected message is a new send. Network
+errors, timeouts and 5xx keep the key. Saving a draft answers `already_sent` only for a message
+at `sent` or later (owner ruling 2026-11-16).
 
 ## Webhook
 
