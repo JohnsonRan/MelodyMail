@@ -1,23 +1,9 @@
 import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Collapsible } from "@astryxdesign/core/Collapsible";
-import { Icon } from "@astryxdesign/core/Icon";
-import { IconButton } from "@astryxdesign/core/IconButton";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Layout";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { Heading, Text } from "@astryxdesign/core/Text";
-import { Toolbar } from "@astryxdesign/core/Toolbar";
-import {
-  ArchiveBoxIcon,
-  ArrowLeftIcon,
-  ArrowUturnLeftIcon,
-  EnvelopeIcon,
-  InboxArrowDownIcon,
-  PhotoIcon,
-  StarIcon as StarOutline,
-  TrashIcon,
-} from "@heroicons/react/24/outline";
-import { StarIcon } from "@heroicons/react/24/solid";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -29,16 +15,7 @@ import {
 } from "../mailbox/api";
 import { formatListDate } from "../mailbox/format";
 import { MessageView } from "./MessageView";
-
-export type ReaderAction =
-  | "archive"
-  | "unarchive"
-  | "trash"
-  | "restore"
-  | "star"
-  | "unstar"
-  | "unread"
-  | "delete";
+import { type ReaderAction, ReaderToolbar } from "./ReaderToolbar";
 
 type Props = {
   id: string;
@@ -130,83 +107,19 @@ export default function Reader({
   };
 
   const inTrash = current?.trashed ?? folder === "trash";
+  const canShowRemote =
+    current !== undefined && remote.has(current.id) && !allowRemote.has(current.id);
   const toolbar = (
-    <Toolbar
-      label={t("mail.messageActions")}
-      startContent={
-        <>
-          {showBack && (
-            <IconButton
-              label={t("mail.backToList")}
-              tooltip={t("mail.backToList")}
-              icon={<Icon icon={ArrowLeftIcon} />}
-              variant="ghost"
-              onClick={onBack}
-            />
-          )}
-          {current && !inTrash && (
-            <IconButton
-              label={current.archived ? t("mail.moveToInbox") : t("mail.archive")}
-              tooltip={current.archived ? t("mail.moveToInbox") : t("mail.archive")}
-              icon={<Icon icon={current.archived ? InboxArrowDownIcon : ArchiveBoxIcon} />}
-              variant="ghost"
-              isLoading={busy === "archive" || busy === "unarchive"}
-              onClick={() => void run(current.archived ? "unarchive" : "archive")}
-            />
-          )}
-          {current && (
-            <IconButton
-              label={inTrash ? t("mail.restore") : t("mail.trash")}
-              tooltip={inTrash ? t("mail.restore") : t("mail.trash")}
-              icon={<Icon icon={inTrash ? ArrowUturnLeftIcon : TrashIcon} />}
-              variant="ghost"
-              isLoading={busy === "trash" || busy === "restore"}
-              onClick={() => void run(inTrash ? "restore" : "trash")}
-            />
-          )}
-          {current && (
-            <IconButton
-              label={current.starred ? t("mail.unstar") : t("mail.star")}
-              tooltip={current.starred ? t("mail.unstar") : t("mail.star")}
-              icon={<Icon icon={current.starred ? StarIcon : StarOutline} />}
-              variant="ghost"
-              isLoading={busy === "star" || busy === "unstar"}
-              onClick={() => void run(current.starred ? "unstar" : "star")}
-            />
-          )}
-          {current && (
-            <IconButton
-              label={t("mail.markUnread")}
-              tooltip={t("mail.markUnread")}
-              icon={<Icon icon={EnvelopeIcon} />}
-              variant="ghost"
-              isLoading={busy === "unread"}
-              onClick={() => void run("unread")}
-            />
-          )}
-          {current && remote.has(current.id) && !allowRemote.has(current.id) && (
-            <IconButton
-              label={t("mail.showRemoteImages")}
-              tooltip={t("mail.showRemoteImages")}
-              icon={<Icon icon={PhotoIcon} />}
-              variant="ghost"
-              onClick={() => setAllowRemote((prev) => new Set(prev).add(current.id))}
-            />
-          )}
-        </>
-      }
-      endContent={
-        current &&
-        inTrash && (
-          <IconButton
-            label={t("mail.deleteForever")}
-            tooltip={t("mail.deleteForever")}
-            icon={<Icon icon={TrashIcon} />}
-            variant="destructive"
-            onClick={() => setConfirmDelete(true)}
-          />
-        )
-      }
+    <ReaderToolbar
+      current={current}
+      inTrash={inTrash}
+      showBack={showBack}
+      onBack={onBack}
+      busy={busy}
+      run={(action) => void run(action)}
+      canShowRemote={canShowRemote}
+      onShowRemote={() => current && setAllowRemote((prev) => new Set(prev).add(current.id))}
+      onDelete={() => setConfirmDelete(true)}
     />
   );
 
@@ -224,7 +137,7 @@ export default function Reader({
       {thread.state === "ready" && (
         <>
           <Heading level={2}>{current?.subject || t("mail.noSubject")}</Heading>
-          {current && remote.has(current.id) && !allowRemote.has(current.id) && (
+          {canShowRemote && (
             <Text type="supporting" color="secondary">
               {t("mail.remoteBlocked")}
             </Text>

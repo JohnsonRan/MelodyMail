@@ -26,7 +26,7 @@ import { useMailbox } from "../mailbox/MailboxContext";
 import { rowElement } from "../mailbox/MessageList";
 import { useMailShortcuts } from "../mailbox/useMailShortcuts";
 import { useMessageList } from "../mailbox/useMessageList";
-import type { ReaderAction } from "../reader/Reader";
+import type { ReaderAction } from "../reader/ReaderToolbar";
 
 // The reader, postal-mime and DOMPurify load only when a message is opened.
 const Reader = lazy(() => import("../reader/Reader"));
