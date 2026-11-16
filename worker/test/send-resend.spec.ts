@@ -305,11 +305,34 @@ describe("Resend webhook, body size", () => {
     const sent = await client.json("POST", "/api/messages/send", sendBody(from));
     const id = (sent.message as { id: string }).id;
     const verify = vi.spyOn(Webhook.prototype, "verify");
+    const read = vi.spyOn(Request.prototype, "arrayBuffer");
     const pad = "a".repeat(WEBHOOK_BODY_MAX);
-    const big = { type: "email.delivered", data: { email_id: "re_big", pad } };
-    const res = await post(webhookRequest(big));
-    expect(res.status).toBe(413);
-    expect(await res.json()).toEqual({ error: "payload_too_large" });
+    const signed = webhookRequest({ type: "email.delivered", data: { email_id: "re_big", pad } });
+    const raw = await signed.text();
+    const headers = Object.fromEntries(signed.headers);
+
+    // With a Content-Length over the cap: refused before the body is read.
+    const declared = await post(
+      new Request(signed.url, {
+        method: "POST",
+        headers: { ...headers, "content-length": String(raw.length) },
+        body: raw,
+      }),
+    );
+    expect(declared.status).toBe(413);
+    expect(await declared.json()).toEqual({ error: "payload_too_large" });
+    expect(read).not.toHaveBeenCalled();
+
+    // Chunked, without a length: refused once read, before the signature is computed.
+    const bytes = new TextEncoder().encode(raw);
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    });
+    const chunked = await post(new Request(signed.url, { method: "POST", headers, body: stream }));
+    expect(chunked.status).toBe(413);
     expect(verify).not.toHaveBeenCalled();
     expect(await messageRow(id)).toMatchObject({ status: "sent" });
     // A normal event still passes.

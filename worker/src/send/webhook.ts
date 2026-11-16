@@ -40,6 +40,11 @@ export function registerWebhookRoute(app: Hono<AppEnv>): void {
     const secret = c.env.RESEND_WEBHOOK_SECRET;
     if (!secret) return fail(c, 404, "not_found");
     const svixId = c.req.header("svix-id") ?? "";
+    // A declared length over the cap is refused before the body is read; a chunked body has
+    // none, so the length read is checked as well.
+    if (Number(c.req.header("content-length")) > WEBHOOK_BODY_MAX) {
+      return fail(c, 413, "payload_too_large");
+    }
     const body = await c.req.arrayBuffer();
     if (body.byteLength > WEBHOOK_BODY_MAX) return fail(c, 413, "payload_too_large");
     const raw = new TextDecoder().decode(body);

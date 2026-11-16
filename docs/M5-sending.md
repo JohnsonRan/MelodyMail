@@ -113,7 +113,7 @@ at `sent` or later (owner ruling 2026-11-16).
 
 ## Webhook
 
-- Read the raw body; refuse one over 256 KB with 413 before verifying it (the HMAC runs in JS:
+- Refuse a declared `Content-Length` over 256 KB with 413 before reading the body; read the raw body; refuse one over 256 KB (a chunked body has no length) with 413 before verifying it (the HMAC runs in JS:
   about 1 ms for 256 KB, 12 ms for 4 MB; Resend's email events are a few kB); verify the Svix signature with `RESEND_WEBHOOK_SECRET`; reject a timestamp
   more than 5 minutes off; answer 401 on failure without detail.
 - `INSERT INTO webhook_events (svix_id) ... ON CONFLICT DO NOTHING`; a duplicate answers 200 and
