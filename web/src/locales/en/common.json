@@ -433,6 +433,13 @@
         "description": "On iPhone and iPad, only the app opened from the Home Screen can get notifications. In Safari, tap Share, then Add to Home Screen."
       }
     },
+    "quiet": {
+      "sectionTitle": "While MelodyMail is open",
+      "description": "New mail shows a notice in the open MelodyMail page with the sender and the subject.",
+      "switch": "Quiet while MelodyMail is open",
+      "switchDescription": "No system notification and no Telegram message is sent while a MelodyMail page is in the foreground on any device.",
+      "saved": "Setting saved."
+    },
     "telegram": {
       "sectionTitle": "Telegram",
       "description": "Get a card in Telegram for each new mail with the sender, the subject and the address it arrived at, never the message text. Telegram can read these fields: bot messages aren't end-to-end encrypted.",

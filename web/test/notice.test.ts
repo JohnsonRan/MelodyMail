@@ -175,3 +175,22 @@ describe("new mail notice", () => {
     expect(await notices(page).count()).toBe(3);
   });
 });
+
+describe("quiet setting", () => {
+  test("is off at first, and the switch stores the change for every device", async () => {
+    session = await openSession(app.origin, "/settings/notifications");
+    const toggle = session.page.getByRole("switch", { name: "Quiet while MelodyMail is open" });
+    await toggle.waitFor();
+    expect(await toggle.isChecked()).toBe(false);
+    await session.page
+      .getByText("No system notification and no Telegram message is sent while")
+      .waitFor();
+    await toggle.click();
+    await session.page.getByText("Setting saved.").first().waitFor();
+    expect(app.quiet).toBe(true);
+    expect(await toggle.isChecked()).toBe(true);
+    await session.page.reload();
+    await toggle.waitFor();
+    expect(await toggle.isChecked()).toBe(true);
+  });
+});

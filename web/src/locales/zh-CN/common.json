@@ -433,6 +433,13 @@
         "description": "在 iPhone 和 iPad 上，只有从主屏幕打开的应用才能收到通知。请在 Safari 中轻点“共享”，然后轻点“添加到主屏幕”。"
       }
     },
+    "quiet": {
+      "sectionTitle": "MelodyMail 打开时",
+      "description": "收到新邮件时，打开的 MelodyMail 页面会显示一条提示，包含发件人和主题。",
+      "switch": "MelodyMail 打开时保持静默",
+      "switchDescription": "任一设备上的 MelodyMail 页面位于前台时，不发送系统通知，也不发送 Telegram 消息。",
+      "saved": "设置已保存。"
+    },
     "telegram": {
       "sectionTitle": "Telegram",
       "description": "每收到一封新邮件，就在 Telegram 中收到一张卡片，显示发件人、主题和收件地址，绝不包含邮件正文。Telegram 能读取这些内容：机器人消息不是端到端加密的。",

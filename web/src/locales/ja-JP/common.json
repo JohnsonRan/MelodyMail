@@ -433,6 +433,13 @@
         "description": "iPhone と iPad では、ホーム画面から開いたアプリだけが通知を受け取れます。Safari で [共有] をタップし、[ホーム画面に追加] をタップしてください。"
       }
     },
+    "quiet": {
+      "sectionTitle": "MelodyMail を開いているとき",
+      "description": "新着メールがあると、開いている MelodyMail のページに差出人と件名のお知らせが表示されます。",
+      "switch": "MelodyMail を開いている間は通知しない",
+      "switchDescription": "いずれかのデバイスで MelodyMail のページが前面にある間は、システム通知も Telegram メッセージも送信しません。",
+      "saved": "設定を保存しました。"
+    },
     "telegram": {
       "sectionTitle": "Telegram",
       "description": "新着メールごとに、差出人、件名、受信したアドレスを載せたカードを Telegram に送ります。メールの本文は送りません。ボットのメッセージはエンドツーエンドで暗号化されないため、Telegram はこれらの内容を読み取れます。",

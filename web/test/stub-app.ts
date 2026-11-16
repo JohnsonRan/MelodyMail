@@ -126,6 +126,8 @@ export class StubApp {
   sockets = new Set<ServerWebSocket<undefined>>();
   /** What pages sent over the socket besides "ping": their "fg" and "bg" reports. */
   reports: string[] = [];
+  /** "Quiet while MelodyMail is open" (GET and PUT /api/settings/quiet). */
+  quiet = false;
   /** Replaces a static file's body, for example a new sw.js. */
   overrides = new Map<string, string>();
   readonly server: Server<undefined>;
@@ -169,6 +171,7 @@ export class StubApp {
     this.patches = [];
     this.push = [];
     this.reports = [];
+    this.quiet = false;
     this.pushKey = null;
     this.overrides.clear();
   }
@@ -208,6 +211,11 @@ export class StubApp {
           : json({ error: "push_not_configured" }, 404);
       }
       return json({ ok: true });
+    }
+    if (path === "/api/settings/quiet") {
+      if (req.method === "PUT")
+        this.quiet = ((await req.json()) as { quietForeground: boolean }).quietForeground;
+      return json({ quietForeground: this.quiet });
     }
     const telegram = this.telegram.handle(req, url);
     if (telegram) return telegram;
