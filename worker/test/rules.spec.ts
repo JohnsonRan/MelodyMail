@@ -99,6 +99,13 @@ describe("rule conditions", () => {
     expect(hits({ field: "from", op: "equals", value: "jürgen" }, s)).toBe(true);
   });
 
+  it("reads the first 50 addresses of a header", () => {
+    const to = Array.from({ length: 51 }, (_, i) => `a${i + 1}@x.io`).join(", ");
+    const s = source({ To: to });
+    expect(hits({ field: "to", op: "equals", value: "a50@x.io" }, s)).toBe(true);
+    expect(hits({ field: "to", op: "equals", value: "a51@x.io" }, s)).toBe(false);
+  });
+
   it("reads each named header on its own", () => {
     const s = source({ "X-A": "alpha", "X-B": "beta" });
     const both: Condition[] = [

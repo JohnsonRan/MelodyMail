@@ -142,7 +142,8 @@ Settings > Rules holds up to 50 rules. Each rule has 1 to 10 conditions and at l
 The enabled rules can name at most 20 different headers in their header conditions.
 
 - **Conditions** read the envelope and the headers, never the body: From (each address and its
-  display name; the envelope sender when there is no `From` header), To or Cc, the recipient
+  display name; the envelope sender when there is no `From` header), To or Cc (the first 50
+  addresses of each of From, To and Cc are read), the recipient
   address without its `+tag`, the sub-address tag, the subject, or any named header such as
   `List-Id`. Operators: contains, doesn't contain, is, starts with, ends with. Case does not
   matter and runs of white space count as one space. To match a domain, use "ends with"

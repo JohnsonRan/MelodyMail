@@ -46,6 +46,8 @@ export type Decision = {
 
 /** Each header value is cut to this before decoding, as ADDRESS_LIST_MAX in mail/parse.ts. */
 export const VALUE_MAX = 2000;
+/** Addresses read from each of From, To and Cc. */
+export const ADDRESSES_MAX = 50;
 
 /** Lowercased, runs of white space collapsed to one space, trimmed; no Unicode normalization. */
 export function normalize(value: string): string {
@@ -58,10 +60,14 @@ function headerValue(source: MailSource, name: string): string | null {
   return raw === null ? null : raw.slice(0, VALUE_MAX).replace(/\r?\n(?=[ \t])/g, "");
 }
 
+/**
+ * The first ADDRESSES_MAX addresses of one header, each with its display name. Owner ruling
+ * (2026-11-17): later addresses are not read, which bounds the work per header.
+ */
 function addressValues(raw: string): string[] {
-  return addressParser(raw, { flatten: true }).flatMap((a) =>
-    [a.name, a.address].filter((v): v is string => Boolean(v)),
-  );
+  return addressParser(raw, { flatten: true })
+    .slice(0, ADDRESSES_MAX)
+    .flatMap((a) => [a.name, a.address].filter((v): v is string => Boolean(v)));
 }
 
 /**

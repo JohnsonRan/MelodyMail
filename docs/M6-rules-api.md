@@ -103,6 +103,8 @@ Matching rules:
   `message.headers` already unfolds is not documented; unfolding twice is harmless.
 - Each header value is cut to 2,000 characters before decoding, as `ADDRESS_LIST_MAX` in
   `worker/src/mail/parse.ts`. `Headers.get` joins repeated headers with `, `.
+- Of each of `From`, `To` and `Cc`, only the first 50 addresses are read (owner ruling
+  2026-11-17); an address after the 50th never matches. This bounds the comparisons per header.
 - `subject` and display names are decoded with postal-mime's `decodeWords`; addresses are split
   with its `addressParser`. postal-mime 4.2.1, already a Worker dependency, exports both
   (`worker/node_modules/postal-mime/README.md`, "addressParser()", "decodeWords()").
