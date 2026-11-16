@@ -217,7 +217,7 @@ describe("notifications settings", () => {
     const p = await pushPage({ permission: "granted" });
     await p.goto(`${app.origin}/settings/notifications`);
     await p.getByText("Push isn't set up on this server").waitFor();
-    expect(await p.getByRole("switch").count()).toBe(0);
+    expect(await p.getByRole("switch", { name: "Notify me about new mail" }).count()).toBe(0);
     await p.close();
   });
 

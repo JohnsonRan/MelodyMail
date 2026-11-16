@@ -31,18 +31,21 @@ type Focus = { visible: boolean; focused: boolean };
 /** Opens the inbox. With `clock`, the page runs on Playwright's clock in a context of its own,
  * so its 1 s re-check and 30 s refresh fire only when a test moves the clock. */
 async function open(clock = false): Promise<Page> {
-  session = await openSession(app.origin, "/", clock);
-  const { page } = session;
-  if (clock) await page.clock.install();
-  await page.addInitScript(() => {
-    const state = { visible: true, focused: true };
-    (window as unknown as { focusState: Focus }).focusState = state;
-    Object.defineProperty(document, "visibilityState", {
-      get: () => (state.visible ? "visible" : "hidden"),
-    });
-    document.hasFocus = () => state.focused;
+  session = await openSession(app.origin, "/", {
+    isolated: clock,
+    prepare: async (page) => {
+      if (clock) await page.clock.install();
+      await page.addInitScript(() => {
+        const state = { visible: true, focused: true };
+        (window as unknown as { focusState: Focus }).focusState = state;
+        Object.defineProperty(document, "visibilityState", {
+          get: () => (state.visible ? "visible" : "hidden"),
+        });
+        document.hasFocus = () => state.focused;
+      });
+    },
   });
-  await page.reload();
+  const { page } = session;
   await page.locator(`[data-message-row="note3"]`).waitFor();
   await waitForReports(["fg"]);
   return page;

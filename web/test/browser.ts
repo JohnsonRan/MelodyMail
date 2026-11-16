@@ -35,9 +35,16 @@ export async function shutdown(): Promise<void> {
 /**
  * A new page on `origin`; close it with `session.page.close()`. `isolated` gives the page a
  * context of its own, closed with the page, for a test that changes context-wide state such as
- * the clock.
+ * the clock. `prepare` runs before the first navigation, for init scripts.
  */
-export async function openSession(origin: string, path = "/", isolated = false): Promise<Session> {
+export async function openSession(
+  origin: string,
+  path = "/",
+  {
+    isolated = false,
+    prepare,
+  }: { isolated?: boolean; prepare?: (page: Page) => Promise<void> } = {},
+): Promise<Session> {
   const shared = await sharedContext();
   const page = isolated
     ? await (await shared.browser()?.newContext({ serviceWorkers: "block" }))?.newPage()
@@ -55,6 +62,7 @@ export async function openSession(origin: string, path = "/", isolated = false):
     return route.abort();
   });
   page.on("popup", (p) => popups.push(p));
+  await prepare?.(page);
   await page.goto(`${origin}${path}`);
   return { page, remote, remoteFromFrames, popups };
 }
