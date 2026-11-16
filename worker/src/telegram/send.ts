@@ -1,7 +1,7 @@
 import type { Env } from "../env";
 import { senderLabel } from "../push/send";
 import { type CallResult, callBot, type Failure } from "./api";
-import { type CardMail, caption, chatData, copy, messageLink } from "./card";
+import { type CardMail, caption, chatData, keyboard, messageLink } from "./card";
 import html from "./card.html";
 
 // Sending cards (docs/M5b-telegram.md, "Sending"). The Hub calls telegramNewMail for every new
@@ -16,19 +16,20 @@ type LastError = "blocked" | "rate_limited" | "failed";
 const lastErrorOf = (kind: Failure): LastError =>
   kind === "blocked" || kind === "rate_limited" ? kind : "failed";
 
-type Card = { chatData: string; caption: string; url: string };
+/** `mail` gives the plain message its action buttons; the test card has none. */
+type Card = { chatData: string; caption: string; url: string; mail?: CardMail };
 
 /**
  * Sends one card. When Telegram refuses the widget (400), the caption goes out as a plain message
- * with an Open button instead (owner ruling 6). Returns the card's Telegram message id, null for
- * the plain message, or the failure.
+ * with an inline keyboard instead (owner rulings 6 and 7). Returns the Telegram message id of
+ * either, or the failure.
  */
 export async function sendCard(
   env: Env,
   binding: Binding,
   card: Card,
   messageId?: string,
-): Promise<{ ok: true; tgMessageId: number | null } | { ok: false; error: LastError }> {
+): Promise<{ ok: true; tgMessageId: number } | { ok: false; error: LastError }> {
   const sent: CallResult<{ message_id: number }> = await callBot(
     env,
     "sendWidget",
@@ -44,18 +45,20 @@ export async function sendCard(
   );
   if (sent.ok) return { ok: true, tgMessageId: sent.result.message_id };
   if (sent.status !== 400) return { ok: false, error: lastErrorOf(sent.kind) };
-  const plain = await callBot(
+  const plain: CallResult<{ message_id: number }> = await callBot(
     env,
     "sendMessage",
     {
       chat_id: binding.chatId,
       text: card.caption,
       protect_content: true,
-      reply_markup: { inline_keyboard: [[{ text: copy(binding.language).open, url: card.url }]] },
+      reply_markup: keyboard(binding.language, card.url, card.mail),
     },
     { messageId },
   );
-  return plain.ok ? { ok: true, tgMessageId: null } : { ok: false, error: lastErrorOf(plain.kind) };
+  return plain.ok
+    ? { ok: true, tgMessageId: plain.result.message_id }
+    : { ok: false, error: lastErrorOf(plain.kind) };
 }
 
 /** Records the outcome of a send for the panel: a failure's code, or cleared on success. */
@@ -100,6 +103,7 @@ export async function telegramNewMail(env: Env, id: string): Promise<void> {
       chatData: chatData(row, binding.origin, id),
       caption: caption(senderLabel(row.fromHdr, row.envelopeFrom), row.subject, binding.language),
       url: messageLink(binding.origin, id),
+      mail: row,
     },
     id,
   );

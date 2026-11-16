@@ -65,7 +65,7 @@ describe("telegram status and connect", () => {
     expect(calls.map((c) => c.method)).toEqual(["getMe", "setWebhook"]);
     const hook = calls[1]?.body ?? {};
     expect(hook.url).toBe(`${ORIGIN}/api/webhooks/telegram`);
-    expect(hook.allowed_updates).toEqual(["message", "widget_query"]);
+    expect(hook.allowed_updates).toEqual(["message", "widget_query", "callback_query"]);
     expect(hook.drop_pending_updates).toBe(true);
     const secret = String(hook.secret_token);
     expect(secret).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -194,6 +194,17 @@ describe("telegram disconnect and test card", () => {
       s: "テスト通知",
       t: null,
       u: `${ORIGIN}/`,
+    });
+    expect(await cardRows()).toEqual([]);
+    // Refused as a widget, the test card is a plain message with Open only: it names no mail.
+    const plain = stubTelegram((method) =>
+      method === "sendWidget"
+        ? botError(400, "Bad Request: INPUT_MEDIA_WIDGET_NOT_ALLOWED")
+        : ok({ message_id: 8 }),
+    );
+    await client.json("POST", "/api/telegram/test", {});
+    expect(plain[1]?.body.reply_markup).toEqual({
+      inline_keyboard: [[{ text: "開く", url: `${ORIGIN}/` }]],
     });
     expect(await cardRows()).toEqual([]);
     stubTelegram(() => botError(403, "Forbidden: bot was blocked by the user"));

@@ -18,7 +18,7 @@ export const LINK_TTL_MS = 10 * 60_000;
 const WEBHOOK_PORTS = new Set(["", "88", "8443"]);
 /** Keeps a card's link (origin + "/?m=" + a 36-character id) inside openLink's 256 characters. */
 const ORIGIN_MAX = 160;
-export const ALLOWED_UPDATES = ["message", "widget_query"];
+export const ALLOWED_UPDATES = ["message", "widget_query", "callback_query"];
 
 /** The request's origin when Telegram can deliver a webhook to it, else null. */
 export function webhookOrigin(c: Context<AppEnv>): string | null {

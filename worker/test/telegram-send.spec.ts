@@ -1,5 +1,6 @@
 import { env, exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { copy } from "../src/telegram/card";
 import html from "../src/telegram/card.html";
 import { telegramNewMail } from "../src/telegram/send";
 import { ORIGIN } from "./helpers";
@@ -8,6 +9,7 @@ import { signedIn } from "./send-helpers";
 import {
   botError,
   CHAT,
+  callback,
   cardRows,
   message,
   notifyNewMail,
@@ -129,12 +131,12 @@ describe("telegram cards for new mail", () => {
     expect(calls.map((c) => c.method)).toEqual(["sendWidget"]);
   });
 
-  it("falls back to a plain message with an Open button when the widget is refused", async () => {
+  it("falls back to a plain message with the four buttons when the widget is refused", async () => {
     await seedTelegram();
-    await seedMessage({ id: "m1", subject: "Hi" });
+    await seedMessage({ id: "m1", subject: "Hi", starred: true });
     const calls = stubTelegram((method) =>
       method === "sendWidget"
-        ? botError(400, "Bad Request: INPUT_MEDIA_WIDGET_TOO_LARGE")
+        ? botError(400, "Bad Request: INPUT_MEDIA_WIDGET_NOT_ALLOWED")
         : ok({ message_id: 9 }),
     );
     await notifyNewMail("m1");
@@ -143,9 +145,20 @@ describe("telegram cards for new mail", () => {
       chat_id: CHAT,
       text: "Sender\nHi",
       protect_content: true,
-      reply_markup: { inline_keyboard: [[{ text: "Open", url: `${ORIGIN}/?m=m1` }]] },
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "Open", url: `${ORIGIN}/?m=m1` },
+            { text: "Mark as read", callback_data: "read:1" },
+          ],
+          [
+            { text: "Archive", callback_data: "arch:1" },
+            { text: "Remove star", callback_data: "star:0" },
+          ],
+        ],
+      },
     });
-    expect(await cardRows()).toEqual([{ messageId: "m1", chatId: CHAT, tgMessageId: null }]);
+    expect(await cardRows()).toEqual([{ messageId: "m1", chatId: CHAT, tgMessageId: 9 }]);
     expect((await telegramRow())?.lastError).toBeNull();
   });
 
@@ -188,6 +201,31 @@ describe("telegram cards for new mail", () => {
   });
 });
 
+describe("plain message copy", () => {
+  it("repeats the card's labels and lines word for word", () => {
+    const block = { en: "en", "zh-CN": "zh", "ja-JP": "ja" };
+    for (const [language, key] of Object.entries(block)) {
+      const words = copy(language);
+      const card = html.slice(html.indexOf(`${key}: {`)).split("},")[0] ?? "";
+      for (const [id, pair] of [
+        ["r", words.read],
+        ["a", words.arch],
+        ["x", words.star],
+      ] as const) {
+        expect(card, language).toContain(`${id}:${JSON.stringify(pair)}`);
+      }
+      for (const [id, line] of [
+        ["o", words.open],
+        ["g", words.gone],
+        ["u", words.unbound],
+        ["f", words.failed],
+      ]) {
+        expect(card, language).toContain(`${id}:${JSON.stringify(line)}`);
+      }
+    }
+  });
+});
+
 describe("telegram logs", () => {
   it("carry no token, chat id, code, secret, subject, sender or address", async () => {
     const lines: string[] = [];
@@ -215,6 +253,7 @@ describe("telegram logs", () => {
       .bind(CHAT)
       .run();
     await webhook(query("read:1"));
+    await webhook(callback("read:0"));
     await webhook({ update_id: 3 }, "wrong-secret");
     const logged = lines.join("\n");
     expect(logged).toContain("telegram_call_failed");

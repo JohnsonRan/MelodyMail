@@ -6,10 +6,29 @@ import { senderLabel } from "../push/send";
 
 export type Language = "zh-CN" | "en" | "ja-JP";
 
-/** Copy the Worker writes to the chat; the card's own copy is in card.html. */
+/** Indexed by a flag's value: a button's label by the current one, a notice by the new one. */
+type Pair = [string, string];
+
+/**
+ * Copy the Worker writes to the chat. The button labels and the gone, unbound and failed lines
+ * repeat card.html word for word, so a plain message reads like the widget.
+ */
 const COPY: Record<
   Language,
-  { connected: string; invalidCode: string; noSubject: string; open: string; testSubject: string }
+  {
+    connected: string;
+    invalidCode: string;
+    noSubject: string;
+    open: string;
+    testSubject: string;
+    read: Pair;
+    arch: Pair;
+    star: Pair;
+    done: { read: Pair; arch: Pair; star: Pair };
+    gone: string;
+    unbound: string;
+    failed: string;
+  }
 > = {
   en: {
     connected: "Connected. New mail will appear here.",
@@ -18,6 +37,17 @@ const COPY: Record<
     noSubject: "(no subject)",
     open: "Open",
     testSubject: "Test notification",
+    read: ["Mark as read", "Mark as unread"],
+    arch: ["Archive", "Move to Inbox"],
+    star: ["Star", "Remove star"],
+    done: {
+      read: ["Marked as unread", "Marked as read"],
+      arch: ["Moved to Inbox", "Archived"],
+      star: ["Star removed", "Starred"],
+    },
+    gone: "This message was deleted in MelodyMail.",
+    unbound: "Telegram is no longer connected to MelodyMail.",
+    failed: "MelodyMail didn't answer. Try again.",
   },
   "zh-CN": {
     connected: "已连接。新邮件会显示在这里。",
@@ -25,6 +55,17 @@ const COPY: Record<
     noSubject: "（无主题）",
     open: "打开",
     testSubject: "测试通知",
+    read: ["标记为已读", "标记为未读"],
+    arch: ["存档", "移到收件箱"],
+    star: ["加星标", "取消星标"],
+    done: {
+      read: ["已标记为未读", "已标记为已读"],
+      arch: ["已移到收件箱", "已存档"],
+      star: ["已取消星标", "已加星标"],
+    },
+    gone: "这封邮件已在 MelodyMail 中删除。",
+    unbound: "Telegram 已与 MelodyMail 断开连接。",
+    failed: "MelodyMail 没有响应。请重试。",
   },
   "ja-JP": {
     connected: "接続しました。新着メールはここに表示されます。",
@@ -33,6 +74,17 @@ const COPY: Record<
     noSubject: "(件名なし)",
     open: "開く",
     testSubject: "テスト通知",
+    read: ["既読にする", "未読にする"],
+    arch: ["アーカイブ", "受信トレイに移動"],
+    star: ["スターを付ける", "スターを外す"],
+    done: {
+      read: ["未読にしました", "既読にしました"],
+      arch: ["受信トレイに移動しました", "アーカイブしました"],
+      star: ["スターを外しました", "スターを付けました"],
+    },
+    gone: "このメールは MelodyMail で削除されました。",
+    unbound: "Telegram と MelodyMail の接続は解除されています。",
+    failed: "MelodyMail から応答がありません。もう一度お試しください。",
   },
 };
 
@@ -119,4 +171,28 @@ export function caption(sender: string, subject: string | null, language: string
     out += char;
   }
   return out;
+}
+
+export type Action = "read" | "arch" | "star";
+type Flags = Pick<CardMail, "read" | "archived" | "starred">;
+
+/**
+ * The plain message's inline keyboard: Open, then the three toggles. A toggle's callback data is
+ * the widget's request format, `<action>:<target value>`, and names no message. Without flags
+ * (the test card) only Open is shown.
+ */
+export function keyboard(language: string | null, url: string, flags?: Flags) {
+  const words = copy(language);
+  const open = { text: words.open, url };
+  if (!flags) return { inline_keyboard: [[open]] };
+  const toggle = (action: Action, value: number) => ({
+    text: words[action][value ? 1 : 0],
+    callback_data: `${action}:${value ? 0 : 1}`,
+  });
+  return {
+    inline_keyboard: [
+      [open, toggle("read", flags.read)],
+      [toggle("arch", flags.archived), toggle("star", flags.starred)],
+    ],
+  };
 }

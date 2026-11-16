@@ -119,6 +119,29 @@ export const query = (
   },
 });
 
+/** A tap on a button of the plain message; `message: null` is a tap on an inline message. */
+export const callback = (
+  data: string,
+  options: { messageId?: number; chat?: object; from?: object; message?: null } = {},
+) => ({
+  update_id: 3,
+  callback_query: {
+    id: "cb-1",
+    from: { id: CHAT, is_bot: false, first_name: "Owner", ...options.from },
+    ...(options.message === null
+      ? { inline_message_id: "inline-1" }
+      : {
+          message: {
+            message_id: options.messageId ?? 42,
+            date: 1,
+            chat: { id: CHAT, type: "private", ...options.chat },
+          },
+        }),
+    chat_instance: "1",
+    data,
+  },
+});
+
 export async function cardFor(messageId: string, tgMessageId = 42, chatId = CHAT) {
   await env.DB.prepare(
     "INSERT INTO telegram_cards (message_id, chat_id, tg_message_id, created_at) VALUES (?, ?, ?, ?)",
