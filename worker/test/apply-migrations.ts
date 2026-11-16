@@ -29,6 +29,7 @@ const TABLES = [
   "auth_challenges",
   "login_attempts",
   "audit_log",
+  "backup_exports",
 ];
 beforeEach(async () => {
   await env.DB.batch(TABLES.map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
