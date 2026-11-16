@@ -154,3 +154,32 @@ The browser security suite needs Chromium for Playwright once:
 ```sh
 bun run --cwd web test:browser
 ```
+
+## Notifications
+
+MelodyMail sends a Web Push notification for new mail while no MelodyMail page is open. The
+notification shows the sender and the subject, never the message text. Push stays off until the
+Worker has a VAPID key pair and subject; Settings > Notifications then says push is not set up.
+
+Apply migration 0008 after deploying this version (`bun run --cwd worker db:migrate:remote`).
+Then generate a key pair and store it from `worker/`:
+
+```sh
+bun run vapid                                   # prints VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY
+bun run wrangler secret put VAPID_PRIVATE_KEY
+bun run wrangler secret put VAPID_PUBLIC_KEY
+bun run wrangler secret put VAPID_SUBJECT       # the app's own origin, e.g. https://mail.example.com
+```
+
+`VAPID_SUBJECT` must be an `https://` URL. Push services use it to contact the sender, so no
+e-mail address is sent to them. For `wrangler dev`, put the three values in `worker/.dev.vars`.
+
+Changing the key pair ends every subscription: push services refuse messages signed with a key the
+browser did not subscribe with. Delete the old rows, then turn notifications on again in
+Settings > Notifications on each device:
+
+```sh
+bun run wrangler d1 execute melodymail --remote --command "DELETE FROM push_subscriptions"
+```
+
+Signing a device out, or revoking its session, also ends its notifications.
