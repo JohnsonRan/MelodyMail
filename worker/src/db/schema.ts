@@ -161,7 +161,23 @@ export const messages = sqliteTable(
     // No foreign key: a message outlives the address it arrived on.
     addressId: integer("address_id").notNull(),
     direction: text("direction", { enum: ["in", "out"] }).notNull(),
-    status: text("status", { enum: ["stored", "parsed", "parse_failed"] }).notNull(),
+    // Inbound: stored, parsed, parse_failed. Outbound (M5): sending, then the delivery status from
+    // Resend, which only moves forward (worker/src/send/webhook.ts).
+    status: text("status", {
+      enum: [
+        "stored",
+        "parsed",
+        "parse_failed",
+        "sending",
+        "sent",
+        "delayed",
+        "delivered",
+        "bounced",
+        "complained",
+        "failed",
+        "suppressed",
+      ],
+    }).notNull(),
     envelopeFrom: text("envelope_from").notNull(),
     envelopeTo: text("envelope_to").notNull(),
     subaddressTag: text("subaddress_tag"),
@@ -174,6 +190,8 @@ export const messages = sqliteTable(
     fromHdr: text("from_hdr"),
     toHdr: text("to_hdr"),
     ccHdr: text("cc_hdr"),
+    // Outbound only: the Bcc list is kept for the sender's own copy.
+    bccHdr: text("bcc_hdr"),
     dateHdr: text("date_hdr"),
     snippet: text("snippet"),
     rawSize: integer("raw_size").notNull(),
@@ -188,8 +206,22 @@ export const messages = sqliteTable(
     archived: integer("archived", { mode: "boolean" }).notNull().default(false),
     trashed: integer("trashed", { mode: "boolean" }).notNull().default(false),
     receivedAt: integer("received_at").notNull(),
+    // M5, outbound only: Resend's email id, the client's idempotency key, and a short error code
+    // (never upstream text) when the send failed.
+    resendId: text("resend_id"),
+    idempotencyKey: text("idempotency_key"),
+    error: text("error"),
   },
   (t) => [
+    uniqueIndex("messages_resend_id").on(t.resendId),
+    uniqueIndex("messages_idempotency_key").on(t.idempotencyKey),
+    // The Sent folder.
+    index("messages_direction_received").on(
+      t.direction,
+      t.trashed,
+      sql`${t.receivedAt} DESC`,
+      sql`${t.id} DESC`,
+    ),
     index("messages_address_received").on(t.addressId, sql`${t.receivedAt} DESC`),
     // The cron step finds messages still waiting for the parser.
     index("messages_status_received").on(t.status, t.receivedAt),
@@ -233,4 +265,78 @@ export const pushSubscriptions = sqliteTable(
     uniqueIndex("push_subscriptions_endpoint").on(t.endpoint),
     index("push_subscriptions_session").on(t.sessionId),
   ],
+);
+
+// M5: sending through Resend (docs/M5-sending.md, "Data"). The Markdown source, the rendered HTML
+// and the recipients of a draft live here until it is sent; the sent copy is a JSON object in R2.
+export const drafts = sqliteTable(
+  "drafts",
+  {
+    // Chosen by the browser when compose opens, so uploads can name it before the first save.
+    id: text("id").primaryKey(),
+    addressId: integer("address_id"),
+    // JSON arrays of bare addresses.
+    toList: text("to_list").notNull().default("[]"),
+    ccList: text("cc_list").notNull().default("[]"),
+    bccList: text("bcc_list").notNull().default("[]"),
+    subject: text("subject").notNull().default(""),
+    // The Markdown source as written.
+    text: text("text").notNull().default(""),
+    // The message replied to or forwarded, and how.
+    sourceId: text("source_id"),
+    sourceKind: text("source_kind", { enum: ["reply", "replyAll", "forward"] }),
+    // One per compose session: a double click, a retry and a second tab all send one email.
+    idempotencyKey: text("idempotency_key").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("drafts_idempotency_key").on(t.idempotencyKey),
+    index("drafts_updated").on(t.updatedAt),
+  ],
+);
+
+// Attachments, streamed to R2 by PUT /api/uploads. An upload belongs to a draft until it is sent,
+// then to the sent message; the cron removes one that belongs to neither after 24 hours.
+export const uploads = sqliteTable(
+  "uploads",
+  {
+    id: text("id").primaryKey(),
+    r2Key: text("r2_key").notNull(),
+    filename: text("filename").notNull(),
+    contentType: text("content_type").notNull(),
+    size: integer("size").notNull(),
+    createdAt: integer("created_at").notNull(),
+    // No foreign keys: the draft may not be saved yet, and the cron sweeps uploads whose draft is
+    // gone.
+    draftId: text("draft_id"),
+    messageId: text("message_id"),
+  },
+  (t) => [
+    index("uploads_draft").on(t.draftId),
+    index("uploads_message").on(t.messageId),
+    index("uploads_created").on(t.createdAt),
+  ],
+);
+
+// The webhook replay guard: one row per svix-id seen in the last 7 days.
+export const webhookEvents = sqliteTable(
+  "webhook_events",
+  {
+    svixId: text("svix_id").primaryKey(),
+    receivedAt: integer("received_at").notNull(),
+  },
+  (t) => [index("webhook_events_received").on(t.receivedAt)],
+);
+
+// The last quota counts Resend reported (x-resend-daily-quota, x-resend-monthly-quota).
+export const sendQuota = sqliteTable(
+  "send_quota",
+  {
+    id: integer("id").primaryKey(),
+    dailyUsed: integer("daily_used").notNull(),
+    monthlyUsed: integer("monthly_used").notNull(),
+    seenAt: integer("seen_at").notNull(),
+  },
+  (t) => [check("send_quota_single_row", sql`${t.id} = 1`)],
 );
