@@ -76,6 +76,12 @@ const GUARDED = [
   "POST /api/telegram/test",
   "GET /api/settings/quiet",
   "PUT /api/settings/quiet",
+  "GET /api/rules",
+  "POST /api/rules",
+  "PUT /api/rules/order",
+  "POST /api/rules/test",
+  "PUT /api/rules/:id",
+  "DELETE /api/rules/:id",
 ];
 
 describe("authorization", () => {

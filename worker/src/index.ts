@@ -13,6 +13,7 @@ import { registerQuietRoutes } from "./mail/quiet";
 import { registerMailboxRoutes, registerMessageRoutes } from "./mail/routes";
 import { registerPushRoutes } from "./push/routes";
 import { publicRoute, requireAuthorization, requireSameOrigin } from "./routing";
+import { registerRuleRoutes } from "./rules/routes";
 import { registerDraftRoutes } from "./send/drafts";
 import { registerSendInfoRoutes } from "./send/info";
 import { registerSendRoute } from "./send/send";
@@ -65,6 +66,9 @@ registerTelegramWebhook(app);
 
 // "Quiet while MelodyMail is open" (docs/M5c-foreground.md): not public.
 registerQuietRoutes(app.basePath("/settings/quiet"));
+
+// Rules (docs/M6-rules-api.md): not public; no API key reaches them.
+registerRuleRoutes(app.basePath("/rules"));
 
 app.notFound((c) => fail(c, 404, "not_found"));
 app.onError((err, c) => {

@@ -46,7 +46,7 @@ export async function unknownTargets(db: D1Database, ids: number[]): Promise<boo
 export function registerTargetRoutes(targets: Hono<AppEnv>): void {
   targets.get("/", async (c) => {
     const { results } = await c.env.DB.prepare(
-      "SELECT id, email, note, created_at AS createdAt, (SELECT COUNT(*) FROM address_forwards f WHERE f.target_id = t.id) AS addressCount FROM forward_targets t ORDER BY email",
+      "SELECT id, email, note, created_at AS createdAt, (SELECT COUNT(*) FROM address_forwards f WHERE f.target_id = t.id) AS addressCount, (SELECT COUNT(*) FROM rule_forwards r WHERE r.target_id = t.id) AS ruleCount FROM forward_targets t ORDER BY email",
     ).all();
     return c.json({ targets: results });
   });
@@ -68,28 +68,35 @@ export function registerTargetRoutes(targets: Hono<AppEnv>): void {
       .first();
     if (!row) return fail(c, 409, "target_exists");
     await audit(c, "forward_target_added", now, email.value).run();
-    return c.json({ target: { ...row, addressCount: 0 } }, 201);
+    return c.json({ target: { ...row, addressCount: 0, ruleCount: 0 } }, 201);
   });
 
-  // Refused while addresses use the target, unless ?detach=1 (the UI confirms first). One statement decides; the links go with the target (cascade). In the
-  // same batch, a forward-only address losing its last target goes back to store and forward.
+  // Refused while addresses or rules use the target, unless ?detach=1 (the UI confirms first).
+  // One statement decides; the links go with the target (cascade). In the same batch, a
+  // forward-only address losing its last target goes back to store and forward, and a rule left
+  // without any action is disabled (docs/M6-rules-api.md, "Forwarding").
   targets.delete("/:id", async (c) => {
     const id = parseId(c.req.param("id"));
     if (id === null) return fail(c, 404, "not_found");
-    const detach = c.req.query("detach") === "1";
+    const detach = c.req.query("detach") === "1" ? 1 : 0;
     const db = c.env.DB;
     const now = Date.now();
-    const [, deleted] = await db.batch([
+    const [, , deleted] = await db.batch([
       db
         .prepare(
           "UPDATE addresses SET forward_only = 0 WHERE ? = 1 AND forward_only = 1 AND id IN (SELECT address_id FROM address_forwards WHERE target_id = ?) AND NOT EXISTS (SELECT 1 FROM address_forwards f WHERE f.address_id = addresses.id AND f.target_id != ?)",
         )
-        .bind(detach ? 1 : 0, id, id),
+        .bind(detach, id, id),
       db
         .prepare(
-          "DELETE FROM forward_targets WHERE id = ? AND (? = 1 OR NOT EXISTS (SELECT 1 FROM address_forwards WHERE target_id = ?)) RETURNING email",
+          "UPDATE rules SET enabled = 0, updated_at = ? WHERE ? = 1 AND enabled = 1 AND mark_read = 0 AND star = 0 AND archive = 0 AND trash = 0 AND stop = 0 AND id IN (SELECT rule_id FROM rule_forwards WHERE target_id = ?) AND NOT EXISTS (SELECT 1 FROM rule_forwards f WHERE f.rule_id = rules.id AND f.target_id != ?)",
         )
-        .bind(id, detach ? 1 : 0, id),
+        .bind(now, detach, id, id),
+      db
+        .prepare(
+          "DELETE FROM forward_targets WHERE id = ?1 AND (?2 = 1 OR NOT EXISTS (SELECT 1 FROM address_forwards WHERE target_id = ?1) AND NOT EXISTS (SELECT 1 FROM rule_forwards WHERE target_id = ?1)) RETURNING email",
+        )
+        .bind(id, detach),
     ]);
     const removed = deleted?.results[0] as { email: string } | undefined;
     if (removed) {
