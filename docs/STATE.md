@@ -2962,7 +2962,7 @@ Deferred (owner decides after release):
 Not verified: the card with a screen reader (only the live region's text was read); the notice
 in Safari and Firefox; the logo's 32 px rendering on a high-density display (headless at 1x).
 
-## Text selection limited to content (owner request 2026-11-16, branch `ui-selection`)
+## Text selection limited to content (done 2026-11-16, PR #9, merge `490dd64`)
 
 A drag selects only content. `web/src/selection.ts` turns selection off on the document element
 (portals included) from the root layout, and exports `SELECTABLE` for the regions that opt back in.
