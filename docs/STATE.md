@@ -3658,3 +3658,197 @@ Not verified (added, the reviewer's hypotheses):
   menu). Ablation: dropping the Settings entry, the view switch, the redirect or the Back target
   turns them red; the English section title turns one assertion red.
 - Not verified: the layout by screenshot (the owner checks on local `wrangler dev`).
+
+
+## M7: backups, Trash clean-up, production config (phase A done 2026-11-17, not merged)
+
+Design: `docs/M7-ops.md` with its owner rulings of 2026-11-17. Risk class High. Phase A is code;
+phase B (the three READMEs, `docs/REFERENCE.md`, `docs/RUNBOOK.md`, the README sync check) is a
+separate run. Branch `m7-ops` from main at `3e30ed6`. Not pushed, not deployed; no command touched
+a Cloudflare account.
+
+### Done (phase A)
+
+- `c2abe35` migration 0015: `backup_exports` (the design's columns plus `parts_json`,
+  `alerted_at`, `pruned_at`), `messages.trashed_at` with a partial index; rows already in Trash
+  count from the migration.
+- `678234f` Trash clean-up (ruling 3): the cron deletes up to 100 messages a run that have been in
+  Trash for 30 days, oldest first, through `deleteFromTrash` (`worker/src/mail/trash.ts`), the
+  function the manual permanent delete now uses; logs `trash_expired` with a count and writes one
+  `trash_expired` audit row. `trashed_at` is set on entering Trash, kept while there, cleared on
+  leaving; a Trash rule sets it in the INSERT; a Trash row without a time starts its 30 days at the
+  next run. The Trash folder's toolbar says so in three locales (`mail.trashNote`).
+- `7378c85` `email()` writes `addressId`, `envelopeFrom`, `envelopeTo`, `receivedAt` as R2 custom
+  metadata (addresses cut to 256 characters).
+- `c75538a` the daily export (`worker/src/backup/`): the cron's last job; starts at the first run
+  after 03:00 UTC; per run at most 1 MiB of SQL or 30 D1/R2 calls; SQL built by D1 with `quote()`;
+  `messages_fts` with explicit rowid; oversized rows split by D1 into an INSERT plus UPDATEs of
+  16,000 characters, written only as a run's first page; manifest last with sizes, R2 MD5s, row
+  counts, highest rowid and the migration name; retention 14 newest plus each month's first for 6
+  months, incomplete exports removed after 2 days; pruning once per completed export; alerts
+  (`backup_export_failed`, `backup_stale`, one Telegram message a day at most). Bench
+  `worker/bench/backup.ts`.
+- `fc7805c` `worker/scripts/prod-config.ts`, `worker/deploy.example.jsonc`, `.gitignore` entries,
+  `prod-config`, `migrate:prod`, `deploy:prod`, `backup-restore` scripts in `worker/package.json`;
+  `worker/scripts/backup-restore.ts` (fetch, verify).
+- `801e17c` `scripts/release.ts` (`bun run release <exportId>`) and the REQUIREMENTS rows.
+- `0ac6162` tests for the ablation survivors; a redundant cursor move removed.
+
+### Proof (worker suite, real D1 and R2 in workerd)
+
+- `test/backup.spec.ts` (8): coverage of every table and column, red on a planted table and a
+  planted column; an export over several runs with no manifest before completion, counts, part
+  keys, sizes and R2 MD5s matching, no statement over 90,000 bytes, the 512 K-character draft split
+  into UPDATEs (a surrogate pair at a piece boundary), no planted secret and no left-out table in
+  any part, the load into a second D1 (`RESTORE_DB`) migrated from scratch equal row for row for
+  every exported table, CJK search on the restored FTS rows, `foreign_key_check` empty; a page whose
+  cursor update is lost (thrown after the put) repeats without duplicate rows; the byte budget; the
+  call budget; an oversized row deferred to the next run with the cursor kept; daily start at
+  03:00 UTC and the 48-hour replacement; nothing before migration 0015.
+- `test/backup-ops.spec.ts` (4): retention over nine months of daily exports; pruning once per
+  completed export, a locked export logged and skipped, the next run not listing again; a failing
+  export leaves the other cron jobs running, logs `backup_export_failed` and `cron_job_failed`,
+  sends one Telegram message (zh-CN text) and no second one that day; `backup_stale` once a day.
+- `test/trash.spec.ts` (5): exactly 30 days deleted, 30 days minus 1 ms and 29 days kept, R2
+  object, row and FTS row removed, non-Trash untouched, audit and log; 101 due, 100 deleted oldest
+  first; an untimed row stamped; a row restored between select and delete kept; the clock set,
+  kept, cleared and set again through the session routes; a Trash rule sets it on arrival.
+- `test/inbound.spec.ts` (2 new): the four metadata fields; a 400-character envelope sender cut in
+  the metadata, the row keeps it whole.
+- `scripts/prod-config.test.ts` (5, `bun run test:scripts`): refusal on another branch, a dirty
+  tree, HEAD not at `origin/main`, unknown `origin/main`, no git; the merge; refusal of an unknown
+  key, a malformed id, no route, `workers_dev` on, no DB binding.
+- Browser: `web/test/mailbox.test.ts` "says in Trash, and only there…" (390 px, no sideways
+  scroll); `bun test ./test/mailbox.test.ts` 11 tests green after `vite build`.
+- Dry run: `bun scripts/prod-config.ts --local <scratch fake> --print` on `m7-ops` refused with
+  exit 1 ("the branch is m7-ops, not main"); without a local file exit 2. `migrate:prod` and
+  `deploy:prod` were never run. `bun scripts/release.ts` without or with a bad id: exit 2.
+
+### Local restore drill (2026-11-17, wrangler 4.162 local, CPU load 0%)
+
+Script in the session scratchpad (`m7a/drill.ts`, not committed): a copy of `wrangler.jsonc` with
+absolute paths (so no `.dev.vars` was loaded), all state under the scratchpad, metrics and the cf
+fetch off (`WRANGLER_SEND_METRICS=false`, `CLOUDFLARE_CF_FETCH_ENABLED=false`), no `--remote`.
+
+- Source: migrations, then every exported table seeded (a 449,388-character draft, CJK, planted
+  values in `owner`, `sessions`, `push_subscriptions`, `api_keys`), `wrangler dev --test-scheduled`
+  on port 8799, 15 fixtures through `/cdn-cgi/local/email` (the real `email()` and consumer), then
+  25 cron runs.
+- Export `2026-11-16T1859Z`: complete, 1,218,917 bytes in 13 parts. `backup-restore.ts fetch`
+  (local) 12.7 s; `restore.sql` 1,219,412 bytes, longest statement 42,734 bytes, no planted value.
+- A dangling `telegram_cards` row planted after the PRAGMA: the import into a fresh database
+  (`--persist-to` a second scratch directory, all migrations) took 1.1 s and succeeded, so the
+  local `--file` import honours `defer_foreign_keys`, and the clean-up removed the row.
+- `backup-restore.ts verify` passed (counts, foreign keys, 15 sampled raw objects); all 14 exported
+  tables compared equal row for row; FTS search answered on the restored copy; left-out tables
+  empty. Total 99 s.
+- Finding: `GET /__scheduled` (the design's drill step 2) returned the SPA, because the assets
+  layer answers requests with `Sec-Fetch-Mode: navigate`, which Bun's `fetch` sends. The route
+  `/cdn-cgi/handler/scheduled?cron=*/15+*+*+*+*` triggered the cron.
+
+### Numbers (2026-11-17, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
+
+| Item | Result | CPU load |
+| --- | --- | --- |
+| `bun run check` after phase A | 15.2, 15.6, 14.6 s (463 worker tests) | 26%, 23%, 1% |
+| `bun run check` at each commit | 12.6, 13.0, 13.4, 14.1, 13.8, 13.7 s | 0–3% |
+| Worker suite alone (vitest Duration) | 12.8 s | about 1% |
+| `bun worker/bench/backup.ts`, 3 runs | 256 KB messages page p95 0.41–0.54 ms; FTS page 0.08–0.10 ms; 512 K-character draft 1.41–1.58 ms; manifest 0.08–0.09 ms; R2 metadata 0.001 ms | 0–2% |
+| The same bench before the D1-side split (JS split) | draft p95 2.4–3.5 ms; 512 KB pages p95 0.6–1.2 ms | 0–2% |
+| `bun test ./test/mailbox.test.ts` (web) | 11 tests, 11.2 s | about 2% |
+
+The `email()` addition is one object of four strings, 0.001 ms p95 in the bench; no `email()` CPU
+benchmark existed before, and the parse and rules benches are unchanged.
+
+### Ablation
+
+`m7a/ablate.ts` (scratchpad, not committed) applied 56 mutations one at a time, sequentially, to
+the worker and ran the backup, backup-ops, trash, inbound and mailbox specs (4.1–5.6 s each, CPU load
+0–27% recorded per run); `git status` clean afterwards. 49 red at once; 7 survived. Six got tests in
+`0ac6162`, all red on the rerun: the call budget, the stop after a deferred oversized row, keeping
+the cursor after empty tables (two hunks), an oversized row under a page after a short row, and a
+flag change that does not touch Trash. One survivor was redundant and removed instead (the cursor
+move past a vanished oversized row). Web: removing the Trash note turns the browser test red.
+
+Not ablated: the migration's backfill `UPDATE` (the tests migrate an empty database; the cron's
+backfill, which is ablated, covers the same rows), the Telegram copy texts, the scripts' main()
+file and process handling (their pure parts are tested), `scripts/release.ts`.
+
+### Deviations from the design (decisions taken, open to the owner)
+
+1. Pages of 256 KB and 1 MiB per run (design: 512 KB and 2 MB), from the benchmark: 512 KB pages
+   measured 1.2 ms p95. Daily capacity is 96 MiB of SQL; with the 48-hour limit an export can be
+   about 190 MiB.
+2. A running export is not replaced at the next day's start; it continues and is marked failed and
+   replaced only after 48 hours (design text said both "replaced at the next day's start" and
+   "a larger database finishes in more than one day").
+3. Oversized rows are split by D1 (a recursive CTE with `substr`, which counts characters), not by
+   the Worker; pieces of 16,000 characters (at most 64,000 bytes). The JS split cost 2.4–3.5 ms.
+   Such a row is written only as a run's first page.
+4. The call budget is counted in code (30 per run); the alert and the other jobs are outside it.
+5. `backup_exports` adds `parts_json`, `alerted_at` and `pruned_at`; the alert claim lives on the
+   rows, and `backup_stale` is logged once a day rather than on every run.
+6. Pruning removes only exports that have a row, so after a restore into a fresh database the
+   exports already in R2 are never pruned automatically.
+7. The cron writes one `trash_expired` audit row per run with the count; `mail_raw_delete_failed`
+   now logs a count instead of the message id (it is shared with the cron).
+8. `prod-config.ts` compares HEAD with the local `origin/main` ref and fetches nothing.
+9. `prod-config.ts` and `backup-restore.ts` are left out of the worker typecheck (no Bun types),
+   like the root scripts.
+10. The ALTER in 0015 cannot be rerun by hand, as with 0006 and 0010.
+11. `settings` joined the test clean-up list (it leaked between tests in one file).
+12. The gap tool (rebuild rows from R2 metadata) is not built: the phase A brief listed only the
+    metadata write.
+
+### Open questions for the owner
+
+1. **Approve the proposed numbers**: export page 1 ms p95 (256 KB) and 2 ms p95 (one oversized
+   row), 1 MiB or one oversized row and 30 calls per run, 96 MiB a day. Recommended: approve; revisit
+   with production `cpuTime` (checklist item 8).
+2. **Replacing a stuck export** after 48 hours instead of at the next day's start (deviation 2).
+   Recommended: keep.
+3. **The gap tool**: the design's proof includes "the gap tool's SQL rebuilds stored rows".
+   Recommended: build it before the M7 review (small: list `raw/` after T, skip keys with a row,
+   print INSERTs of `stored` rows), in phase B or a short phase A2.
+4. **Live pages after the clean-up**: a deleted message stays in an open Trash list until it
+   refreshes; the cron does not notify the Hub. Recommended: leave as is.
+
+### Not verified
+
+- Anything on Cloudflare: production `cpuTime` of the cron with an export, R2 `checksums.md5` on a
+  string put in production (workerd provides it), D1's compound-select and recursive-CTE limits and
+  `json_each` in production D1, the 100,000-byte statement limit and `defer_foreign_keys` in a
+  `--remote` import, R2 custom metadata limits with non-ASCII envelope addresses, the Telegram
+  alert against the real Bot API.
+- Bucket lock: nothing configured; whether R2 bucket locks exist on Workers Free is unverified.
+- The success path of `prod-config.ts` main() (write on a clean main), `migrate:prod`,
+  `deploy:prod` and `bun run release` were never run; the release's at-export migrations step is
+  untested.
+- The full browser tiers were not rerun (only `mailbox.test.ts`); no screenshots of the Trash note.
+- Restore of an export into a database at an older schema than the export (the export names its
+  own columns, so the restore needs the export's migration or later).
+
+### Notes for phase B (documentation)
+
+- RUNBOOK: the drill route is `/cdn-cgi/handler/scheduled?cron=…` (not `/__scheduled`, see the
+  drill); run the drill with a copy of the config outside `worker/` or with `--persist-to`, so the
+  default local state is untouched; set `WRANGLER_SEND_METRICS=false` and
+  `CLOUDFLARE_CF_FETCH_ENABLED=false` for a fully offline drill.
+- RUNBOOK: `bun run backup-restore fetch|verify` usage (`--local`/`--remote`, `--persist-to`,
+  `--r2-local`/`--r2-remote`, `--r2-persist-to`, `--config`); exit codes 0/1/2; restore B steps use
+  it; after a restore into a fresh database, old exports in R2 are not pruned automatically.
+- RUNBOOK: `bun run release <exportId>` (owner, signed in, on main).
+- README deploy: `cp worker/deploy.example.jsonc worker/deploy.local.jsonc`, fill `database_id`
+  and the route; `git pull` before `migrate:prod`/`deploy:prod` (the check uses the local
+  `origin/main`); exit 1 means refused.
+- Bucket lock (owner, after the first export, only if Free allows it):
+  `bun run wrangler r2 bucket lock add melodymail-mail …` with prefix `backups/` and 7 days.
+  Incomplete exports younger than the lock then stay until it expires (the prune logs
+  `backup_prune_failed` and retries after the next completed export). Never on `raw/`.
+- REFERENCE: Trash deletes after 30 days (Time Travel can bring back rows for 7 days, not the raw
+  object); events `backup_export_started`, `backup_export_complete`, `backup_pruned` (info),
+  `backup_prune_failed` (warn), `backup_export_failed`, `backup_stale` (error), `trash_expired`
+  (info); the Telegram alert texts.
+- REQUIREMENTS: the README check row under "Enforcement" ("AGENTS.md: Documentation") is phase B.
+- `docs/M3-inbound.md` still promises the orphan sweep and Trash clean-up for M7 (design open
+  question 3); the comments in code were fixed.
