@@ -13,11 +13,16 @@ import { idempotencyKey } from "./validate";
 
 /** A send still "sending" after this long is taken to have died and may be retried. */
 export const SENDING_STALE_MS = 60_000;
+/** Resend keeps an idempotency key 24 hours from the first request it stored under it. */
+const RESEND_IDEMPOTENCY_MS = 24 * 3600_000;
+/** Kept off the end of Resend's window, for clock skew and a slow first request. */
+export const RETRY_WINDOW_MARGIN_MS = 5 * 60_000;
 /**
- * Resend keeps an idempotency key this long. A row still "sending" after that is not retried:
- * Resend would no longer dedupe it, and whether the first attempt went out is unknown.
+ * A same-key retry is sent only this long after the first attempt (owner ruling 13). Later, a
+ * row whose outcome is unknown is refused: Resend no longer dedupes the key, so it could send a
+ * second email. A row Resend definitely refused every time (429) is sent as a fresh attempt.
  */
-export const SENDING_RETRY_MAX_MS = 24 * 3600_000;
+export const RETRY_WINDOW_MS = RESEND_IDEMPOTENCY_MS - RETRY_WINDOW_MARGIN_MS;
 const SNIPPET_MAX = 200;
 
 /** Delivered, or on its way: a repeat returns the message and calls nobody. */
@@ -39,7 +44,14 @@ const HTTP_STATUS: Record<SendError, 422 | 429 | 502> = {
   send_failed: 502,
 };
 
-type Existing = { id: string; status: string; error: string | null; key: string };
+type Existing = {
+  id: string;
+  status: string;
+  error: string | null;
+  key: string;
+  firstAttemptAt: number;
+  maybeAccepted: number;
+};
 
 function sentKey(id: string, now: number): string {
   const d = new Date(now);
@@ -70,8 +82,9 @@ async function insertSending(
   const row = await c.env.DB.prepare(
     `INSERT INTO messages (id, address_id, direction, status, envelope_from, envelope_to,
        thread_key, in_reply_to, references_hdr, subject, from_hdr, to_hdr, cc_hdr, bcc_hdr,
-       snippet, raw_size, has_attachments, r2_key, read, received_at, idempotency_key)
-     VALUES (?, ?, 'out', 'sending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+       snippet, raw_size, has_attachments, r2_key, read, received_at, idempotency_key,
+       first_attempt_at)
+     VALUES (?, ?, 'out', 'sending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
      ON CONFLICT (idempotency_key) DO NOTHING RETURNING id`,
   )
     .bind(
@@ -93,6 +106,7 @@ async function insertSending(
       r2Key,
       now,
       key,
+      now,
     )
     .first<{ id: string }>();
   if (!row) return null;
@@ -113,15 +127,37 @@ async function insertSending(
  * Claims a failed or stale row for another try; false when another request holds it or the row
  * is final. A rejection (send_rejected) is final: the corrected message is a new send under a
  * new key, and the rejected copy's attachments have gone back to the draft.
+ *
+ * Inside the window the same request goes out again and Resend dedupes it. Past the window only
+ * a failed row that Resend refused on every attempt is claimed, as a fresh first attempt; the
+ * maybe_accepted test repeats the route's check against a concurrent attempt that ended unknown.
  */
-async function claimRetry(c: Context<AppEnv>, row: Existing, now: number): Promise<boolean> {
-  const { meta } = await c.env.DB.prepare(
-    `UPDATE messages SET status = 'sending', error = NULL, received_at = ?
-     WHERE id = ? AND ((status = 'failed' AND error IS NOT 'send_rejected')
-       OR (status = 'sending' AND received_at <= ? AND received_at > ?))`,
-  )
-    .bind(now, row.id, now - SENDING_STALE_MS, now - SENDING_RETRY_MAX_MS)
-    .run();
+async function claimRetry(
+  c: Context<AppEnv>,
+  id: string,
+  now: number,
+  fresh: boolean,
+): Promise<boolean> {
+  const db = c.env.DB;
+  const statement = fresh
+    ? db
+        .prepare(
+          `UPDATE messages SET status = 'sending', error = NULL, received_at = ?,
+             first_attempt_at = ?
+           WHERE id = ? AND maybe_accepted = 0
+             AND status = 'failed' AND error IS NOT 'send_rejected'`,
+        )
+        .bind(now, now, id)
+    : db
+        .prepare(
+          // Taking over an attempt that never answered: its outcome is unknown.
+          `UPDATE messages SET status = 'sending', error = NULL, received_at = ?,
+             maybe_accepted = CASE WHEN status = 'sending' THEN 1 ELSE maybe_accepted END
+           WHERE id = ? AND ((status = 'failed' AND error IS NOT 'send_rejected')
+               OR (status = 'sending' AND received_at <= ?))`,
+        )
+        .bind(now, id, now - SENDING_STALE_MS);
+  const { meta } = await statement.run();
   return meta.changes > 0;
 }
 
@@ -177,7 +213,8 @@ async function deliver(c: Context<AppEnv>, id: string, key: string, copy: SentCo
       outcome.code === "send_rejected"
         ? [db.prepare("UPDATE uploads SET message_id = NULL WHERE message_id = ?").bind(id)]
         : [];
-    await db.batch([...quota, failedUpdate(db, id, outcome.code), ...release]);
+    const unknown = outcome.code === "send_failed";
+    await db.batch([...quota, failedUpdate(db, id, outcome.code, unknown), ...release]);
     await notifyHub(env, { type: "changed", id });
     return c.json({ error: outcome.code, id }, HTTP_STATUS[outcome.code]);
   }
@@ -202,10 +239,18 @@ async function deliver(c: Context<AppEnv>, id: string, key: string, copy: SentCo
   return c.json({ message: { id, status: "sent" } });
 }
 
-function failedUpdate(db: D1Database, id: string, code: string) {
+/**
+ * `unknown`: Resend was called and gave no definite refusal (a network error, a timeout, a 5xx),
+ * so it may have accepted the message. The mark is never cleared.
+ */
+function failedUpdate(db: D1Database, id: string, code: string, unknown = false) {
   return db
-    .prepare("UPDATE messages SET status = 'failed', error = ? WHERE id = ? AND status = 'sending'")
-    .bind(code, id);
+    .prepare(
+      `UPDATE messages SET status = 'failed', error = ?,
+         maybe_accepted = CASE WHEN ? THEN 1 ELSE maybe_accepted END
+       WHERE id = ? AND status = 'sending'`,
+    )
+    .bind(code, unknown ? 1 : 0, id);
 }
 
 function markFailed(db: D1Database, id: string, code: string) {
@@ -221,7 +266,10 @@ export function registerSendRoute(messages: Hono<AppEnv>): void {
     const db = c.env.DB;
     const findExisting = () =>
       db
-        .prepare(`SELECT id, status, error, r2_key AS key FROM messages WHERE idempotency_key = ?`)
+        .prepare(
+          `SELECT id, status, error, r2_key AS key, first_attempt_at AS firstAttemptAt,
+             maybe_accepted AS maybeAccepted FROM messages WHERE idempotency_key = ?`,
+        )
         .bind(key)
         .first<Existing>();
 
@@ -240,7 +288,13 @@ export function registerSendRoute(messages: Hono<AppEnv>): void {
       return c.json({ message: { id: existing.id, status: existing.status } });
     }
     const now = Date.now();
-    if (!(await claimRetry(c, existing, now))) {
+    const pastWindow = existing.firstAttemptAt <= now - RETRY_WINDOW_MS;
+    const unknown = existing.status === "sending" || existing.maybeAccepted === 1;
+    if (pastWindow && unknown && existing.error !== "send_rejected") {
+      // Resend may have sent it and no longer dedupes the key: only a new message may follow.
+      return c.json({ error: "send_status_unknown", id: existing.id }, 409);
+    }
+    if (!(await claimRetry(c, existing.id, now, pastWindow))) {
       return existing.status === "failed" && existing.error === "send_rejected"
         ? c.json({ error: "send_rejected", id: existing.id }, 422)
         : fail(c, 409, "send_in_progress");
@@ -252,12 +306,11 @@ export function registerSendRoute(messages: Hono<AppEnv>): void {
       return fail(c, 500, "internal");
     }
     let copy = await object.json<SentCopy>();
-    const nowS = Math.floor(now / 1000);
-    if (copy.attachments.length > 0 && copy.attachmentsExpireAt <= nowS) {
-      // Past the expiry, Resend's 24-hour idempotency window has closed too, so a fresh expiry
-      // cannot conflict with the first attempt. It is written back, so later retries stay
-      // byte-identical (owner ruling 2026-11-16).
-      copy = { ...copy, attachmentsExpireAt: nowS + SIGNED_URL_TTL_S };
+    if (pastWindow && copy.attachments.length > 0) {
+      // A fresh first attempt: Resend refused every earlier one, so a new expiry cannot make a
+      // second email. Written back, so retries inside the new window stay byte-identical (owner
+      // rulings 9 and 13). Inside the window the stored URLs are never re-signed.
+      copy = { ...copy, attachmentsExpireAt: Math.floor(now / 1000) + SIGNED_URL_TTL_S };
       await c.env.MAIL.put(existing.key, JSON.stringify(copy), {
         httpMetadata: { contentType: "application/json" },
       });

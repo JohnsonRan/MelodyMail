@@ -29,7 +29,8 @@ const LIST_COLUMNS = `id, address_id AS addressId, subaddress_tag AS tag,
   to_hdr AS "to", error`;
 
 const DETAIL_COLUMNS = `${LIST_COLUMNS}, cc_hdr AS cc, bcc_hdr AS bcc,
-  idempotency_key AS idempotencyKey,
+  idempotency_key AS idempotencyKey, first_attempt_at AS firstAttemptAt,
+  maybe_accepted AS maybeAccepted,
   envelope_from AS envelopeFrom, envelope_to AS envelopeTo, forward_failed AS forwardFailed`;
 
 type ListRow = {

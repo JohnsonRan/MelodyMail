@@ -212,6 +212,13 @@ export const messages = sqliteTable(
     resendId: text("resend_id"),
     idempotencyKey: text("idempotency_key"),
     error: text("error"),
+    // Outbound only: when the first Resend request that may have been accepted was made. Resend
+    // dedupes a key for 24 hours from its first stored request; a same-key retry is safe only
+    // inside that window.
+    firstAttemptAt: integer("first_attempt_at"),
+    // Outbound only: 1 once any attempt's outcome is unknown (a network error, a timeout, a 5xx,
+    // or an attempt that never answered), so Resend may have accepted it. A 429 leaves it alone.
+    maybeAccepted: integer("maybe_accepted").notNull().default(0),
   },
   (t) => [
     uniqueIndex("messages_resend_id").on(t.resendId),

@@ -64,7 +64,7 @@ editing (see open questions), signatures, scheduled sending, open and click trac
 | --- | --- | --- |
 | `GET /api/send/from` | session | Addresses whose domain has `send_enabled`, with display names. |
 | `PUT /api/uploads` | session | Streams the body into R2 natively (no JS work), with `X-Filename` and `Content-Type`. Limit per file 25 MiB; total per message 30 MiB raw (40 MB after base64). Returns the upload id. |
-| `GET /api/uploads/:id/blob?exp=&sig=` | public, HMAC | For Resend to fetch an attachment. `sig` = HMAC-SHA256 over `id` and `exp` with `UPLOAD_URL_KEY`; valid 24 h, as long as Resend keeps an idempotency key; `exp` and the origin are fixed when the sent copy is prepared and stored in it, so every attempt sends the same body, even through another hostname. A retry after the expiry has passed (Resend's idempotency window has closed by then too) signs a fresh one and writes it back to the copy, so later retries stay identical; constant-time compare; streams the R2 object as `application/octet-stream`. |
+| `GET /api/uploads/:id/blob?exp=&sig=` | public, HMAC | For Resend to fetch an attachment. `sig` = HMAC-SHA256 over `id` and `exp` with `UPLOAD_URL_KEY`; valid 24 h, as long as Resend keeps an idempotency key; `exp` and the origin are fixed when the sent copy is prepared and stored in it, so every attempt sends the same body, even through another hostname. Inside the retry window (see "Sending") the stored URLs are never re-signed. Past it, only a row that Resend refused every time (429) is sent again: it signs a fresh expiry and writes it back to the copy, so later retries stay identical (owner rulings 9 and 13); constant-time compare; streams the R2 object as `application/octet-stream`. |
 | `DELETE /api/uploads/:id` | session | Removes an upload not yet sent. |
 | `GET/PUT/DELETE /api/drafts[/:id]` | session | Draft CRUD; list for the Drafts folder. |
 | `POST /api/messages/send` | session | Body: from address id, to/cc/bcc, subject, text, html (optional), reply-to message id or forward source, upload ids, `idempotencyKey`. See "Sending". |
@@ -83,10 +83,22 @@ marker with a reason, and the walk asserts that nothing else is public.
    (idempotency_key) DO NOTHING`. If the row already existed:
    - `sent` or later: return it (200), no second call;
    - `sending` and younger than 60 s: return 409 `send_in_progress` (a concurrent submit);
-   - `failed` (except `send_rejected`), or `sending` older than 60 s and younger than 24 h: call
-     Resend again with the same key, so Resend's own 24-hour idempotency guarantees one email;
-   - `sending` older than 24 h: 409, no call; Resend no longer dedupes the key and the outcome
-     is unknown (owner ruling 2026-11-16).
+   - `failed` (except `send_rejected`), or `sending` older than 60 s, inside the retry
+     window: call Resend again with the same key and the same stored body, so Resend's own
+     idempotency guarantees one email;
+   - past the retry window, a row whose outcome is unknown (`sending`, or `failed` after any
+     attempt with a network error, a timeout or a 5xx): 409 `send_status_unknown`, the row
+     unchanged, no call; Resend no longer dedupes the key. The owner sends it as a new message;
+   - past the retry window, a `failed` row whose every attempt Resend refused (429): sent as a
+     fresh first attempt, with freshly signed attachment URLs.
+
+   The retry window is 24 hours from the first attempt minus a 5-minute margin
+   (`RETRY_WINDOW_MS`; owner ruling 13, 2026-11-16). `messages.first_attempt_at` holds the time
+   of the first attempt that Resend may have accepted: set when the row is inserted, before the
+   call, and moved only by the fresh attempt above. A retry never moves it, so the window does
+   not slide. `messages.maybe_accepted` is set by any attempt whose outcome is unknown (a network
+   error, a timeout, a 5xx, or a `sending` row taken over after it never answered) and is never
+   cleared; a 429 leaves it alone.
 3. Call Resend once with `Idempotency-Key` = the client's key. Thread headers for replies:
    `In-Reply-To` = the source's Message-ID, `References` = the source's References plus its
    Message-ID; subject gets `Re:` / `Fwd:` once. Attachments go as `path` = the signed URL.
@@ -139,9 +151,13 @@ at `sent` or later (owner ruling 2026-11-16).
   re-uploaded from the browser's parsed copy when kept.
 - **Sent** and **Drafts** in the side navigation (hidden in M4). Sent rows show the delivery
   status as a badge; the reader shows the status and a Retry for `failed`, except a rejection
-  (`send_rejected`), which is final. A row still `sending` after 60 s gets the same Retry until
-  it is 24 h old; after that the reader says the status is unknown and to check it in Resend, with
-  no Retry. For
+  (`send_rejected`), which is final. A row still `sending` after 60 s gets the same Retry inside
+  the retry window. Past the window, a row whose outcome is unknown shows "Status unknown, check
+  Resend" without Retry, with "Send as a new message": compose opens prefilled from the sent copy
+  (from, recipients, subject, Markdown text, attachments uploaded again from the old message's
+  downloads) under a new key, with a warning that the earlier message may already have been
+  delivered. That send is an ordinary one; the old row stays as a record and keeps its own
+  attachments, which stay undeletable. For
   `delivery_failed` it explains that Resend reported a delivery failure and that the owner
   forwards the message or writes a new one to send it again; there is no Retry.
 - **Quota**: "Today 12 / 100 · This month 340 / 3,000" in the compose panel and Settings;
