@@ -784,11 +784,22 @@ None open from M3.
 - `has_attachments` is decided from the first 64 KB, so an attachment part that starts later is
   seen only through a `multipart/mixed` top-level type (ruling 7).
 
-## M4: web mailbox (in progress, branch `m4-mailbox`)
+## M4: web mailbox (done 2026-11-16)
 
 Design: `docs/M4-mailbox.md`. Risk class High (sender-controlled HTML rendered in the owner's
-origin, permanent delete, migration 0007). Not merged; waits for the independent review the risk
-class asks for and for the owner to see the screenshots.
+origin, permanent delete, migration 0007). Merged as PR #4 (`1f713f5`) after review PASS on
+`3314a5b`, both CI workflows green, and the owner's UI check.
+
+### Owner rulings (2026-11-16)
+
+- Browser-tier limit 21 s: approved.
+- `GET /api/messages/:id` stays for the M6 REST API.
+- The white mail background in dark mode stays (sender HTML is designed for white). A per-message
+  dark-reading toggle is deferred to M4b, below.
+- UI checked by the owner; merge approved.
+- Still open: the bundle total limit (643.0 kB against 610 kB). Recommendation: raise it to
+  about 770 kB and keep first paint (370 kB) as the main gate. The postal-mime and DOMPurify
+  chunks are the libraries themselves; smaller replacements would parse or sanitize less.
 
 ### Done
 
@@ -956,6 +967,8 @@ the worker suite), expanding older thread messages, and revoking the object URL.
 
 ### Deferred
 
+- Dark-reading toggle for HTML mail: invert one message on request, images inverted back; the
+  default stays white. Source: owner question 2026-11-16; waits for M4b.
 - Flag changes are not pushed to other open tabs (only new mail is); a tab refetches on its next
   action or event. Source: this build; waits because the design sends only new-mail events.
 - A socket whose session expires on its own (30 days, or 7 idle) stays open until the page
