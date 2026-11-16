@@ -1899,6 +1899,76 @@ REQUIREMENTS carries both in the "Commands" rows. No script enforces either limi
 or workflow encodes 10 s or 14 s (the workflows use `timeout-minutes: 10`, bun a 20 s per-test
 timeout). The comment in `.github/workflows/browser.yml` that named the 10 s gate says 12 s.
 
+### Fourth fix round (mechanical, no behaviour change)
+
+Commits: `158845e` the upload-signature tamper, `3e9f59c` `send/retry.ts`, `bf04143`
+`sent-status.test.ts`, `c5ffb7e` rulings 15 and 16, and the docs commit after them.
+
+- **[Low] Flaky blob test** (`send-extras.spec.ts`, "opens the blob only with a valid, unexpired
+  signature"). The test changed the last base64url character of the 43-character HMAC from `A`
+  to `B`; that character carries 4 data bits and 2 padding bits, and `A` and `B` differ only in
+  the padding, so a signature ending in `A` (1 run in 16) still verified. It now changes the
+  first character. Checked with a Bun one-liner: a 32-byte value whose base64url ends in `A`
+  decodes to the same bytes with `B` in its place. No other signature-tamper test in
+  `worker/test` edits a trailing character (the webhook test signs with another secret; the
+  session test uses a made-up cookie). The single test ran 20 times in a row after the fix and
+  20 times on the final head, 0 failures each time.
+- **`send.ts` 320 → 203 lines.** The retry window constants, `DONE`, `Existing`, `claimRetry`,
+  the failed-row update and the existing-row branch moved unchanged to `send/retry.ts`
+  (139 lines). `retryExisting` returns the answer or the stored copy; the route passes the copy
+  to `deliver`, so `retry.ts` does not import `send.ts`. Three worker specs import the
+  constants from `retry.ts`; the tests are otherwise unchanged and the 335 pass. The reader's
+  comment naming the Worker's retry limits points to the new file.
+- **`compose.test.ts` 348 → 231 lines.** "Offers Retry in the reader only where it may still
+  send" moved unchanged to `web/test/sent-status.test.ts` (148 lines) with the same stub app
+  setup. `bun run test:send` runs the three files after one build (9 tests in 3 files);
+  `test:browser` ignores the new file (still 52 tests in 6 files); `send.yml` lists it in its
+  path filter.
+- **p90 file length.** Script `p90.ts` in the session scratchpad: every git-tracked .ts, .tsx
+  and .py file except `.d.ts`, line count = newlines, sorted, nearest rank (the
+  ceil(0.9 × n)-th). Head: **239 lines**, the 165th of 183 files. The same script gives 271 at
+  `66d8f34` over 181 files; the review's 263 is the 162nd of those 181 (floor rank). The
+  recorded 314 dated from 15 files. REQUIREMENTS now says 239.
+
+Files above 239 lines at head, each with its reason (M5 growth against main `5cb6755` in
+brackets):
+
+| File | Lines | Reason, or split |
+| --- | --- | --- |
+| `web/test/reader.test.ts` | 451 | deferred since M4b: the rendering-security corpus could move to its own file |
+| `worker/test/mailbox.spec.ts` | 435 (+3) | one suite for the mailbox routes over one seeded store; split by route group when it next grows |
+| `worker/test/inbound.spec.ts` | 379 | inbound pipeline scenarios on one fixture set; unchanged in M5 |
+| `worker/src/db/schema.ts` | 350 (+114) | the Drizzle schema, one table per block; M5 added `drafts`, `uploads`, `webhook_events`, `send_quota` and the message columns; one file keeps the migrations' source in one place |
+| `scripts/test_check_requirements.py` | 346 | the requirements check's tests; unchanged in M5 |
+| `web/test/pwa.test.ts` | 341 | the PWA suite with one persistent Chromium profile; unchanged in M5 |
+| `worker/test/consumer.spec.ts` | 316 | queue consumer scenarios; unchanged in M5 |
+| `scripts/check-requirements.py` | 314 | the merge gate's requirements check; unchanged in M5 |
+| `worker/test/push.spec.ts` | 308 | Web Push scenarios; unchanged in M5 |
+| `worker/src/mail/routes.ts` | 301 (+4) | the mailbox routes; M5 added the Sent folder filter and the sent-message fields |
+| `worker/test/send.spec.ts` | 298 (new) | the M5 worker suite is already split by topic into four files (send, resend, window, extras) |
+| `web/src/pages/MailboxPage.tsx` | 292 (+36) | the folder page wiring list, reader and compose panel; M5 added Sent, Drafts and the compose panel |
+| `web/src/compose/useCompose.ts` | 289 (new) | the compose state hook (fields, autosave, attachments, send); the prefill already moved to `compose/start.ts` |
+| `worker/test/send-window.spec.ts` | 284 (new) | see `send.spec.ts` |
+| `worker/test/send-resend.spec.ts` | 279 (new) | see `send.spec.ts` |
+| `web/src/pages/SecurityPage.tsx` | 274 | split once from 325 lines; unchanged in M5 |
+| `worker/test/send-extras.spec.ts` | 271 (new) | see `send.spec.ts` |
+| `web/src/compose/ComposeView.tsx` | 263 (new) | the compose screen; the hook and the prefill are already separate |
+
+Numbers after the fourth round (2026-11-16, dev workstation, Ryzen 9 9950X3D; `time.ts` in the
+session scratchpad ran the 11 runs in a row on `bf04143` with only STATE and a workflow comment
+changed, CPU load read before each run):
+
+- `bun run check`: 9.51, 9.40, 10.19, 9.83, 9.77 s wall, all green, CPU load 1–5% (limit 12 s
+  by ruling 16); worker suite (vitest Duration) 8.25, 8.21, 9.03, 8.64, 8.60 s, 335 tests:
+  **one run over the 9 s "Slowest test package" limit** (open question 8). Green before each
+  commit of this round (9.4–10.4 s).
+- `bun run test:send`: 13.96, 13.86, 14.45 s wall including the build (bun test 12.34–12.91 s),
+  9 tests in 3 files, CPU load 1–10% (limit 18 s by ruling 15).
+- `bun run test:browser`: 25.07, 21.81, 20.60 s wall including the build (bun test
+  19.05–23.57 s), 52 tests in 6 files, CPU load 1–3% (limit 30 s); the first run of the series
+  was slow, as in the second round.
+- Bundle not re-measured: the round changed no file under `web/src` except a comment.
+
 ### Deviations from the design (decisions taken, open to the owner)
 
 1. **`uploads.message_id`.** The design's `uploads` has only `draft_id`; the cron could not tell
@@ -1966,6 +2036,10 @@ timeout). The comment in `.github/workflows/browser.yml` that named the 10 s gat
 7. Settled by ruling 15 (limit 18 s). **`bun run test:send` is over its 14 s limit** in two of three runs after the third round
    (13.96–14.67 s wall, CPU load 0–1%). Options: raise it to 18 s (14.7 s plus 20%, the method
    of "Commands"), or move the reader send states into their own suite with its own build.
+8. **The worker suite reached 9.03 s** (vitest Duration) in one of five gate runs after the
+   fourth round, against the 9 s "Slowest test package" limit (8.21–8.64 s in the other four,
+   CPU load 1–5%). The round added no test; the third round measured 8.09–8.55 s. Options: raise
+   the limit to 10.8 s (9.0 s plus 20%), or split the slowest worker specs across vitest pools.
 
 ### Deferred
 
