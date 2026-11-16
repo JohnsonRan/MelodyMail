@@ -2133,8 +2133,8 @@ to an ellipsis (it keeps its width now; the recipients are cut instead).
 Design: `docs/M5b-telegram.md`, with the owner's rulings of 2026-11-16 at its end. Risk class
 High (a public webhook that changes flags, the bot token, a table linking the mailbox to a chat,
 Worker requests to the Bot API carrying sender, subject and address). Waits for the independent
-review the risk class asks for, the real-bot tunnel test (ruling 1, run by the coordinator with
-the owner) and the owner's look at the screenshots.
+review passed (see "Review"); waits for the real-bot tunnel test (ruling 1, run by the
+coordinator with the owner, when the owner is ready). Screenshots were sent to the owner.
 
 Commits on `339d865`: `36cab01` migration 0011; `97e7c95` Worker: Connect, webhook, cards;
 `952436d` recovery disconnects Telegram; `b07dc98` widget size check; `7dab8d5` benchmark;
@@ -2373,21 +2373,22 @@ each:
 10. **The card has no `if (busy) return`**: the disabled buttons cover a double tap (tested),
   and Telegram answers a second request with `BUSY`.
 
-### Open questions for the owner
+### Owner rulings on the open questions (2026-11-16)
 
-1. **Browser tier at 25.8–29.5 s against 30 s.** M5b adds 12 tests (about 4–5 s). One run of
-   three came within 0.5 s of the limit. Options: leave it (recommended for now: two runs at
-   about 26 s, and the first run of a series has been the slow one since M5), or move the two
-   Telegram suites into their own `bun run test:telegram` with a workflow, as was done for the
-   PWA and send suites, if a run goes over.
-2. **The tunnel test may need `--local-protocol https`.** Connect reads the origin from the
-   request URL, and the CSRF guard compares the browser's `Origin` with it. Behind a quick
-   tunnel, `wrangler dev` likely sees `http://` and the panel would show "needs the deployed
-   address" (not verified). Recommended for the coordinator: run `wrangler dev --local-protocol
-   https` and point `cloudflared` at `https://localhost:8787` with `--no-tls-verify` and
-   `--http-host-header <tunnel host>`, then check that `GET /api/telegram` reports `off`, not
-   `httpsRequired`, before connecting.
-3. **Recovery and the registered webhook** (deviation 5). Recommended: keep it as built.
+1. Browser tier at 25.8–29.5 s: leave it. If a run goes over 30 s, move the two Telegram
+   suites into `bun run test:telegram` with its own workflow.
+2. Recovery keeps the webhook registered at Telegram (deviation 5 stands).
+3. The real-bot tunnel test waits until the owner is ready. Planned setup: `wrangler dev
+   --local-protocol https`, `cloudflared` quick tunnel to `https://localhost:8787` with
+   `--no-tls-verify` and `--http-host-header <tunnel host>`; check that `GET /api/telegram`
+   reports `off`, not `httpsRequired`, before connecting; close the tunnel after the test.
+
+### Review (2026-11-16, fresh Opus reviewer, "PASS")
+
+Three Lows. The cascade test gap is fixed in `b2573b5`, which also adds the concurrent bind
+and concurrent notify tests the reviewer asked for as hypotheses (both green; not ablated,
+test-only). The lost-send-result card and the simultaneous Connect race are deferred below
+(`95fb198`), with a README note to run Connect again if the bot stops reacting.
 
 ### Deferred
 
