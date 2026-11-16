@@ -91,7 +91,11 @@ marker with a reason, and the walk asserts that nothing else is public.
 4. On 200: store `resend_id`, status `sent`, write the R2 JSON copy and the FTS row, update the
    quota row from the headers, delete the draft, notify the Hub (`{ id }`, as for new mail).
 5. On 429 quota, 4xx validation, 5xx or network error: status `failed` with a short error code;
-   the UI shows the reason and a Retry that reuses the same key. Upstream error text never reaches
+   the UI shows the reason. A quota or rate limit, a 5xx and a network error offer a Retry that
+   reuses the same key. A 4xx rejection (`send_rejected`) is final: no Retry in compose or the
+   reader, and `claimRetry` refuses the row (a repeat answers 422 `send_rejected` without a
+   call); the corrected message is a new send under a new key, and the rejected row stays in Sent
+   as a record without attachment downloads (owner rulings 2026-11-16). Upstream error text never reaches
    the client or the logs (log the status and the Resend error `name` only).
    Resend's 409 `concurrent_idempotent_requests` and `invalid_idempotent_request` leave the row
    `sending` and answer 409 `send_in_progress`: the first request under the key may still
@@ -132,7 +136,8 @@ at `sent` or later (owner ruling 2026-11-16).
   text of the source ("On <date>, <sender> wrote:"); forward lists the source's attachments,
   re-uploaded from the browser's parsed copy when kept.
 - **Sent** and **Drafts** in the side navigation (hidden in M4). Sent rows show the delivery
-  status as a badge; the reader shows the status and a Retry for `failed`. For
+  status as a badge; the reader shows the status and a Retry for `failed`, except a rejection
+  (`send_rejected`), which is final. For
   `delivery_failed` it explains that Resend reported a delivery failure and that the owner
   forwards the message or writes a new one to send it again; there is no Retry.
 - **Quota**: "Today 12 / 100 · This month 340 / 3,000" in the compose panel and Settings;

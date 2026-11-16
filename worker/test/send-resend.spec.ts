@@ -132,7 +132,9 @@ describe("drafts after a failed send", () => {
     const calls = stubResend((n) => (n === 0 ? resendError(422, "validation_error") : resendOk()));
     const rejected = sendBody(from, { uploadIds: [fileId] });
     await client.json("PUT", "/api/drafts/draft-r1", draft(rejected.idempotencyKey));
-    expect((await send(client, rejected)).status).toBe(422);
+    const first = await send(client, rejected);
+    expect(first.status).toBe(422);
+    const { id: rejectedId } = (await first.json()) as { id: string };
 
     // The compose session takes a new key; autosave moves the draft to it.
     const key = crypto.randomUUID();
@@ -143,6 +145,13 @@ describe("drafts after a failed send", () => {
       subject: "Fixed",
       attachments: [{ id: fileId }],
     });
+    // The rejection is final: a Retry under the old key (the reader's) calls nobody.
+    const retry = await client.request("POST", "/api/messages/send", {
+      idempotencyKey: rejected.idempotencyKey,
+    });
+    expect(retry.status).toBe(422);
+    expect(await retry.json()).toEqual({ error: "send_rejected", id: rejectedId });
+    expect(calls).toHaveLength(1);
 
     const fixed = await send(client, { ...rejected, subject: "Fixed", idempotencyKey: key });
     expect(fixed.status).toBe(200);

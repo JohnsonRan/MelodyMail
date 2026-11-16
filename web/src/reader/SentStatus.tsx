@@ -55,7 +55,9 @@ export function SentStatus({
       title={t("mail.sendStatus.failed")}
       description={errorMessage(t, new ApiError(message.error ?? "send_failed", 0))}
       endContent={
-        message.idempotencyKey && (
+        // A rejection is final: the corrected message is a new send, from compose.
+        message.idempotencyKey &&
+        message.error !== "send_rejected" && (
           <Button
             label={t("mail.retrySend")}
             variant="secondary"

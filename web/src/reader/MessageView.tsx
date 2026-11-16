@@ -165,9 +165,12 @@ export function MessageView({
     [message.id, hasRemote, hasHtml, onContent],
   );
 
-  const files = mail
-    ? mail.parts.filter((p) => !(p.contentId && clean?.usedContentIds.has(p.contentId)))
-    : [];
+  // A rejected send handed its uploads back to the draft; its record offers no downloads.
+  const rejected = message.direction === "out" && message.error === "send_rejected";
+  const files =
+    mail && !rejected
+      ? mail.parts.filter((p) => !(p.contentId && clean?.usedContentIds.has(p.contentId)))
+      : [];
   const raw = load.state === "loading" ? null : load.raw;
 
   return (

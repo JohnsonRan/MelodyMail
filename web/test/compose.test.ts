@@ -177,14 +177,33 @@ describe("compose end to end", () => {
     expect(app.send.sends[2]).toMatchObject({ subject: "Fixed", idempotencyKey: newKey });
   });
 
-  test("explains a delivery failure that Resend reported, without Retry", async () => {
-    const body = { to: ["friend@example.org"], subject: "Lost", text: "Hi", idempotencyKey: "k-1" };
-    app.store.set("sent-lost", sentMessage("sent-lost", body, "delivery_failed"));
+  test("shows final send states in the reader without Retry", async () => {
+    const seed = (id: string, status: string, error: string | null = null) => {
+      const body = { to: ["friend@example.org"], subject: id, text: "Hi", idempotencyKey: id };
+      const stored = sentMessage(id, body, status);
+      stored.item.error = error;
+      const attachment = { uploadId: "up-1", filename: "notes.txt", contentType: "text/plain" };
+      stored.raw = JSON.stringify({
+        ...JSON.parse(stored.raw),
+        attachments: [{ ...attachment, size: 5 }],
+      });
+      app.store.set(id, stored);
+    };
+    seed("sent-lost", "delivery_failed");
+    seed("sent-rejected", "failed", "send_rejected");
     session = await openSession(app.origin, "/sent?m=sent-lost");
     const s = session;
+    const retry = s.page.getByRole("button", { name: "Send again" });
+    // Reported by Resend: final.
     await s.page.locator('[data-message-row="sent-lost"]').getByText("Delivery failed").waitFor();
     await s.page.getByText("Resend reported that this message could not be delivered.").waitFor();
-    expect(await s.page.getByRole("button", { name: "Send again" }).count()).toBe(0);
+    await s.page.getByText("notes.txt").first().waitFor();
+    expect(await retry.count()).toBe(0);
+    // Rejected: final, and its attachments went back to the draft.
+    await s.page.locator('[data-message-row="sent-rejected"]').click();
+    await s.page.getByText("The mail service refused this message").waitFor();
+    expect(await retry.count()).toBe(0);
+    expect(await s.page.getByText("notes.txt").count()).toBe(0);
   });
 
   test("warns near the quota, blocks when it is used up or sending is not set up", async () => {

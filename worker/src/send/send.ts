@@ -34,7 +34,7 @@ const HTTP_STATUS: Record<SendError, 422 | 429 | 502> = {
   send_failed: 502,
 };
 
-type Existing = { id: string; status: string; receivedAt: number; key: string };
+type Existing = { id: string; status: string; error: string | null; key: string };
 
 function sentKey(id: string, now: number): string {
   const d = new Date(now);
@@ -104,11 +104,16 @@ async function insertSending(
   return { id, r2Key };
 }
 
-/** Claims a failed or stale row for another try; false when another request holds it. */
+/**
+ * Claims a failed or stale row for another try; false when another request holds it or the row
+ * is final. A rejection (send_rejected) is final: the corrected message is a new send under a
+ * new key, and the rejected copy's attachments have gone back to the draft.
+ */
 async function claimRetry(c: Context<AppEnv>, row: Existing, now: number): Promise<boolean> {
   const { meta } = await c.env.DB.prepare(
     `UPDATE messages SET status = 'sending', error = NULL, received_at = ?
-     WHERE id = ? AND (status = 'failed' OR (status = 'sending' AND received_at <= ?))`,
+     WHERE id = ? AND ((status = 'failed' AND error IS NOT 'send_rejected')
+       OR (status = 'sending' AND received_at <= ?))`,
   )
     .bind(now, row.id, now - SENDING_STALE_MS)
     .run();
@@ -207,10 +212,7 @@ export function registerSendRoute(messages: Hono<AppEnv>): void {
     const db = c.env.DB;
     const findExisting = () =>
       db
-        .prepare(
-          `SELECT id, status, received_at AS receivedAt, r2_key AS key FROM messages
-           WHERE idempotency_key = ?`,
-        )
+        .prepare(`SELECT id, status, error, r2_key AS key FROM messages WHERE idempotency_key = ?`)
         .bind(key)
         .first<Existing>();
 
@@ -229,7 +231,11 @@ export function registerSendRoute(messages: Hono<AppEnv>): void {
       return c.json({ message: { id: existing.id, status: existing.status } });
     }
     const now = Date.now();
-    if (!(await claimRetry(c, existing, now))) return fail(c, 409, "send_in_progress");
+    if (!(await claimRetry(c, existing, now))) {
+      return existing.status === "failed" && existing.error === "send_rejected"
+        ? c.json({ error: "send_rejected", id: existing.id }, 422)
+        : fail(c, 409, "send_in_progress");
+    }
     // A retry sends the stored copy, so Resend sees the same request under the same key.
     const object = await c.env.MAIL.get(existing.key);
     if (!object) {
