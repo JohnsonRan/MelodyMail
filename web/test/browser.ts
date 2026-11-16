@@ -50,6 +50,13 @@ export async function openSession(origin: string, path = "/"): Promise<Session> 
   return { page, remote, remoteFromFrames, popups };
 }
 
+/** A blank page in the shared context that may load nothing remote; close it after use. */
+export async function blankPage(): Promise<Page> {
+  const page = await (await sharedContext()).newPage();
+  await page.route("**/*", (route) => route.abort());
+  return page;
+}
+
 /** Builds a browser bundle of one entry for the test server. */
 export async function bundle(entry: string): Promise<string> {
   const result = await Bun.build({

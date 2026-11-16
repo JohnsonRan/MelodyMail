@@ -50,7 +50,6 @@ function render() {
 }
 function act(name, on) {
   if (d.x) return say(T.k);
-  if (busy) return;
   busy = true; say(T.w); render();
   W.request(name + ":" + (on ? 1 : 0)).then((answer) => {
     const v = parse(answer.result);
