@@ -177,6 +177,22 @@ async function forwardInstead(
   }
 }
 
+/** Characters of an envelope address kept in the metadata; the field stays small however long. */
+const METADATA_VALUE_MAX = 256;
+
+/**
+ * Custom metadata on the raw object (docs/M7-ops.md, decision 7): after a restore, the owner's
+ * gap tool rebuilds the row of mail that arrived after the restore point from these four fields.
+ */
+export function rawMetadata(addressId: number, from: string, to: string, receivedAt: number) {
+  return {
+    addressId: String(addressId),
+    envelopeFrom: from.slice(0, METADATA_VALUE_MAX),
+    envelopeTo: to.slice(0, METADATA_VALUE_MAX),
+    receivedAt: String(receivedAt),
+  };
+}
+
 function rawKey(id: string, now: number): string {
   const d = new Date(now);
   const month = String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -230,7 +246,11 @@ export async function handleEmail(message: ForwardableEmailMessage, env: Env): P
   let rawStored = false;
   try {
     const { readable, writable } = new FixedLengthStream(message.rawSize);
-    await Promise.all([env.MAIL.put(key, readable), message.raw.pipeTo(writable)]);
+    const customMetadata = rawMetadata(address.id, message.from, message.to, now);
+    await Promise.all([
+      env.MAIL.put(key, readable, { customMetadata }),
+      message.raw.pipeTo(writable),
+    ]);
     rawStored = true;
     await env.DB.batch([
       env.DB.prepare(

@@ -102,8 +102,27 @@ describe("email() stores", () => {
     expect(row?.r2_key).toContain(row?.id);
     const object = await env.MAIL.get(row?.r2_key ?? "");
     expect(await object?.text()).toContain("Body text.");
+    // What a restore needs to rebuild the row (docs/M7-ops.md, decision 7).
+    expect(object?.customMetadata).toEqual({
+      addressId: String(id),
+      envelopeFrom: "sender@example.org",
+      envelopeTo: "shop+news@example.com",
+      receivedAt: String(row?.received_at),
+    });
+    expect(row?.trashed_at).toBeNull();
     const address = await env.DB.prepare("SELECT last_received_at FROM addresses").first();
     expect(address?.last_received_at).toBe(row?.received_at);
+  });
+
+  it("cuts a long envelope address in the metadata and still stores the message", async () => {
+    await addAddress("shop");
+    const message = inbound("shop@example.com");
+    message.from = `${"x".repeat(400)}@example.org`;
+    await handleEmail(asMessage(message), env);
+    const [row] = await messageRows();
+    expect(row?.envelope_from).toBe(message.from);
+    const head = await env.MAIL.head(row?.r2_key ?? "");
+    expect(head?.customMetadata?.envelopeFrom).toBe(message.from.slice(0, 256));
   });
 
   it("matches a recipient in any case", async () => {
