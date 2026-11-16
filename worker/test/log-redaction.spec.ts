@@ -1,6 +1,9 @@
 import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { apiKey, v1 } from "./api-helpers";
 import { Client, SETUP_TOKEN, SoftAuthenticator, setupOwner, totpCode } from "./helpers";
+import { seedMany } from "./mailbox-helpers";
+import { resendError, resendOk, sender, stubResend } from "./send-helpers";
 
 function captureLogs(): string[] {
   const lines: string[] = [];
@@ -47,5 +50,44 @@ describe("logging", () => {
     expect(lines.join("\n")).toContain("webauthn_registration_rejected");
     expect(lines.join("\n")).not.toContain(stored);
     expect(lines.join("\n")).not.toContain("d3JvbmctY2hhbGxlbmdl");
+  });
+
+  it("never logs or stores an API key or the Authorization header", async () => {
+    const { key } = await apiKey();
+    const from = await sender();
+    await seedMany([{ id: "logged-1" }]);
+    let n = 0;
+    stubResend(() => (n++ === 0 ? resendOk() : resendError(500, "internal_server_error")));
+    const lines = captureLogs();
+    const send = { from, to: ["friend@example.org"], text: "Hi" };
+    for (const [method, path, body, headers] of [
+      ["GET", "/messages", undefined, {}],
+      ["GET", "/messages/logged-1", undefined, {}],
+      ["GET", "/messages/logged-1/thread", undefined, {}],
+      ["GET", "/messages/logged-1/raw", undefined, {}],
+      ["GET", "/search?q=hello", undefined, {}],
+      ["GET", "/addresses", undefined, {}],
+      ["PATCH", "/messages", { ids: ["logged-1"], read: true }, {}],
+      ["PATCH", "/messages/logged-1", { starred: true }, {}],
+      ["POST", "/messages/send", send, { "idempotency-key": crypto.randomUUID() }],
+      ["POST", "/messages/send", send, { "idempotency-key": crypto.randomUUID() }],
+    ] as const) {
+      const res = await v1(key, method, path, body, headers);
+      expect([401, 403, 500], path).not.toContain(res.status);
+    }
+    // A key that fails, and a key sent to a session route.
+    await v1(`${key.slice(0, -1)}A`, "GET", "/messages");
+    await new Client().request("GET", "/api/keys", undefined, { authorization: `Bearer ${key}` });
+    const logged = lines.join("\n");
+    expect(logged).toContain("send_ok");
+    expect(logged).toContain("send_failed");
+    for (const secret of [key, key.slice(13), "Bearer", "authorization"]) {
+      expect(logged).not.toContain(secret);
+    }
+    const { results: tables } = await env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'",
+    ).all<{ name: string }>();
+    const rows = await env.DB.batch(tables.map((t) => env.DB.prepare(`SELECT * FROM "${t.name}"`)));
+    expect(JSON.stringify(rows.map((r) => r.results))).not.toContain(key.slice(13));
   });
 });

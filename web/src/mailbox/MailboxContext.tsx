@@ -31,8 +31,10 @@ const CHECK_MS = 1_000;
  * (worker/src/mail/hub.ts, FOREGROUND_TTL_MS). */
 const REFRESH_MS = 30_000;
 
-/** "message": new inbound mail; "changed": a sent message or its delivery status. `quiet`: a page
- * is in the foreground, so no page notifies by itself. */
+/** "message": new inbound mail; "changed": a sent message, its delivery status, new mail a rule
+ * marked read, archived or moved to Trash, or flags changed through the REST API (refresh only,
+ * no notice). `quiet`: a page is in the
+ * foreground, so no page notifies by itself. */
 type MailEvent = { type: "message" | "changed"; id: string; quiet?: boolean };
 
 type MailboxState = {

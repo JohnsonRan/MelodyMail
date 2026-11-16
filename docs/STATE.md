@@ -2990,3 +2990,646 @@ just before each run. Base is main at ae10a10 (58 tests), new is this branch (59
 selection assertions folded into the first and the dark-reading tests of `test/mailbox.test.ts`):
 base 28 s (29%), 27 s (28%), 30 s (28%); new 28 s (28%), 28 s (53%), 27 s (47%). Before the fold, a
 separate test measured 30 to 32 s.
+
+## M6: rules, API keys, REST API v1 (phase A done 2026-11-17, phase B below, not merged)
+
+Design: `docs/M6-rules-api.md` with its owner rulings of 2026-11-16. Risk class High. Phase A is
+rules; phase B (API keys, REST API v1, the OpenAPI document) is a separate run. Branch
+`m6-rules-api`, from main at `4c30208`. Not pushed, not deployed.
+
+### Migration split
+
+0013 (`0013_rules.sql`) holds only `rules` and `rule_forwards`. `api_keys` arrives in phase B as
+migration 0014. The design's "migration (0013)" covered both; nothing in phase A depends on
+`api_keys`.
+
+### Done (phase A)
+
+- `12cc1da` migration 0013 and the drizzle schema; `IF NOT EXISTS`, as 0011 and 0012.
+- `f7ea011` evaluation in `email()` (`worker/src/rules/evaluate.ts`, `worker/src/mail/inbound.ts`):
+  one rule query after the address lookup; fields `from`, `to` (To and Cc), `recipient`, `tag`,
+  `subject`, `header`; operators contains, not_contains, equals, starts_with, ends_with; lowercase,
+  white space collapsed, each header value cut to 2,000 characters and unfolded, encoded words
+  decoded and addresses split with postal-mime; accumulate, stop, Trash wins; flags in the
+  INSERT; rule targets after the defaults, deduplicated, at most 10, audit `mail_forward_capped`;
+  the loop guard, forward-only and the storage fallback use the same list. The consumer sends
+  `changed` for read, archived or trashed mail and `message` otherwise. `bench:rules`.
+- `5a3ea33` session routes (`worker/src/rules/routes.ts`, `validate.ts`): `GET|POST /api/rules`,
+  `PUT|DELETE /api/rules/:id`, `PUT /api/rules/order`, `POST /api/rules/test`; the forward-target
+  delete counts rule users (409 `target_in_use`; `detach=1` disables rules left without action);
+  `GET /api/forward-targets` adds `ruleCount`; all six routes are in the authz route walk.
+- `20dc28e` the test route ignores the rule name (the editor tests unnamed rules).
+- `df9143a` Settings > Rules (`web/src/pages/RulesPage.tsx`, `web/src/rules/`), the side
+  navigation entry, a lazy `rules` namespace in zh-CN, en and ja-JP, and Settings > Forwarding
+  naming the rules a removal touches. Browser suite `web/test/rules.test.ts` with
+  `web/test/stub-rules.ts`.
+- `ca6a179` tests for ablation survivors; the redundant duplicate check in reorder is removed.
+- README section "Rules" and this section (the docs commit).
+
+### Proof (worker suite, real D1, R2 and Queues in workerd)
+
+- `test/rules.spec.ts` (22 tests): every field with every operator, with negatives that only a
+  wrong operator passes; case and white space; encoded words (UTF-8, ISO-2022-JP, a Q-encoded
+  display name); folded and repeated headers; missing From; tag present and absent; the
+  2,000-character cut; all and any; accumulation with target order and dedupe; stop matched and
+  not matched; Trash over archive; two header names in one rule. Routes: create, list, replace,
+  delete, 404s, audit rows with rule ids only; every validation code; the 50-rule cap with no
+  stray link; reorder with missing, extra, repeated and unknown ids; creating, editing and
+  deleting rules changes no stored row; forward-target 409 and detach disabling only the rule
+  left without action; the test route against what `email()` stored and forwarded for the same
+  raw message, per-condition results, nothing written (rows and audit count unchanged), 409
+  `no_raw` for an outbound row and for a missing object, 404, `unknown_target`.
+- `test/inbound.spec.ts` (8 new): flags in the INSERT, a target that is both default and rule
+  target forwarded once, a disabled rule ignored; rules changing between two messages; a
+  recipient condition on a tagged recipient; the loop header with rule targets; forward-only
+  with rule targets stores nothing; forward-only with every forward failing stores with the
+  flags; the storage fallback forwards to rule targets; 13 distinct targets cut to 10 with the
+  audit row; a rejected recipient prepares no rule query; an unreadable rules table logs
+  `rules_load_failed` and stores without flags.
+- `test/consumer.spec.ts` (2 new): `changed` for read, archived, trashed; `message` for starred
+  and unflagged mail; `email()` with a Trash rule followed by the consumer gives `changed`.
+- Migration: `bun run db:migrate:local` applied 0013 on the local database holding 22 messages
+  and 3 addresses; a second run reported "No migrations to apply"; running `0013_rules.sql` again
+  with `wrangler d1 execute --local --file` succeeded.
+
+### Browser suite
+
+`bun test --timeout 20000 ./test/rules.test.ts` in `web/` after `bun --bun vite build`: 3 tests,
+2.6 s alone. Create through the dialog (field, operator, value, a forward target, Archive);
+"Test rule" shows the match and the actions while the stand-in still holds no rule; saving shows
+the summary line. Move down, the on switch and Delete with its confirmation by keyboard alone. At
+390 px in zh-CN the table stacks with no sideways scroll, and the summary is not selectable (list
+text, `web/src/selection.ts`).
+
+### Numbers (2026-11-17, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
+
+| Item | Result | CPU load |
+| --- | --- | --- |
+| `bun run check` at `ca6a179` | 15.2, 14.5, 14.7 s (413 worker tests; worker suite 13.0–13.8 s) | 76%, 70%, 48% |
+| `bun run check` at `4c30208` (base) | 13.5 s (383 tests; worker suite 12.2 s) | 51% |
+| `bun run test:browser` with the Rules suite | 37.6, 31.0, 33.0 s (61 tests) | 50%, 53%, 33% |
+| The same tier without it | 28.4, 28.3 s (58 tests) | 45%, 76% |
+| `bun run bench:rules`, worst p95 | 0.64–0.80 ms (limit 1 ms); plain headers 0.22–0.30 ms | 54–70% |
+| The bench with a planted slow input (40 times the rules) | p95 9.46 ms, exit 1 | about 50% |
+| First paint (vite build, gzip -6) | 315.7 kB (315.6 kB without the change; limit 370) | |
+| Total JS + CSS | 738.8 kB (730.2 kB without; limit 770) | |
+
+The host carried other work during the whole session (33–81% load; free memory about 5.5 GB,
+and low enough once for the memory guard to stop background jobs). The merge gate went over
+15 s in one of three runs. The worker suite (13.0–13.8 s) is over the 10.8 s "Slowest test
+package" limit, as the base (12.2 s) already was at this load. The new rule spec costs nothing
+measurable: 12.83 and 12.22 s with it, 12.71 and 12.32 s without, at 41–76% load.
+
+### Ablation
+
+`m6-ablate.ts` (session scratchpad, not committed) applied one mutation at a time to the worker
+and ran the rule, inbound, consumer, authz and forward-target specs. 61 of 67 planned hunks ran
+before the host's low-memory guard stopped the run; the guard asks not to restart it unasked.
+
+- 61 run: 52 red; 9 survived. 5 survivors got tests in `ca6a179` and are red now: starts_with
+  and ends_with replaced by `includes`, the per-name header cache key, the recipient without its
+  tag, and the `changes() = 1` guard on a refused rule's links.
+- Survivors kept, with reasons:
+  - unfolding in `headerValue`: the white-space collapse already turns CRLF plus space into one
+    space, and workerd's `Headers` refuses CR and LF, so no input tells them apart; kept because
+    the design asks for it and the address parser should see an unfolded value;
+  - a missing tag as an empty list instead of `[""]`: a condition value is never empty, so both
+    answer the same for every operator;
+  - skipping evaluation when no rule is enabled: an optimisation with the same result;
+  - reorder's count check and its `changes` comparison: each is redundant with the other plus the
+    set check; kept as the statement's own guard.
+- Removed instead of kept: the JS duplicate check in reorder (the SQL refuses a repeated id).
+- Not run: the five forward-target delete hunks (rule users in the DELETE, the detach disable,
+  its "no action left" and "no other target" conditions, `ruleCount`). The forward-target test
+  in `rules.spec.ts` asserts the 409, the disabled rule, the two rules that stay on and
+  `ruleCount`, but no ablation proves each condition.
+- Web (`m6-ablate-web.ts`, a rebuild per mutation, the Rules browser suite): 3 of 7 ran, all red
+  (reorder by one, the switch sending `enabled`, the summary's actions). Not run: the body keeping
+  `targetIds`, the test sending the draft, the operator change, the test result listing actions.
+
+### Deviations from the design (decisions taken, open to the owner)
+
+1. Trash wins over archive by writing `archived = 0` when a rule trashes, so restoring from Trash
+   returns the message to the Inbox, not to Archive.
+2. "Stop processing more rules" counts as an action: a stop-only rule is valid (Outlook allows
+   it), and detach leaves a rule with stop enabled.
+3. A failed rule read in `email()` is logged at error (`rules_load_failed`), and the message is
+   stored and forwarded as if no rule matched instead of throwing (which would bounce it).
+4. The test route reads the raw header block (UTF-8) into a case-insensitive lookup that joins
+   repeats with ", " as `Headers.get` does, instead of a `Headers` object, which refuses values
+   outside Latin-1. Since the review fix it refuses the same header names as create and update,
+   so it cannot report a match on a name `email()` would throw on. Hypothesis, not verified: for a
+   raw 8-bit (unencoded UTF-8) header value, workerd's `message.headers` may hold the bytes as
+   Latin-1 characters, while the test route decodes them as UTF-8; a condition on such a value
+   (for example a raw Chinese subject) could then match in the test and not in `email()`, or the
+   reverse. Encoded words and ASCII behave the same in both.
+8. Header names are HTTP tokens (RFC 9110), not RFC 5322 `ftext`, and the enabled rules may name
+   at most 20 distinct headers (review fixes below).
+5. Validation is by hand (`worker/src/rules/validate.ts`), not zod: owner ruling 2 adds no schema
+   library to the Worker, and the existing routes validate by hand.
+6. The test dialog lists the 20 newest Inbox messages (`GET /api/messages?folder=inbox&limit=20`,
+   an indexed query), not the 20 newest inbound messages of any folder, which needs a new route
+   and a scan.
+7. The Rules browser suite is outside `bun run test:browser` (open question 1).
+
+### Open questions for the owner
+
+1. **Where the Rules browser suite runs.** With it, `bun run test:browser` took 31–38 s at
+   33–53% load, over its 30 s limit; without it 28.4 s. It is excluded from that tier and runs
+   with `bun test ./test/rules.test.ts`, so CI does not run it yet. No limit was raised.
+   Recommended: add it to `bun run test:telegram` (6.0 s base, 10 s limit, about 3 s more),
+   whose workflow already runs on pull requests that touch `web/`; or to `test:send` (14.3 s
+   base, 18 s limit).
+   On a quiet host after the review fixes (0–7% load): 33.2 and 28.4 s with the suite, 27.1 and
+   26.7 s without. The suite is still excluded; the owner decides the tier.
+2. **Merge gate under load.** 14.5–15.2 s at 48–76% load; re-measured after the review fixes on
+   a quiet host: 11.9, 11.8, 12.1 s at 0–4% load (worker suite 10.7–11.0 s), under the 15 s
+   limit. The worker suite is still at or just over the 10.8 s "Slowest test package" limit.
+   Recommended: no change; watch it in phase B.
+3. (Resolved: the ablation the memory guard stopped was run after the review, below.)
+
+### Not verified
+
+- Real Email Routing delivery with rule targets; `forward()` to a verified destination; whether
+  `forward()` counts as a subrequest; whether `message.headers` unfolds; production `cpuTime` of
+  `email()` with 50 rules.
+- How workerd's `message.headers` presents raw 8-bit header bytes; the tests use ASCII and
+  encoded words.
+- The Rules page in Firefox and Safari, dark-mode contrast, and screenshots (the owner checks on
+  local `wrangler dev`; it was not started in this session).
+- An independent review by a different model family.
+
+### Review of `7d087e2` ("FIX FIRST")
+
+1. **One saved rule bounced every message (High, reproduced by the reviewer)** — `0f39b61`.
+   Header names were checked against RFC 5322 `ftext`, which allows `a/b`, `X-Spam(Score)`,
+   `a@b`, `a=b`, `a;b`, `a[b`, `a,b`; workerd's `Headers.get` throws "Invalid header name" on
+   them, and `decide()` caught only the rule read, so `handleEmail` threw before storage and
+   forwarding. Fixes: (a) header names are HTTP tokens (`/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,64}$/`)
+   on create, update and test; (b) `decide()` also contains evaluation, logging
+   `rules_eval_failed` at error and storing the message in the Inbox with the default forwards.
+   Tests, each red without its fix (run one at a time): (a) the route refuses the eight names and
+   the test route refuses `a/b` (`rules.spec.ts`, 1 failed, 2.6 s, CPU load 68%); (b) a rule
+   with `a/b` written straight to D1 still lets the message be stored and forwarded to the
+   defaults (`inbound.spec.ts`, 1 failed, 2.8 s, load 58%).
+2. **bench:rules missed the worst case (Medium)** — `725bf91`. Cost grows with distinct header
+   names; the reviewer measured 9.3–10.9 ms p95 over 500 names. The enabled rules may now name at
+   most 20 distinct headers (case-insensitive); create, replace or enable over that answers 409
+   `too_many_header_names` (message in three locales, `580d34b`). The cap is in the design
+   ("Limits", benchmark inputs), the README and REQUIREMENTS. New bench inputs: 20 names each
+   with a 2,000-character value dense with white space, never matching and all matching: p95
+   0.42–0.50 ms; worst p95 over all 6 inputs 0.67–0.74 ms; 3 runs at CPU load 56–62%. Ablation,
+   one at a time at load 1–6%: the comparison, the replaced rule's own names, case folding,
+   disabled rules not counting, the check on update: 5 red.
+3. **Target-delete test (Low)** — `2a788d1`: the rules are asserted right after the 409, and the
+   "no action left" condition is covered for mark read, star, archive, Trash and stop.
+4. **List separators (Low)** — `580d34b`: targets and actions join with `summary.listSeparator`
+   in the summary and the test panel; the test result is one line per condition plus one for the
+   actions. Red without it: the zh-CN summary with two targets.
+5. **Stale test result (Low)** — `580d34b`: cleared whenever the draft changes. Red without it.
+6. **Stale comment (Low)** — `580d34b`, `web/src/mailbox/MailboxContext.tsx`.
+
+Ablation finished after the review (one mutation at a time, CPU load 1–6%):
+
+- the five forward-target hunks left by the memory guard, the per-column "no action left"
+  conditions and `ruleCount`: 9 red;
+- `rules_eval_failed` containment: red;
+- web, a rebuild per mutation: the body keeping `targetIds`, the test sending the draft, the
+  operator change, the test result listing actions, the stale-result reset: 5 red; the summary's
+  target separator survived until the zh-CN test used two targets, then red.
+- Not ablated: the separator in the test panel's forward line (the stand-in answers no targets).
+
+Gate after the fixes (`580d34b`): `bun run check` 11.9, 11.8, 12.1 s at 0–4% load, 415 worker
+tests; earlier the same day, under load, 14.0 s (61%) at `0f39b61` and 12.3 s (0%) at `2a788d1`.
+
+### Owner rulings (2026-11-17)
+
+1. Rule evaluation reads at most the first 50 addresses of each of From, To and Cc; the 1 ms p95
+   budget stays. The bench gets 100-address From, To and Cc and one input combining them with the
+   20 capped header names and the encoded subject; every input under 1 ms p95, or stop and report.
+2. The Rules browser suite joins the Telegram tier, renamed `test:settings`; the limit stays
+   10 s, or stop and report.
+3. "Slowest test package" limit 13 s (was 10.8 s); in REQUIREMENTS.md.
+
+### Re-review of `f389bad` and the rulings
+
+Done:
+
+- `04555c7`: the header-name cap test's last replace uses X-Other, so counting the disabled
+  rule's X-New would give 21 names; red without `enabled = 1` (2.8 s, CPU load 57%). The
+  `headersFromRaw` doc comment is back above its function.
+- `d061390`: ruling 1's 50-address cap (`ADDRESSES_MAX`), in the design and README. Test: the
+  51st address of a To does not match, the 50th does; red without the cap (3.1 s, load 57%).
+- `5cc5211`: a condition is matched with one search over the field's values joined by line
+  breaks, instead of one comparison per value. 500 conditions over To and Cc of 50 addresses each
+  went from about 1.15 ms to 0.45 ms mean (Bun, load 13%). Ablation, one at a time at load
+  45–64%: equals, starts_with and ends_with each turned into a plain substring search: red; a
+  removed null guard: red; the separate "no value" case survived (an empty field's string never
+  matches a non-empty value) and was removed.
+- `c4c32b8`: `errors.invalid_condition` names what a header name may not hold (spaces,
+  brackets, symbols such as / @ : = and commas) in zh-CN, en and ja-JP.
+- Ruling 3: REQUIREMENTS "Slowest test package" 13 s (docs commit).
+
+Stopped and reported in that round, then settled by the owner rulings below:
+
+- **Ruling 1, benchmark.** With the new inputs the bench exits 1. Worst p95 per input, 3 runs of
+  200, after `5cc5211`, CPU load 8–14% (the quietest the host was):
+
+  | Input | p95 |
+  | --- | --- |
+  | worst headers (From, To, Cc of 100 addresses, encoded subject, repeated header), no match / all match | 1.38–1.51 / 1.21–1.45 ms |
+  | worst headers and the 20 capped names, no match / all match | 1.44–1.64 / 1.41–1.77 ms |
+  | 20 capped names alone | 0.47–1.05 ms |
+  | plain headers | 0.22–0.34 ms |
+
+  Before `5cc5211`, at load 52–71%, the combined input measured 1.80–2.12 ms p95. Breakdown of
+  the worst-headers input (Bun, single run): reading From, To, Cc and the subject 0.40 ms median,
+  0.74 ms p95, most of it postal-mime's `addressParser` over three 2,000-character lists
+  (0.11 ms each); evaluating 50 parsed rules 0.35 ms median, 0.99 ms p95; `JSON.parse` of the
+  rows 0.07 ms. The bench additions are kept outside the repository as
+  `m6-bench-ruling1.patch` in the session scratchpad. Options for the owner: parse fewer
+  characters of each address header (cut the list at the 50th top-level comma before
+  `addressParser`, which saves little for long lists of short addresses), a smaller character
+  cut for address headers only, or a budget for the combined worst case; the p95 is also wide
+  against the median (0.6 ms), which points at garbage collection under Bun.
+- **Ruling 2, tier.** `bun run test:settings` (Telegram suites plus Rules, 15 tests) ran 13.1,
+  11.1, 10.6, 10.9 and 10.5 s at CPU load 61–68%, over the 10 s limit; the Telegram suites alone
+  ran 8.0 and 7.8 s at 57–62% (6.0 s baseline at 0–5%). The rename (scripts, `settings.yml`,
+  REQUIREMENTS row) is kept outside the repository as `m6-settings-tier.patch`; the Rules suite
+  stays outside every tier.
+
+### Owner rulings on the stopped items (2026-11-17) and their result
+
+1. **Rule budget.** The adversarial inputs (100-address From, To and Cc with the encoded subject
+   and the repeated header, alone or with the 20 capped header names) have a 2 ms p95 budget;
+   every other input keeps 1 ms. `605ce27`: `bench:rules` checks each input against its own
+   budget and exits 1 when any input reaches it; the design and the REQUIREMENTS row state both.
+   Three runs of 200 at CPU load 5–10%: adversarial inputs p95 1.17–1.48 ms (budget 2 ms);
+   plain headers 0.23–0.31 ms and the 20 capped names 0.43–0.62 ms (budget 1 ms); exit 0 each
+   run. Three more runs at load 67–77%: adversarial 1.06–1.74 ms, others 0.25–0.78 ms, exit 0.
+   A planted slow input (ten times the rules, budget 1 ms) gave p95 2.26 ms and exit 1 at load 4%.
+2. **Settings tier.** `7430082`: `test:telegram` is now `test:settings` (root and web scripts,
+   `.github/workflows/settings.yml` with its name, job and concurrency group renamed and the same
+   path filter) and runs the Telegram suites and the Rules suite; limit 13 s (owner approval
+   2026-11-17). Three runs: 10.90, 10.79, 10.51 s, 15 tests, all passing, CPU load 64–69%. The
+   coordinator measured 11.22, 11.14 and 10.44 s at about 21%. `test:browser` still excludes the
+   Rules suite, so no suite runs twice.
+
+### Deferred (added)
+
+- The header-name cap check and the rule write are two statements, so two saves at once can pass
+  20 names. Source: re-review of `f389bad`. It waits because only the owner saves rules, the cost
+  is the owner's own CPU time in `email()`, and no mail is lost.
+
+### Not verified (added)
+
+- workerd's `Headers.get` joining thousands of copies of a repeated header before the
+  2,000-character slice: the native join's CPU time is not measured.
+- Bun (JavaScriptCore) against production V8 for `includes` on repetitive values: the benchmark
+  numbers are Bun's.
+
+### Third review of `035d74a` (one Medium, two Lows)
+
+1. **The 50-address cap did not bound the parse (Medium)** — `83666bd`. `addressParser` parsed
+   the whole header and the first 50 were taken afterwards; 2,000 characters of short addresses
+   (about 300 per header) or of groups cost the parse almost twice the bench's adversarial case.
+   `cutAddressList` now cuts the raw value before its 50th top-level comma or semicolon (outside
+   quoted strings with backslash escapes, nested comments and angle brackets; commas inside a group
+   count, so a group cannot hide addresses), then parses. The slice after parsing was removed then,
+   on the claim that the parser cannot return more than 50 after the cut. That claim was false
+   (fourth review below: a group's unclosed `<`); the slice is back as a backstop. The design describes the cut; bench comments are corrected and the "Headers as
+   Headers.get reads them" JSDoc is back above `worstHeaders`.
+   - Tests in `rules.spec.ts`: 60 short addresses, the 50th matches and the 51st does not; the
+     scanner with a plain list, a comma inside quotes, an escaped quote, nested comments, angle
+     brackets with a source route, a group, and a list under the cap.
+   - Mutations, one at a time, CPU load 7–10%: the cut not wired before the parse, the quoted
+     string, the escape, nested comments (red after the test used `(Doe (J), K)`; the first form
+     `(Doe, (J, K))` could not tell), the comment end, the comment start, angle brackets, the
+     semicolon: all red, 2.3–2.4 s each.
+   - Bench without the cut (load 16%): short addresses p95 2.02–2.44 ms, groups 2.11–2.25 ms,
+     exit 1.
+2. **Bench JSDoc placement (Low)** — `83666bd`.
+3. **No line break in a normalized value (Low)** — `790affc`: `=?UTF-8?Q?x=0Aevil_y?=` does not
+   satisfy equals or starts_with "evil" and satisfies equals "x evil y". Red when `normalize`
+   collapses only spaces (2 failed, 2.3 s, load 7%).
+
+Bench after the fix, 12 inputs, 3 runs of 200, CPU load 37%, 9%, 5%, exit 0 each run:
+
+| Input | p95 | Budget |
+| --- | --- | --- |
+| 100 addresses in From, To and Cc, no match / all match | 1.10–1.16 / 1.12–1.21 ms | 2 ms |
+| the same with the 20 capped names, no match / all match | 1.25–1.49 / 1.20–1.23 ms | 2 ms |
+| short addresses, no match / all match | 0.88–0.99 / 0.63–0.76 ms | 2 ms |
+| address groups, no match / all match | 0.94–1.03 / 0.91–0.94 ms | 2 ms |
+| plain headers | 0.18–0.23 ms | 1 ms |
+| 20 capped header names | 0.38–0.72 ms | 1 ms |
+
+Gate: 14.3 s at `83666bd` (CPU load 67%), 14.6 s at `790affc` (84%).
+
+### Fourth review of `08f44d0` (one Medium)
+
+**A group's unclosed `<` got past the cut (Medium)** — `4a908a6`. postal-mime's tokenizer ends an
+open angle-addr at a group's `;` (`node_modules/postal-mime/src/address-parser.ts`, 4.2.1,
+`checkChar`, line 1326: `if (!nested && chr === ';' && this.inGroup)`); the scanner kept the angle
+open until `>` and counted nothing after it. `To: g:<;` followed by 60 short addresses let a rule
+on the 60th address match, and the parser saw about 300 addresses in a 2,000-character header.
+
+- Fix: in `cutAddressList` a `;` inside an open angle bracket counts as a separator and ends the
+  angle, in or out of a group (outside a group the parser keeps the angle open, so the scanner
+  only cuts earlier there). `.slice(0, ADDRESSES_MAX)` after parsing is back as a backstop, so no
+  address after the 50th is read even where the scanner and the tokenizer disagree elsewhere.
+- Tests, red before the fix and green after (`rules.spec.ts`):
+  - `cutAddressList("g:<;a@x,b@x,c@x", 2)` parses to at most 2 addresses: red before (4);
+  - a seeded differential fuzz: 3,000 header values of up to 60 tokens (addresses, `,`, `;`,
+    `g:`, `<`, `>`, quoted strings with commas and escapes, nested comments with commas, domain
+    literals, `[`, `]`, `\`, `:`, `@`), cut at 5, `addressParser` must find at most 5: red before
+    (6 addresses in a value holding `<;`), green after, 63 ms;
+  - a To of `g:<;` and 60 short addresses no longer matches `a60@x.io`.
+- The backstop slice has no test of its own that fails without it: with the scanner fixed, the
+  fuzz finds no input where it matters. It stays as the owner's "never after the 50th" guarantee.
+- Bench: new adversarial inputs, the short-address list behind `g:<;` (2 ms budget). Before the
+  fix (previous code, load 62%): p95 2.35 ms no match, 1.92 ms all match, exit 1. After, 3 runs of
+  200, CPU load 70%, 81%, 36% (the lowest available this round), exit 0 each run:
+
+  | Input | p95 | Budget |
+  | --- | --- | --- |
+  | 100 addresses in From, To and Cc, no match / all match | 1.39–1.47 / 1.16–1.23 ms | 2 ms |
+  | the same with the 20 capped names, no match / all match | 1.36–1.50 / 1.31–1.42 ms | 2 ms |
+  | short addresses, no match / all match | 1.06–1.11 / 0.49–0.62 ms | 2 ms |
+  | address groups, no match / all match | 1.00–1.06 / 0.89–0.95 ms | 2 ms |
+  | `g:<;` short addresses, no match / all match | 0.96–1.05 / 0.64–0.88 ms | 2 ms |
+  | plain headers | 0.26–0.33 ms | 1 ms |
+  | 20 capped header names | 0.49–0.75 ms | 1 ms |
+
+- Accepted (already in the design, "Matching rules"): with RFC-form groups the cut can keep fewer
+  than 50 addresses, because a group's commas and its `;` all count. What is read is always a
+  prefix of what would be read without the cut.
+
+### Fifth review of `7c1fe84` (coordinator's decision)
+
+The scanner still disagreed with postal-mime on a domain literal inside an angle-addr:
+`<a@[(]>,` followed by 2,000 characters of short addresses kept the whole value and the parser
+read about 300 addresses (the backstop slice kept the rule result right; the harm was CPU over the
+2 ms budget). Decision (coordinator, within owner ruling 1): stop mirroring the tokenizer.
+
+- `866cb6e`: `cutAddressList` cuts before the 50th raw `,` or `;`, counting every one, inside
+  quoted strings, comments, angle brackets and domain literals too. The tokenizer starts a new
+  address only at one of these two characters, so the cut can never come later than its 50th
+  address (stated in the code comment and the design). The scanner state and its quoting tests
+  are gone; a raw-count test replaces them. The `.slice(0, 50)` backstop stays.
+- **Accepted:** a display name or group holding `,` or `;` makes a header keep fewer than 50
+  addresses; the entries before the cut match the full parse, and the last one may be a fragment
+  of the entry the cut splits (sixth review, Low, wording corrected). This replaces the narrower
+  "RFC-form groups" note above.
+- Red before (`7c1fe84`), green after:
+  - the seeded fuzz in `rules.spec.ts` with the added tokens `@[`, `@ [`, `@ [`, `@\r[`,
+    `@(c)[`, `@"q"[`, `<a@[`: red before (6 addresses where at most 5 were allowed), green after
+    (44 ms);
+  - the reviewer's fuzz (`scratchpad/r5/fuzz2.ts`, 4 seeds of 250,000 values, cut at 1 to 6,
+    extra tokens including control characters and IPv6 literals) against the new cut: 0 failures
+    for every seed;
+  - bench input `<a@[(]>,` short addresses: p95 1.89 ms no match, 2.02 ms all match, exit 1
+    before (load 51%); 0.63–1.29 ms after.
+  - The integration test (no address past the 50th behind `g:<;` and `<a@[(]>,`) passes before and
+    after: the backstop holds the rule result either way.
+- Bench after `866cb6e`, 16 inputs, 3 runs of 200, CPU load 60%, 65%, 78% (the lowest available
+  this round), exit 0 each run:
+
+  | Input | p95 | Budget |
+  | --- | --- | --- |
+  | 100 addresses in From, To and Cc, no match / all match | 1.29–1.55 / 0.97–1.28 ms | 2 ms |
+  | the same with the 20 capped names, no match / all match | 1.46–1.49 / 1.38–1.42 ms | 2 ms |
+  | short addresses | 0.76–0.86 / 0.66–0.79 ms | 2 ms |
+  | address groups | 0.76–1.14 / 0.61–0.68 ms | 2 ms |
+  | `g:<;` short addresses | 0.85–1.17 / 0.77–0.86 ms | 2 ms |
+  | `<a@[(]>,` short addresses | 0.85–1.29 / 0.63–0.71 ms | 2 ms |
+  | plain headers | 0.27–0.32 ms | 1 ms |
+  | 20 capped header names | 0.55–0.79 ms | 1 ms |
+
+- Gate at `866cb6e`: 15.1 s at CPU load 65% (15 s limit; the host was loaded by other work).
+
+### Phase B: API keys, REST API v1, the OpenAPI document (done 2026-11-17, not merged)
+
+Branch `m6-rules-api`, from `af76039` (phase A approved). Risk class High. Not pushed, not
+deployed. No screenshots (the owner checks the page on local `wrangler dev`).
+
+#### Done (phase B)
+
+- `48fa680` migration 0014 `api_keys` (`IF NOT EXISTS`), drizzle schema; `expires_at` nullable
+  for "never".
+- `71d69e5` refactor without behaviour change: the mailbox handlers become named functions and the
+  send flow `sendMessage()`, so `/api/v1/` calls the same code as the session routes.
+- `e9f82e7` API keys and the REST API (`worker/src/api/keys.ts`, `v1.ts`, `openapi.json`,
+  `worker/src/routing.ts`):
+  - route kind `apiRoute(scopes)`: Bearer key only, never the cookie; session routes never read a
+    key; the CSRF guard skips only `apiRoute` handlers;
+  - order per request: `API_LIMITER` (120 per 60 s per IP, 429 with `Retry-After: 60`), the
+    format regex, both before any D1 read; then the SHA-256 lookup, expiry (`key_expired`), scope
+    (403 `insufficient_scope`); 401 answers carry `WWW-Authenticate: Bearer`;
+  - last used written at most once an hour, guarded in JS (no write) and in the UPDATE (a race);
+  - `GET|POST /api/keys`, `DELETE /api/keys/:id`, `GET /api/openapi.json` (session); creation
+    behind `requireFreshAuth`, at most 20 keys (in the INSERT), audit `api_key_created`
+    (public id, scopes, expiry) and `api_key_revoked` (public id);
+  - recovery deletes every key in its batch, with `api_keys_revoked` and the count;
+  - 9 v1 routes: messages list, get, thread, raw, search, addresses, flags single and bulk, send
+    with a required `Idempotency-Key` header and the M5 idempotency;
+  - the hand-written OpenAPI 3.1 document, 9 operations.
+- `305dd36` Settings > API keys (`web/src/pages/ApiKeysPage.tsx`, `web/src/apiKeys/`): list,
+  create through `withReauth`, the key shown once in the recovery key panel, revoke with
+  confirmation, the OpenAPI link; side navigation entry after Rules; lazy `apiKeys` namespace in
+  zh-CN, en and ja-JP; `web/test/api-keys.test.ts` in `test:settings`.
+- `b634e70` tests for the three ablation survivors (below).
+- README "REST API", `REQUIREMENTS.md` (an "Exceptions" row for `/api/v1/*`, new baselines), this
+  section (the docs commit).
+
+#### Proof (worker suite, real D1, R2 and Queues in workerd; Resend stubbed)
+
+- `test/api-keys.spec.ts` (13): stale session 403 `reauth_required`, fresh 201; the key matches
+  the pattern, starts with its public id, its SHA-256 is stored, and neither the key nor its
+  secret is in any D1 table (all tables dumped); the list never holds it; scopes normalised;
+  expiry 30, 90 (default), 365 and never, and 7 bad bodies refused; the 20-key cap with one audit
+  row; revoke on a stale session, 404 answers, audit, the key then 401; 5 malformed keys answer
+  401 `invalid_key` with a D1 stand-in that fails on any use; a key in `?key=`, `?access_token=`
+  or a `Basic` header is not read; unknown, expired and never-expiring keys; last used once an
+  hour (same hour, 5 s before, 1 ms after); no D1 write inside the hour, and the UPDATE losing a
+  race; the limiter called with the client IP before D1 (stub limiter, failing D1); the real
+  binding answers 429 at the 121st request from one IP; a foreign `Origin` passes on v1 and a
+  session POST with it answers `bad_origin`; recovery deletes both keys with `api_keys_revoked`
+  "2"; the OpenAPI document served to a session.
+- `test/api-v1.spec.ts` (8): list (three folder and address filters), message, thread and search
+  equal the session routes' JSON; raw bytes and content type; 404 and 400; pagination with
+  `limit=2` until `nextCursor` is null; addresses with `canSend` for a send-only key; flags single
+  and bulk, too many ids, a bad flag; send needs `Idempotency-Key` (400
+  `idempotency_key_required`), 6 typed-field refusals with `path` (`to.1`, `uploadIds`), a
+  malformed key header, `unknown_address`, 503 without `RESEND_API_KEY`; repeated and concurrent
+  sends under one key make one Resend call, the key reaches Resend, `replyTo` threads the reply.
+  OpenAPI: routes and operations equal in both directions with their scopes; the checker flags an
+  undocumented field, a missing field, a wrong type, a null and an item error.
+- Every v1 response in these suites, the authz matrix and the redaction test goes through
+  `expectDocumented` (`test/openapi-check.ts`): the status must be documented and the JSON body
+  must pass the operation's schema.
+- `test/authz.spec.ts` (+2, extended): every route in exactly one kind; the `apiRoute` list with
+  scopes equals the expected table and covers every `/api/v1/` path; every session route answers
+  401 to a key with all scopes; every v1 route answers 401 to a valid session cookie (with and
+  without `Origin`), 403 to a key with the other scopes, and neither to each of its own scopes
+  without an `Origin` header.
+- `test/log-redaction.spec.ts` (+1): a key through all 9 v1 routes (a send that succeeds and one
+  that fails, so `send_ok` and `send_failed` are logged), a failing key and a key on a session
+  route; no log line holds the key, its secret, "Bearer" or "authorization"; no D1 table holds the
+  secret.
+- Browser (`test:settings`, `web/test/api-keys.test.ts`, 2): an empty name is refused in the form;
+  create with Send mail and Never runs re-authentication (the stand-in answers `reauth_required`,
+  a CDP virtual authenticator signs), the body is exact, the key is shown with `user-select` not
+  `none`, Done stays disabled until "I have copied the key", then the list shows the prefix, the
+  access names and "Never"; revoke by keyboard through the confirmation; at 390 px in zh-CN the
+  list stacks with no sideways scroll and shows "已过期" and the IPv6 last-used address.
+- Migration: `bun run db:migrate:local` applied 0014 on the local database with 22 messages; a
+  second run reported "No migrations to apply"; `wrangler d1 execute --local --file
+  migrations/0014_api_keys.sql` ran again without error.
+
+#### Numbers (2026-11-17, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
+
+| Item | Result | CPU load |
+| --- | --- | --- |
+| `bun run check` at `b634e70` | 10.0, 10.3, 10.0 s (445 worker tests; worker suite 9.00–9.41 s) | 3%, 4%, 3% |
+| `bun run check` at `af76039` (base) | 9.9 s (420 tests; worker suite 8.96 s) | 8% |
+| `bun run check` at `8d150dc` (docs only since `b634e70`), later in the session | 12.9, 12.1, 12.8 s (worker suite 11.1–11.7 s) | 6%, 3%, 2% (sampled at the start; the host varied) |
+| `bun run test:settings` with the API keys suite | 10.01, 10.35, 9.89 s (17 tests) | 8%, 3%, 3% |
+| The same before reduced motion in the new suite | 12.0, 13.25, 11.24 s (one run over 13 s) | 1–2% |
+| The three earlier suites alone (`bun test` part) | 8.08, 7.46 s | 7%, 4% |
+| `bun run test:browser` (unchanged tier) | 30.8, 26.3, 26.3 s (58 tests; the first run an outlier) | 9%, 2%, 7% |
+| First paint (vite build, gzip -6) | 315.9 kB (315.7 kB at the base; limit 370) | |
+| Total JS + CSS | 746.4 kB (739.1 kB at the base; limit 770) | |
+| Worker bundle (`wrangler deploy --dry-run`) | 1,364.55 KiB, 285.82 KiB gzip (1,328.04 and 278.90 at the base; most of the growth is the 30 kB OpenAPI document) | |
+
+#### Ablation
+
+`ablate.ts` (session scratchpad, not committed) applied one mutation at a time to the worker and
+ran the affected specs, sequentially, at CPU load 3%. 56 mutations, all red after `b634e70`:
+
+- keys: unknown or empty scope accepted, any expiry, default 365, empty or long label, no cap,
+  audit without `changes()`, no fresh auth, no revoke audit, limiter ignored, a D1 read before
+  the limiter, one limiter key for all IPs, no `Retry-After`, any auth scheme, a key read from
+  the query, no format check, expiry ignored, never-expiring keys refused, scope ignored, all
+  scopes required, last used never written, the key stored in clear, the key logged, no
+  `WWW-Authenticate`;
+- routing: v1 decided by the session, a session route taking a key, the CSRF guard on v1, the
+  CSRF guard off everywhere, the handler not wrapped (session routes become key routes);
+- recovery: keys kept, no audit row;
+- v1: unknown fields accepted, `from`, list and list-item types, `text`, optional strings,
+  `Idempotency-Key` optional or unchecked, a key changed per request, `replyTo` and `html`
+  dropped, `canSend` and `enabled` as integers, addresses closed to `mail:send`, no
+  `send_not_configured`;
+- OpenAPI: the document route missing; an undocumented response field (`domain` on an address);
+  an undocumented route (`GET /extra`); an operation missing from the document.
+
+First run: 53 of 56 red. Survivors, red since `b634e70`: the JS hourly check (each request
+wrote; harmless because of the SQL guard), the SQL guard (harmless because of the JS check), and
+`send_not_configured` on v1 (no test ran without `RESEND_API_KEY`).
+
+Web (`ablate-web.ts`, a rebuild per mutation, the API keys browser suite, load 1%): 10 of 10 red
+(never sent as 90 days, no re-auth wrapper, an empty name submitted, the key shown with spaces,
+revoke without confirmation, an expired key shown as a date, the last-used IP hidden, scope ids
+instead of names, the panel closing without the confirmation, the key not shown).
+
+#### Deviations from the design (decisions taken, open to the owner)
+
+1. `api_keys.expires_at` is nullable: NULL is "never" (owner ruling 3 came after the design's
+   "not null").
+2. `GET /api/v1/addresses` takes `mail:read` or `mail:send`. The routes table puts it under
+   `mail:read`; the scopes table lets `mail:send` "list the addresses that may send". A route
+   records a list of scopes, any one of which suffices, and the document lists both as
+   alternative security requirements.
+3. `path` on 400 `bad_request` comes only from the v1 send body and the `Idempotency-Key` header.
+   The reused M4 handlers (query parameters, flags) answer `bad_request` without `path`, and the
+   M5 codes (`invalid_recipient`, `unknown_address`) stay as they are.
+4. A request without `Authorization: Bearer` answers 401 `unauthorized` (also with only a session
+   cookie); `invalid_key` is for a value that is malformed or unknown.
+5. The v1 send body refuses unknown fields (`path` names the field), so `uploadIds` or a typo
+   fails; `text` is required.
+6. The checker supports the ruling's subset with OpenAPI 3.1's spelling of nullable (a type list
+   with `"null"`; 3.1 has no `nullable` keyword), plus local `$ref`, `allOf` and
+   `additionalProperties: false`, which every response object in the document sets, so an
+   undocumented field fails.
+7. The shown API key may break anywhere (`overflow-wrap: anywhere`) to fit 390 px; "values never
+   break" cannot hold for a 56-character token. It is an inline style, which `astryx doctor`
+   lists with its existing style warnings.
+8. The show-once panel reuses `RecoveryKeyPanel` with two optional props instead of a second
+   component.
+9. `api_keys_revoked` is written only when a recovery deleted at least one key.
+10. The new browser suite emulates reduced motion; without it the tier ran over 13 s once.
+11. No `wrangler check startup` profile: the design asked for it around a dependency, and ruling 2
+    removed the dependency. The bundle grew 36.5 KiB raw, 6.9 KiB gzip.
+
+#### Open questions for the owner
+
+1. **`path` on every validation error.** Today only the send body has it. Recommended: leave it;
+   adding it to the M4 handlers changes the session routes' answers too.
+2. **Raw download of a sent message.** `GET /api/v1/messages/{id}/raw` returns the stored JSON
+   copy for outbound mail, as M4 does, under `application/octet-stream`. Recommended: keep it; the
+   document says so, and a client tells them apart by `direction`.
+
+#### Not verified
+
+- The rate limit on Cloudflare (approximate, per location); only Miniflare's binding and a stub
+  were exercised.
+- Production behaviour, `cpuTime` of a v1 request, and a real Resend send through the API (every
+  Resend call is stubbed).
+- The page in Firefox and Safari, dark mode contrast, and screenshots; local `wrangler dev` was
+  not started.
+- An independent review by a different model family.
+
+#### Review of `4dba83c` ("FIX FIRST": one Medium, three Lows, one pass-bar item)
+
+The review found authentication separation, the key checks and secret handling sound under every
+probe. Fixes:
+
+- Medium, `c405097`: "Download the OpenAPI document" never downloaded. Astryx links render
+  through `RouterLink` (a TanStack Router link), whose click handler cancels the navigation and
+  ignores `download`; the router showed Not Found and made no request. `RouterLink` now renders
+  a plain anchor for a link with `download` or an href under `/api/`; no other link in the app
+  points under `/api/` (raw and attachment downloads use `fetch`). The browser test clicks the
+  link and waits for the download (URL and file name). Red without the fix: the download event
+  never fires (0 of 2 pass, the suite's browser closes on the timeout).
+- Low, `ae2f5c1`: the OpenAPI route test flattened security scopes, so a document requiring
+  `mail:read` and `mail:send` together for `/addresses` passed. It now compares one scope list
+  per requirement object, one object per scope of the route. Planted `[{"apiKey": ["mail:read",
+  "mail:send"]}]`: red (1 of 8 failed).
+- Low, `e31893f`: `PATCH /api/v1/messages` and `/api/v1/messages/:id` now send one Hub
+  `changed` event after a successful change, so open pages refresh; the session routes are
+  unchanged. One event per request, also for 100 ids (pages refresh whole lists on any
+  `changed`). Red without it: the single and the bulk notify each removed alone, 1 of 8 failed
+  each.
+- Pass bar, `16ab2c4`: `worker/test/api-keys.spec.ts` (313 lines) is split into management
+  (172 lines) and `api-key-auth.spec.ts` (151 lines), tests unchanged.
+- Pass bar, recorded: `worker/src/mail/routes.ts` grew from 304 to 316 lines (p90 242, over it
+  before phase B too). The 12 lines are the named handler functions that the session routes and
+  `/api/v1/` share (`71d69e5`); splitting the mailbox API across files to stay under p90 would
+  separate the queries from the cursor and flag helpers they use.
+
+Timings (dev workstation, the host carrying other work):
+
+| Item | Result | CPU load at start |
+| --- | --- | --- |
+| `bun run check` before `c405097` | 14.6 s (worker suite 13.33 s) | 32% |
+| before `ae2f5c1` | 13.8 s (worker suite 12.63 s) | 26% |
+| before `e31893f` | 13.5 s (worker suite 12.38 s) | 12% |
+| before `16ab2c4` | 13.8 s (worker suite 12.63 s, 445 tests) | 12% |
+| `bun run test:settings` | 10.81, 10.68, 11.31 s (17 tests) | 14%, 37%, 20% |
+
+The first gate run had the worker suite at 13.33 s, over the 13 s "Slowest test package" limit,
+at 32% load; at 12% it ran 12.4–12.6 s, and at 3–4% earlier in the session 9.0–9.4 s.
+
+Deferred (added):
+
+- A state-changing request to an `/api/v1/` path that matches no route (for example a trailing
+  slash) answers 403 `bad_origin` instead of 404: the CSRF guard runs before routing finds no
+  handler. Source: review of phase B (Low). It reveals nothing and changes nothing.
+
+Not verified (added, the reviewer's hypotheses):
+
+- Whether Workers Logs record the `Authorization` header of a request: the Worker never logs it,
+  but the platform's request logging was not checked. Check with `wrangler tail` at the first
+  deploy.
+- `API_LIMITER` is keyed by the full client IP; an IPv6 client can rotate addresses within its
+  /64 and multiply its allowance.

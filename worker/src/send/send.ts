@@ -170,34 +170,43 @@ async function deliver(c: Context<AppEnv>, id: string, key: string, copy: SentCo
   return c.json({ message: { id, status: "sent" } });
 }
 
+/**
+ * Sends `body` (the M5 send body) under idempotency key `key`, or repeats the send already made
+ * under it. POST /api/messages/send and POST /api/v1/messages/send both end here, after checking
+ * that RESEND_API_KEY is set.
+ */
+export async function sendMessage(c: Context<AppEnv>, body: Record<string, unknown>, key: string) {
+  const db = c.env.DB;
+  const findExisting = () =>
+    db
+      .prepare(
+        `SELECT id, status, error, r2_key AS key, first_attempt_at AS firstAttemptAt,
+           maybe_accepted AS maybeAccepted FROM messages WHERE idempotency_key = ?`,
+      )
+      .bind(key)
+      .first<Existing>();
+
+  let existing = await findExisting();
+  if (!existing) {
+    const prepared = await prepare(c, body);
+    if ("error" in prepared) return fail(c, prepared.status, prepared.error);
+    const inserted = await insertSending(c, key, prepared.copy, prepared.threadKey);
+    if (inserted) return deliver(c, inserted.id, key, prepared.copy);
+    // A concurrent request inserted the same key first.
+    existing = await findExisting();
+    if (!existing) return fail(c, 409, "send_in_progress");
+  }
+
+  const retry = await retryExisting(c, existing);
+  return retry instanceof Response ? retry : deliver(c, existing.id, key, retry);
+}
+
 export function registerSendRoute(messages: Hono<AppEnv>): void {
   messages.post("/send", async (c) => {
     if (!c.env.RESEND_API_KEY) return fail(c, 503, "send_not_configured");
     const body = await readJson(c);
     const key = idempotencyKey(body?.idempotencyKey);
     if (!body || !key) return fail(c, 400, "bad_request");
-    const db = c.env.DB;
-    const findExisting = () =>
-      db
-        .prepare(
-          `SELECT id, status, error, r2_key AS key, first_attempt_at AS firstAttemptAt,
-             maybe_accepted AS maybeAccepted FROM messages WHERE idempotency_key = ?`,
-        )
-        .bind(key)
-        .first<Existing>();
-
-    let existing = await findExisting();
-    if (!existing) {
-      const prepared = await prepare(c, body);
-      if ("error" in prepared) return fail(c, prepared.status, prepared.error);
-      const inserted = await insertSending(c, key, prepared.copy, prepared.threadKey);
-      if (inserted) return deliver(c, inserted.id, key, prepared.copy);
-      // A concurrent request inserted the same key first.
-      existing = await findExisting();
-      if (!existing) return fail(c, 409, "send_in_progress");
-    }
-
-    const retry = await retryExisting(c, existing);
-    return retry instanceof Response ? retry : deliver(c, existing.id, key, retry);
+    return sendMessage(c, body, key);
   });
 }

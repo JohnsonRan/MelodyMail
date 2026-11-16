@@ -400,3 +400,70 @@ export const settings = sqliteTable(
   },
   (t) => [check("settings_single_row", sql`${t.id} = 1`)],
 );
+
+// M6: rules (docs/M6-rules-api.md, "Rules"). email() reads the enabled rules in position order;
+// a rule's conditions are a JSON array validated on write (worker/src/rules/validate.ts).
+export const rules = sqliteTable(
+  "rules",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    enabled: integer("enabled").notNull().default(1),
+    position: integer("position").notNull(),
+    match: text("match", { enum: ["all", "any"] }).notNull(),
+    conditions: text("conditions").notNull(),
+    markRead: integer("mark_read").notNull().default(0),
+    star: integer("star").notNull().default(0),
+    archive: integer("archive").notNull().default(0),
+    trash: integer("trash").notNull().default(0),
+    stop: integer("stop").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [
+    index("rules_enabled_position").on(t.enabled, t.position),
+    check("rules_match", sql`${t.match} IN ('all', 'any')`),
+  ],
+);
+
+// A rule forwards only to stored targets (docs/M6-rules-api.md, Decision 2). Deleting either side
+// removes the link.
+export const ruleForwards = sqliteTable(
+  "rule_forwards",
+  {
+    ruleId: integer("rule_id")
+      .notNull()
+      .references(() => rules.id, { onDelete: "cascade" }),
+    targetId: integer("target_id")
+      .notNull()
+      .references(() => forwardTargets.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.ruleId, t.targetId] }),
+    index("rule_forwards_target_id").on(t.targetId),
+  ],
+);
+
+// M6: API keys for /api/v1/ (docs/M6-rules-api.md, "API keys"). Only the SHA-256 of the whole key
+// is stored; the public id is not part of the secret. expires_at NULL: a key that never expires
+// (owner ruling 3).
+export const apiKeys = sqliteTable(
+  "api_keys",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    publicId: text("public_id").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    label: text("label").notNull(),
+    // A JSON array of mail:read, mail:write, mail:send.
+    scopes: text("scopes").notNull(),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at"),
+    // Written at most once an hour per key.
+    lastUsedAt: integer("last_used_at"),
+    lastUsedIp: text("last_used_ip"),
+  },
+  (t) => [
+    uniqueIndex("api_keys_public_id").on(t.publicId),
+    uniqueIndex("api_keys_token_hash").on(t.tokenHash),
+  ],
+);

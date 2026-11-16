@@ -6,7 +6,11 @@ import { errorText, fail, log, readJson } from "../http";
 import { searchFilter } from "./search";
 
 // The mailbox API (docs/M4-mailbox.md). The Worker runs indexed queries and streams raw mail; it
-// never parses or renders a message. Every route here is guarded by the session middleware.
+// never parses or renders a message. The session routes and the /api/v1/ routes
+// (worker/src/api/v1.ts) share these handlers.
+
+type Ctx = Context<AppEnv>;
+type IdCtx = Context<AppEnv, "/:id">;
 
 export const PAGE_MAX = 50;
 export const BULK_MAX = 100;
@@ -136,169 +140,177 @@ export function updateMessageFlags(env: Env, ids: string[], flags: Flags) {
 const validId = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= ID_MAX;
 
-export function registerMessageRoutes(messages: Hono<AppEnv>): void {
-  messages.get("/", async (c) => {
-    const folder = c.req.query("folder") ?? "inbox";
-    const cursor = parseCursor(c.req.query("cursor"));
-    const limit = parseLimit(c.req.query("limit"));
-    const address = c.req.query("address");
-    const addressId = address === undefined ? undefined : Number(address);
-    if (
-      !Object.hasOwn(FOLDERS, folder) ||
-      cursor === null ||
-      limit === null ||
-      (addressId !== undefined && !Number.isSafeInteger(addressId))
-    ) {
-      return fail(c, 400, "bad_request");
-    }
-    const where: string[] = [FOLDERS[folder as keyof typeof FOLDERS]];
-    const params: number[] = [];
-    if (addressId !== undefined) {
-      where.push("address_id = ?");
-      params.push(addressId);
-    }
-    return page(c, where, params, cursor, limit);
-  });
+export async function listMessages(c: Ctx) {
+  const folder = c.req.query("folder") ?? "inbox";
+  const cursor = parseCursor(c.req.query("cursor"));
+  const limit = parseLimit(c.req.query("limit"));
+  const address = c.req.query("address");
+  const addressId = address === undefined ? undefined : Number(address);
+  if (
+    !Object.hasOwn(FOLDERS, folder) ||
+    cursor === null ||
+    limit === null ||
+    (addressId !== undefined && !Number.isSafeInteger(addressId))
+  ) {
+    return fail(c, 400, "bad_request");
+  }
+  const where: string[] = [FOLDERS[folder as keyof typeof FOLDERS]];
+  const params: number[] = [];
+  if (addressId !== undefined) {
+    where.push("address_id = ?");
+    params.push(addressId);
+  }
+  return page(c, where, params, cursor, limit);
+}
 
-  messages.patch("/", async (c) => {
-    const body = await readJson(c);
-    const flags = body && parseFlags(body);
-    const ids = body?.ids;
-    if (!flags || !Array.isArray(ids) || ids.length === 0 || !ids.every(validId)) {
-      return fail(c, 400, "bad_request");
-    }
-    if (ids.length > BULK_MAX) return fail(c, 400, "too_many_ids");
-    // A repeated id matches its row once: IN (json_each) is a set test.
-    const result = await updateMessageFlags(c.env, ids, flags);
-    return c.json({ updated: result.meta.changes });
-  });
+export async function patchMessages(c: Ctx) {
+  const body = await readJson(c);
+  const flags = body && parseFlags(body);
+  const ids = body?.ids;
+  if (!flags || !Array.isArray(ids) || ids.length === 0 || !ids.every(validId)) {
+    return fail(c, 400, "bad_request");
+  }
+  if (ids.length > BULK_MAX) return fail(c, 400, "too_many_ids");
+  // A repeated id matches its row once: IN (json_each) is a set test.
+  const result = await updateMessageFlags(c.env, ids, flags);
+  return c.json({ updated: result.meta.changes });
+}
 
-  messages.get("/:id", async (c) => {
-    const row = await c.env.DB.prepare(`SELECT ${DETAIL_COLUMNS} FROM messages WHERE id = ?`)
-      .bind(c.req.param("id"))
-      .first<ListRow>();
-    return row ? c.json({ message: toItem(row) }) : fail(c, 404, "not_found");
-  });
+export async function getMessage(c: IdCtx) {
+  const row = await c.env.DB.prepare(`SELECT ${DETAIL_COLUMNS} FROM messages WHERE id = ?`)
+    .bind(c.req.param("id"))
+    .first<ListRow>();
+  return row ? c.json({ message: toItem(row) }) : fail(c, 404, "not_found");
+}
 
-  // Oldest first. Outside Trash the thread leaves trashed messages out; in Trash it shows them.
-  messages.get("/:id/thread", async (c) => {
-    const id = c.req.param("id");
-    const db = c.env.DB;
-    const self = await db
-      .prepare("SELECT thread_key AS threadKey, trashed FROM messages WHERE id = ?")
-      .bind(id)
-      .first<{ threadKey: string | null; trashed: number }>();
-    if (!self) return fail(c, 404, "not_found");
-    const { results } = await db
-      .prepare(
-        `SELECT ${DETAIL_COLUMNS} FROM messages
-         WHERE id = ? OR (thread_key = ? AND trashed = ?)
-         ORDER BY received_at, id LIMIT ?`,
-      )
-      .bind(id, self.threadKey, self.trashed, THREAD_MAX)
-      .all<ListRow>();
-    return c.json({ messages: results.map(toItem) });
-  });
+// Oldest first. Outside Trash the thread leaves trashed messages out; in Trash it shows them.
+export async function getThread(c: IdCtx) {
+  const id = c.req.param("id");
+  const db = c.env.DB;
+  const self = await db
+    .prepare("SELECT thread_key AS threadKey, trashed FROM messages WHERE id = ?")
+    .bind(id)
+    .first<{ threadKey: string | null; trashed: number }>();
+  if (!self) return fail(c, 404, "not_found");
+  const { results } = await db
+    .prepare(
+      `SELECT ${DETAIL_COLUMNS} FROM messages
+       WHERE id = ? OR (thread_key = ? AND trashed = ?)
+       ORDER BY received_at, id LIMIT ?`,
+    )
+    .bind(id, self.threadKey, self.trashed, THREAD_MAX)
+    .all<ListRow>();
+  return c.json({ messages: results.map(toItem) });
+}
 
-  // The raw message, streamed from R2 without being read in JS. The headers make a browser that
-  // opens this URL directly download the bytes instead of rendering them in this origin.
-  messages.get("/:id/raw", async (c) => {
-    const row = await c.env.DB.prepare("SELECT r2_key AS key FROM messages WHERE id = ?")
-      .bind(c.req.param("id"))
-      .first<{ key: string }>();
-    if (!row) return fail(c, 404, "not_found");
-    const object = await c.env.MAIL.get(row.key);
-    if (!object) return fail(c, 404, "not_found");
-    return new Response(object.body, {
-      headers: {
-        "content-type": "application/octet-stream",
-        "content-disposition": 'attachment; filename="message.eml"',
-        "content-length": String(object.size),
-        "cache-control": "private, no-store",
-        "x-content-type-options": "nosniff",
-      },
-    });
-  });
-
-  messages.patch("/:id", async (c) => {
-    const body = await readJson(c);
-    const flags = body && parseFlags(body);
-    if (!flags) return fail(c, 400, "bad_request");
-    const result = await updateMessageFlags(c.env, [c.req.param("id")], flags);
-    return result.meta.changes > 0 ? c.json({ ok: true }) : fail(c, 404, "not_found");
-  });
-
-  // Permanent delete, only from Trash. The row and its search text go in one batch; the raw
-  // object goes afterwards, so a failed R2 delete leaves an orphan for the M7 sweep rather than
-  // a row whose raw message is gone.
-  messages.delete("/:id", async (c) => {
-    const id = c.req.param("id");
-    const db = c.env.DB;
-    const [, deleted] = await db.batch<{ key: string }>([
-      db
-        .prepare(
-          `DELETE FROM messages_fts WHERE message_id = ?
-             AND EXISTS (SELECT 1 FROM messages WHERE id = ? AND trashed = 1)`,
-        )
-        .bind(id, id),
-      db
-        .prepare("DELETE FROM messages WHERE id = ? AND trashed = 1 RETURNING r2_key AS key")
-        .bind(id),
-    ]);
-    const key = deleted?.results[0]?.key;
-    if (key === undefined) {
-      const exists = await db
-        .prepare("SELECT 1 AS one FROM messages WHERE id = ?")
-        .bind(id)
-        .first();
-      return exists ? fail(c, 409, "not_in_trash") : fail(c, 404, "not_found");
-    }
-    await audit(c, "message_deleted", Date.now(), id).run();
-    try {
-      await c.env.MAIL.delete(key);
-    } catch (err) {
-      log("warn", "mail_raw_delete_failed", { messageId: id, error: errorText(err) });
-    }
-    return c.json({ ok: true });
+// The raw message, streamed from R2 without being read in JS. The headers make a browser that
+// opens this URL directly download the bytes instead of rendering them in this origin.
+export async function getRaw(c: IdCtx) {
+  const row = await c.env.DB.prepare("SELECT r2_key AS key FROM messages WHERE id = ?")
+    .bind(c.req.param("id"))
+    .first<{ key: string }>();
+  if (!row) return fail(c, 404, "not_found");
+  const object = await c.env.MAIL.get(row.key);
+  if (!object) return fail(c, 404, "not_found");
+  return new Response(object.body, {
+    headers: {
+      "content-type": "application/octet-stream",
+      "content-disposition": 'attachment; filename="message.eml"',
+      "content-length": String(object.size),
+      "cache-control": "private, no-store",
+      "x-content-type-options": "nosniff",
+    },
   });
 }
 
-export function registerMailboxRoutes(app: Hono<AppEnv>): void {
-  // Search leaves Trash out, like the folder lists outside Trash, and pages newest first.
-  app.get("/search", async (c) => {
-    const q = c.req.query("q") ?? "";
-    const cursor = parseCursor(c.req.query("cursor"));
-    const filter = q.length <= QUERY_MAX ? searchFilter(q) : null;
-    if (!filter || cursor === null) return fail(c, 400, "bad_request");
-    return page(
-      c,
-      ["trashed = 0", `id IN (SELECT message_id FROM messages_fts WHERE ${filter.where})`],
-      filter.params,
-      cursor,
-      PAGE_MAX,
-    );
-  });
+export async function patchMessage(c: IdCtx) {
+  const body = await readJson(c);
+  const flags = body && parseFlags(body);
+  if (!flags) return fail(c, 400, "bad_request");
+  const result = await updateMessageFlags(c.env, [c.req.param("id")], flags);
+  return result.meta.changes > 0 ? c.json({ ok: true }) : fail(c, 404, "not_found");
+}
 
-  // Unread counts per folder, and per address for the inbox.
-  app.get("/counts", async (c) => {
-    const db = c.env.DB;
-    const [folders, addresses] = await db.batch([
-      db.prepare(
-        `SELECT COALESCE(SUM(direction = 'in' AND trashed = 0 AND archived = 0), 0) AS inbox,
-           COALESCE(SUM(starred = 1 AND trashed = 0), 0) AS starred,
-           COALESCE(SUM(archived = 1 AND trashed = 0), 0) AS archive,
-           COALESCE(SUM(trashed = 1), 0) AS trash
-         FROM messages WHERE read = 0`,
-      ),
-      db.prepare(
-        `SELECT address_id AS addressId, COUNT(*) AS unread FROM messages
-         WHERE read = 0 AND trashed = 0 AND archived = 0 GROUP BY address_id`,
-      ),
-    ]);
-    const perAddress: Record<string, number> = {};
-    for (const r of (addresses?.results ?? []) as { addressId: number; unread: number }[]) {
-      perAddress[r.addressId] = r.unread;
-    }
-    return c.json({ folders: folders?.results[0], addresses: perAddress });
-  });
+// Permanent delete, only from Trash. The row and its search text go in one batch; the raw
+// object goes afterwards, so a failed R2 delete leaves an orphan for the M7 sweep rather than
+// a row whose raw message is gone.
+async function deleteMessage(c: IdCtx) {
+  const id = c.req.param("id");
+  const db = c.env.DB;
+  const [, deleted] = await db.batch<{ key: string }>([
+    db
+      .prepare(
+        `DELETE FROM messages_fts WHERE message_id = ?
+           AND EXISTS (SELECT 1 FROM messages WHERE id = ? AND trashed = 1)`,
+      )
+      .bind(id, id),
+    db
+      .prepare("DELETE FROM messages WHERE id = ? AND trashed = 1 RETURNING r2_key AS key")
+      .bind(id),
+  ]);
+  const key = deleted?.results[0]?.key;
+  if (key === undefined) {
+    const exists = await db.prepare("SELECT 1 AS one FROM messages WHERE id = ?").bind(id).first();
+    return exists ? fail(c, 409, "not_in_trash") : fail(c, 404, "not_found");
+  }
+  await audit(c, "message_deleted", Date.now(), id).run();
+  try {
+    await c.env.MAIL.delete(key);
+  } catch (err) {
+    log("warn", "mail_raw_delete_failed", { messageId: id, error: errorText(err) });
+  }
+  return c.json({ ok: true });
+}
+
+// Search leaves Trash out, like the folder lists outside Trash, and pages newest first.
+export async function searchMessages(c: Ctx) {
+  const q = c.req.query("q") ?? "";
+  const cursor = parseCursor(c.req.query("cursor"));
+  const filter = q.length <= QUERY_MAX ? searchFilter(q) : null;
+  if (!filter || cursor === null) return fail(c, 400, "bad_request");
+  return page(
+    c,
+    ["trashed = 0", `id IN (SELECT message_id FROM messages_fts WHERE ${filter.where})`],
+    filter.params,
+    cursor,
+    PAGE_MAX,
+  );
+}
+
+// Unread counts per folder, and per address for the inbox.
+async function counts(c: Ctx) {
+  const db = c.env.DB;
+  const [folders, addresses] = await db.batch([
+    db.prepare(
+      `SELECT COALESCE(SUM(direction = 'in' AND trashed = 0 AND archived = 0), 0) AS inbox,
+         COALESCE(SUM(starred = 1 AND trashed = 0), 0) AS starred,
+         COALESCE(SUM(archived = 1 AND trashed = 0), 0) AS archive,
+         COALESCE(SUM(trashed = 1), 0) AS trash
+       FROM messages WHERE read = 0`,
+    ),
+    db.prepare(
+      `SELECT address_id AS addressId, COUNT(*) AS unread FROM messages
+       WHERE read = 0 AND trashed = 0 AND archived = 0 GROUP BY address_id`,
+    ),
+  ]);
+  const perAddress: Record<string, number> = {};
+  for (const r of (addresses?.results ?? []) as { addressId: number; unread: number }[]) {
+    perAddress[r.addressId] = r.unread;
+  }
+  return c.json({ folders: folders?.results[0], addresses: perAddress });
+}
+
+export function registerMessageRoutes(messages: Hono<AppEnv>): void {
+  messages.get("/", listMessages);
+  messages.patch("/", patchMessages);
+  messages.get("/:id", getMessage);
+  messages.get("/:id/thread", getThread);
+  messages.get("/:id/raw", getRaw);
+  messages.patch("/:id", patchMessage);
+  messages.delete("/:id", deleteMessage);
+}
+
+export function registerMailboxRoutes(app: Hono<AppEnv>): void {
+  app.get("/search", searchMessages);
+  app.get("/counts", counts);
 }

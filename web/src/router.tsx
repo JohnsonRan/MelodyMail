@@ -83,6 +83,16 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
     path: "/settings/forwarding",
     component: lazyRouteComponent(() => import("./pages/ForwardingPage"), "ForwardingPage"),
   });
+  const rulesRoute = createRoute({
+    getParentRoute: () => shellRoute,
+    path: "/settings/rules",
+    component: lazyRouteComponent(() => import("./pages/RulesPage"), "RulesPage"),
+  });
+  const apiKeysRoute = createRoute({
+    getParentRoute: () => shellRoute,
+    path: "/settings/api-keys",
+    component: lazyRouteComponent(() => import("./pages/ApiKeysPage"), "ApiKeysPage"),
+  });
 
   const setupRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -126,6 +136,8 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
       domainDnsRoute,
       addressesRoute,
       forwardingRoute,
+      rulesRoute,
+      apiKeysRoute,
     ]),
     setupRoute,
     loginRoute,

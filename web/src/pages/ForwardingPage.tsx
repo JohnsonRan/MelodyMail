@@ -12,16 +12,18 @@ import { api } from "../api";
 import { DataTable, TableSkeleton, Value } from "../components/DataTable";
 import { FormDialog } from "../components/FormDialog";
 import { PageFrame } from "../components/PageFrame";
+import { ACTIONS, type Rule } from "../rules/types";
 import { type Address, type ForwardTarget, useSettingsPage } from "../settings";
 
 /** Settings > Forwarding: the addresses mail can be forwarded to. */
 export function ForwardingPage() {
   const page = useSettingsPage(async () => {
-    const [f, a] = await Promise.all([
+    const [f, a, r] = await Promise.all([
       api<{ targets: ForwardTarget[] }>("GET", "/forward-targets"),
       api<{ addresses: Address[] }>("GET", "/addresses"),
+      api<{ rules: Rule[] }>("GET", "/rules"),
     ]);
-    return { targets: f.targets, addresses: a.addresses };
+    return { targets: f.targets, addresses: a.addresses, rules: r.rules };
   });
   const { loadError, busy, act, reload, toast, t } = page;
   const data = page.data?.targets ?? null;
@@ -40,23 +42,32 @@ export function ForwardingPage() {
       await reload();
     });
 
-  // The confirmation names every address the target is removed from, and the forward-only ones
-  // that go back to keeping a copy because it was their last target (owner ruling 2026-11-16).
+  // The confirmation names every address and rule the target is removed from, the forward-only
+  // addresses that go back to keeping a copy because it was their last target (owner ruling
+  // 2026-11-16), and the rules turned off because nothing is left for them to do (M6).
   const removeDescription = (target: ForwardTarget) => {
     const using = (page.data?.addresses ?? []).filter((a) => a.targetIds.includes(target.id));
-    if (using.length === 0) return t("forwarding.removeDescription");
+    const rules = (page.data?.rules ?? []).filter((r) => r.targetIds.includes(target.id));
+    if (using.length === 0 && rules.length === 0) return t("forwarding.removeDescription");
     const switching = using.filter((a) => a.forwardOnly && a.targetIds.length === 1);
     const list = (xs: Address[]) => xs.map((a) => a.address).join(", ");
-    const parts = [t("forwarding.removeInUse", { addresses: list(using) })];
+    const parts: string[] = [];
+    if (using.length > 0) parts.push(t("forwarding.removeInUse", { addresses: list(using) }));
     if (switching.length > 0) {
       parts.push(t("forwarding.switchesToStore", { addresses: list(switching) }));
     }
+    const names = (xs: Rule[]) => xs.map((r) => r.name).join(", ");
+    if (rules.length > 0) parts.push(t("forwarding.removeFromRules", { rules: names(rules) }));
+    const idle = rules.filter(
+      (r) => r.enabled && r.targetIds.length === 1 && !ACTIONS.some((a) => r[a]),
+    );
+    if (idle.length > 0) parts.push(t("forwarding.rulesDisabled", { rules: names(idle) }));
     return parts.join(" ");
   };
 
   const onRemove = (target: ForwardTarget) =>
     act("remove", async () => {
-      const detach = target.addressCount > 0 ? "?detach=1" : "";
+      const detach = target.addressCount + target.ruleCount > 0 ? "?detach=1" : "";
       await api("DELETE", `/forward-targets/${target.id}${detach}`);
       toast({ body: t("forwarding.removed") });
       setRemoving(null);
@@ -108,6 +119,11 @@ export function ForwardingPage() {
               key: "used",
               header: t("forwarding.usedBy"),
               render: (f) => <Text hasTabularNumbers>{f.addressCount}</Text>,
+            },
+            {
+              key: "rules",
+              header: t("forwarding.usedByRules"),
+              render: (f) => <Text hasTabularNumbers>{f.ruleCount}</Text>,
             },
           ]}
           actions={(f) => (

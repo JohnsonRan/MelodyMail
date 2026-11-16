@@ -53,6 +53,8 @@
     // POST /api/push/test, per session.
     { "name": "PUSH_LIMITER", "namespace_id": "1002", "simple": { "limit": 5, "period": 60 } },
     // POST /api/telegram/link and /api/telegram/test, per session.
-    { "name": "TELEGRAM_LIMITER", "namespace_id": "1003", "simple": { "limit": 5, "period": 60 } }
+    { "name": "TELEGRAM_LIMITER", "namespace_id": "1003", "simple": { "limit": 5, "period": 60 } },
+    // Every /api/v1/ request, per client IP, before the key lookup (docs/M6-rules-api.md).
+    { "name": "API_LIMITER", "namespace_id": "1004", "simple": { "limit": 120, "period": 60 } }
   ]
 }

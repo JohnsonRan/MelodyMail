@@ -10,8 +10,10 @@ import {
   AtSymbolIcon,
   BellIcon,
   DocumentTextIcon,
+  FunnelIcon,
   GlobeAltIcon,
   InboxIcon,
+  KeyIcon,
   MagnifyingGlassIcon,
   PaperAirplaneIcon,
   ShieldCheckIcon,
@@ -133,6 +135,18 @@ function MailNav() {
           icon={ArrowUturnRightIcon}
           isSelected={pathname === "/settings/forwarding"}
           href="/settings/forwarding"
+        />
+        <SideNavItem
+          label={t("nav.rules")}
+          icon={FunnelIcon}
+          isSelected={pathname === "/settings/rules"}
+          href="/settings/rules"
+        />
+        <SideNavItem
+          label={t("nav.apiKeys")}
+          icon={KeyIcon}
+          isSelected={pathname === "/settings/api-keys"}
+          href="/settings/api-keys"
         />
         <SideNavItem
           label={t("nav.notifications")}

@@ -13,7 +13,14 @@ export const REQUEUE_MAX = 100;
 /** Parse tries per message (owner ruling 2026-11-16); then it becomes parse_failed. */
 export const MAX_ATTEMPTS = 5;
 
-type Row = { r2_key: string; envelope_from: string; attempts: number };
+type Row = {
+  r2_key: string;
+  envelope_from: string;
+  attempts: number;
+  read: number;
+  archived: number;
+  trashed: number;
+};
 
 /** Marks the row parse_failed; the browser still parses the raw message (M4). */
 function markFailed(env: Env, id: string) {
@@ -58,14 +65,17 @@ async function processJob(env: Env, id: string): Promise<void> {
   // Counted before the parse, in its own write, so a try that the CPU limit kills still counts.
   const row = await env.DB.prepare(
     `UPDATE messages SET attempts = attempts + 1 WHERE id = ? AND status = 'stored'
-     RETURNING r2_key, envelope_from, attempts`,
+     RETURNING r2_key, envelope_from, attempts, read, archived, trashed`,
   )
     .bind(id)
     .first<Row>();
   if (!row) return;
   await parseRow(env, id, row);
-  // Open mailbox pages refetch; a failed notify is logged and never fails the parse.
-  await notifyHub(env, { type: "message", id });
+  // Open mailbox pages refetch; a failed notify is logged and never fails the parse. Mail that a
+  // rule marked read, archived or moved to Trash refreshes pages but sends no Web Push and no
+  // Telegram card (docs/M6-rules-api.md, owner ruling 1); a starred message still notifies.
+  const filtered = row.read === 1 || row.archived === 1 || row.trashed === 1;
+  await notifyHub(env, { type: filtered ? "changed" : "message", id });
 }
 
 async function parseRow(env: Env, id: string, row: Row): Promise<void> {

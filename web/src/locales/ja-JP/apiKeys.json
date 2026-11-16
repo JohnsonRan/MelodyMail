@@ -1,0 +1,51 @@
+{
+  "title": "API キー",
+  "create": "キーを作成",
+  "createTitle": "API キーを作成",
+  "intro": "スクリプトなどのプログラムは、API キーを使って REST API からメールの読み取り、フラグの変更、送信を行います。キーで設定、ルール、サインインにはアクセスできません。",
+  "openapi": "OpenAPI ドキュメントをダウンロード",
+  "loadFailed": "このページを読み込めませんでした。ページを再読み込みしてもう一度お試しください。",
+  "emptyTitle": "API キーはまだありません",
+  "emptyDescription": "メールにアクセスするプログラムごとにキーを作成し、必要なアクセス権だけを与えてください。",
+  "actionsHeader": "操作",
+  "label": "名前",
+  "labelDescription": "キーを使うプログラムがわかる名前にします (例: バックアップ スクリプト)。",
+  "labelRequired": "名前を入力してください。",
+  "labelTooLong": "{{max}} 文字以内で入力してください。",
+  "key": "キー",
+  "scopes": "アクセス権",
+  "scopesRequired": "アクセス権を 1 つ以上選択してください。",
+  "scope": {
+    "read": "メールの読み取り",
+    "write": "メールのフラグの変更",
+    "send": "メールの送信"
+  },
+  "scopeDescription": {
+    "read": "メッセージの一覧表示、検索、ダウンロードと、アドレスの一覧表示。",
+    "write": "既読、スター付け、アーカイブ、ごみ箱への移動。",
+    "send": "自分のアドレスからメールを送信します (添付ファイルなし)。"
+  },
+  "expiry": "有効期限",
+  "expiryOption": {
+    "30": "30 日後",
+    "90": "90 日後",
+    "365": "365 日後",
+    "never": "無期限"
+  },
+  "created": "作成日時",
+  "expires": "有効期限",
+  "expired": "期限切れ",
+  "neverExpires": "無期限",
+  "lastUsed": "最終使用",
+  "neverUsed": "未使用",
+  "createdTitle": "API キーをコピー",
+  "createdNotice": "今すぐキーをコピーし、使用するプログラムと一緒に保管してください。紛失した場合は、キーを取り消して新しいキーを作成してください。",
+  "copiedConfirm": "キーをコピーしました",
+  "done": "完了",
+  "revoke": "取り消し",
+  "revokeFor": "{{label}} を取り消し",
+  "revokeTitle": "キー {{label}} を取り消しますか?",
+  "revokeDescription": "このキーを使うプログラムはすぐに動作しなくなります。この操作は元に戻せません。",
+  "revoked": "キーを取り消しました",
+  "cancel": "キャンセル"
+}

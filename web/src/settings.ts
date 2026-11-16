@@ -34,6 +34,7 @@ export type ForwardTarget = {
   email: string;
   note: string;
   addressCount: number;
+  ruleCount: number;
   createdAt: number;
 };
 

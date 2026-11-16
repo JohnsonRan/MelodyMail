@@ -7,7 +7,7 @@ import { SLICE_BYTES } from "../src/mail/parse";
 import { searchFilter } from "../src/mail/search";
 import { fixture } from "./fixtures";
 import { attachmentFirst, craftedMessages, deeplyNested, largeMessage } from "./fixtures/generated";
-import { addAddress, asMessage, inbound, messageRows } from "./mail-helpers";
+import { addAddress, addRule, asMessage, inbound, messageRows } from "./mail-helpers";
 
 /** A stored message as email() leaves it, without a queue job. */
 async function storeRow(id: string, raw: string | Uint8Array | null) {
@@ -312,5 +312,49 @@ describe("search filter", () => {
 
   it("returns no filter for blank input", () => {
     expect(searchFilter("   ")).toBeNull();
+  });
+});
+
+describe("Hub event after the parse", () => {
+  /** env whose Hub records the events instead of delivering them. */
+  function recordingHub(events: unknown[]): Env {
+    return {
+      ...env,
+      HUB: { getByName: () => ({ notify: async (e: unknown) => events.push(e) }) },
+    } as unknown as Env;
+  }
+
+  it("sends changed for mail a rule read, archived or trashed, message otherwise", async () => {
+    const flags = { read: "r", archived: "a", trashed: "t", starred: "s", none: "n" };
+    for (const [column, id] of Object.entries(flags)) {
+      await storeRow(id, fixture("plain"));
+      if (column !== "none") {
+        await env.DB.prepare(`UPDATE messages SET ${column} = 1 WHERE id = ?`).bind(id).run();
+      }
+    }
+    const events: unknown[] = [];
+    await handleQueue(batch(...Object.values(flags)).batch, recordingHub(events));
+    expect(events).toEqual([
+      { type: "changed", id: "r" },
+      { type: "changed", id: "a" },
+      { type: "changed", id: "t" },
+      { type: "message", id: "s" },
+      { type: "message", id: "n" },
+    ]);
+  });
+
+  it("sends changed for a message a rule moved to Trash in email()", async () => {
+    await addAddress("shop");
+    await addRule({
+      conditions: [{ field: "subject", op: "equals", value: "hello" }],
+      trash: true,
+    });
+    const events: unknown[] = [];
+    const hub = recordingHub(events);
+    vi.spyOn(env.INBOUND, "send").mockResolvedValue(undefined as never);
+    await handleEmail(asMessage(inbound("shop@example.com", undefined, { Subject: "Hello" })), hub);
+    const [stored] = await messageRows();
+    await handleQueue(batch(stored?.id ?? "").batch, hub);
+    expect(events).toEqual([{ type: "changed", id: stored?.id }]);
   });
 });

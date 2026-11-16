@@ -71,7 +71,12 @@ migration reruns safely and applies on a database with rows. Schema in
 - `api_keys`: see "API keys".
 
 Limits, enforced on write: at most 50 rules; 1 to 10 conditions per rule; at least one action per
-rule; at most 5 forward targets per rule; a condition value of 1 to 256 characters.
+rule; at most 5 forward targets per rule; a condition value of 1 to 256 characters; at most 20
+distinct header names (case-insensitive) in `header` conditions over all enabled rules, checked
+when a rule is created, replaced or enabled (409 `too_many_header_names`). The header-name cap
+bounds the work of `email()`, which reads and normalizes each named header once per message: 50
+rules of 10 conditions over 500 names with 2,000-character values measured 9.3 to 10.9 ms p95
+(review of 2026-11-17).
 
 ### Conditions
 
@@ -84,7 +89,7 @@ A condition is `{ field, op, value }`, plus `name` for the `header` field.
 | `recipient` | The envelope recipient's address without the sub-address tag (`shop@example.com` for `shop+github@example.com`), as `parseRecipient` computes it. The editor offers the owner's addresses. |
 | `tag` | The sub-address tag (`github`); a message without a tag never matches, except `not_contains`. |
 | `subject` | The `Subject` header, RFC 2047 encoded words decoded. |
-| `header` | The value of the named header, for example `List-Id` or `X-GitHub-Reason`. The name is 1 to 64 header-name characters (RFC 5322 `ftext`). |
+| `header` | The value of the named header, for example `List-Id` or `X-GitHub-Reason`. The name is 1 to 64 HTTP token characters (RFC 9110, section 5.6.2): the names `Headers.get` accepts; RFC 5322 `ftext` allows more, and `Headers.get` throws on those. |
 
 Operators: `contains`, `not_contains`, `equals`, `starts_with`, `ends_with`. A field with several
 values (the addresses of `from` and `to`) matches when any value matches; `not_contains` matches
@@ -98,6 +103,17 @@ Matching rules:
   `message.headers` already unfolds is not documented; unfolding twice is harmless.
 - Each header value is cut to 2,000 characters before decoding, as `ADDRESS_LIST_MAX` in
   `worker/src/mail/parse.ts`. `Headers.get` joins repeated headers with `, `.
+- Of each of `From`, `To` and `Cc`, only the first 50 addresses are read (owner ruling
+  2026-11-17); an address after the 50th never matches. The raw value is cut before parsing, at
+  its 50th raw `,` or `;`, counting every one, inside quoted strings, comments, angle brackets and
+  domain literals too. postal-mime's tokenizer starts a new address only at one of these two
+  characters, so the cut can never come later than the tokenizer's 50th address, whatever its
+  quoting rules make of the rest; two attempts to mirror those rules missed cases (a group's
+  unclosed `<`, a domain literal inside `<>`). A display name or group holding `,` or `;` makes
+  the header keep fewer than 50 addresses (accepted): the entries before the cut match the full
+  parse, and the last one may be a fragment of the entry the cut splits (harmless: the sender
+  writes these headers and could put any address there directly). This bounds both the
+  parse and the comparisons per header. The first 50 parsed addresses are kept as a backstop.
 - `subject` and display names are decoded with postal-mime's `decodeWords`; addresses are split
   with its `addressParser`. postal-mime 4.2.1, already a Worker dependency, exports both
   (`worker/node_modules/postal-mime/README.md`, "addressParser()", "decodeWords()").
@@ -227,10 +243,16 @@ Benchmark `worker/bench/rules.ts` (`bun run bench:rules`), in the style of `benc
 - inputs: 50 enabled rules of 10 conditions that never match (every condition runs, no `stop`),
   mixing all fields and operators; headers with a 2,000-character subject of base64 and
   quoted-printable encoded words (UTF-8, GBK, ISO-2022-JP), a `To` of 100 addresses, a `header`
-  condition on a header repeated 50 times, a missing `From`; plus the same rules all matching;
+  condition on a header repeated 50 times, a missing `From`; 20 distinct header names (the cap),
+  each present with a 2,000-character value dense with white space; plus the same rules all
+  matching;
 - it includes loading: `JSON.parse` of 50 rule rows;
 - 3 runs of 200 per input on the dev workstation, load recorded;
-- limit: 1 ms p95 per input, a new `REQUIREMENTS.md` "Numbers" row; the script exits 1 over it.
+- limit: 1 ms p95 per input, a `REQUIREMENTS.md` "Numbers" row; the adversarial worst headers
+  (100-address `From`, `To` and `Cc`, or 2,000 characters of short addresses, of short addresses
+  behind `g:<;` or `<a@[(]>,`, or of groups, with the encoded subject and the repeated header), alone or with
+  the 20 capped header names, have their own 2 ms p95 budget (owner ruling 2026-11-17). The
+  script exits 1 when any input reaches its own budget.
 
 1 ms in Bun leaves room for the 3 ms bounded parse budget's assumption of a production CPU about
 3 times slower, within the 10 ms of an `email()` invocation that also does the address lookup, the
@@ -355,6 +377,9 @@ send flow in `worker/src/send/send.ts`).
 only in the sandboxed frame (M4), like any other mail. The owner's web app keeps using its own
 routes; `/api/v1/` has no frontend caller, so `REQUIREMENTS.md` "Exceptions" gains one row with
 the reason (CLI and automation, API key).
+
+Flag changes through `PATCH /api/v1/messages` and `PATCH /api/v1/messages/{id}` send one Hub
+`changed` event per request after a successful change, so open pages refresh (M6 phase B review).
 
 ### Errors and pagination
 
@@ -532,6 +557,20 @@ paint does not grow; side navigation entries beside Forwarding.
 3. A successful recovery deletes every API key. Expiry choices: 30, 90 (default), 365 days, or
    never.
 4. The sub-address on/off switch stays deferred; sub-addressing stays always on.
+
+## Owner rulings (2026-11-17)
+
+1. Rule evaluation reads at most the first 50 addresses of each of `From`, `To` and `Cc`; the
+   1 ms p95 budget stays. The benchmark's worst headers carry 100 addresses in each, and one input
+   combines them with the 20 capped header names and the 2,000-character encoded subject.
+2. The Rules browser suite joins the Telegram tier, renamed `test:settings`
+   (`.github/workflows/settings.yml`); its limit was to stay 10 s (raised to 13 s by ruling 5).
+3. The "Slowest test package" limit goes from 10.8 s to 13 s.
+
+4. The adversarial bench inputs (100-address From, To and Cc with the encoded subject and the
+   repeated header, alone or with the 20 capped header names) have a p95 budget of 2 ms; every
+   other input keeps 1 ms.
+5. `test:settings` has a 13 s limit.
 
 ## Open questions for the owner (asked 2026-11-16, answered above)
 

@@ -1,0 +1,51 @@
+{
+  "title": "API keys",
+  "create": "Create key",
+  "createTitle": "Create an API key",
+  "intro": "Scripts and other programs use an API key to read, flag and send mail through the REST API. A key never reaches settings, rules or sign-in.",
+  "openapi": "Download OpenAPI document",
+  "loadFailed": "This page could not be loaded. Reload the page to try again.",
+  "emptyTitle": "No API keys yet",
+  "emptyDescription": "Create a key for each program that should reach your mail, with only the access it needs.",
+  "actionsHeader": "Actions",
+  "label": "Name",
+  "labelDescription": "Say which program uses the key, for example Backup script.",
+  "labelRequired": "Enter a name.",
+  "labelTooLong": "Use at most {{max}} characters.",
+  "key": "Key",
+  "scopes": "Access",
+  "scopesRequired": "Choose at least one kind of access.",
+  "scope": {
+    "read": "Read mail",
+    "write": "Change mail flags",
+    "send": "Send mail"
+  },
+  "scopeDescription": {
+    "read": "List, search and download messages and list your addresses.",
+    "write": "Mark as read, star, archive and move to Trash.",
+    "send": "Send mail from your addresses, without attachments."
+  },
+  "expiry": "Expires",
+  "expiryOption": {
+    "30": "In 30 days",
+    "90": "In 90 days",
+    "365": "In 365 days",
+    "never": "Never"
+  },
+  "created": "Created",
+  "expires": "Expires",
+  "expired": "Expired",
+  "neverExpires": "Never",
+  "lastUsed": "Last used",
+  "neverUsed": "Never",
+  "createdTitle": "Copy your API key",
+  "createdNotice": "Copy the key now and store it with the program that uses it. If you lose it, revoke it and create a new one.",
+  "copiedConfirm": "I have copied the key",
+  "done": "Done",
+  "revoke": "Revoke",
+  "revokeFor": "Revoke {{label}}",
+  "revokeTitle": "Revoke the key {{label}}?",
+  "revokeDescription": "Programs that use this key stop working at once. This can't be undone.",
+  "revoked": "Key revoked",
+  "cancel": "Cancel"
+}

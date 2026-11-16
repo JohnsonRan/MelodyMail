@@ -11,18 +11,27 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 /**
- * Shows a recovery key the one time the server returns it. The owner must confirm saving it
- * before moving on.
+ * Shows a recovery key, or an API key, the one time the server returns it. The owner must
+ * confirm saving it before moving on.
  */
 export function RecoveryKeyPanel({
   recoveryKey,
   notice,
   continueLabel,
+  confirmLabel,
+  isApiKey = false,
   onContinue,
 }: {
   recoveryKey: string;
   notice: string;
   continueLabel: string;
+  /** Default: "I have saved my recovery key". */
+  confirmLabel?: string;
+  /**
+   * An API key has no groups to space out, so it is shown as it is copied and may break anywhere
+   * to fit a phone screen.
+   */
+  isApiKey?: boolean;
   onContinue: () => void;
 }) {
   const { t } = useTranslation();
@@ -35,7 +44,11 @@ export function RecoveryKeyPanel({
         {/* The key sits on its own row: beside it, the long key squeezed the button until its
             label was cut off. */}
         <VStack gap={3} hAlign="start">
-          <Code>{recoveryKey.replaceAll("-", " ")}</Code>
+          {isApiKey ? (
+            <Code style={{ overflowWrap: "anywhere" }}>{recoveryKey}</Code>
+          ) : (
+            <Code>{recoveryKey.replaceAll("-", " ")}</Code>
+          )}
           <Button
             label={isCopied ? t("recoveryKey.copied") : t("recoveryKey.copy")}
             variant="secondary"
@@ -45,7 +58,11 @@ export function RecoveryKeyPanel({
           />
         </VStack>
       </Card>
-      <CheckboxInput label={t("recoveryKey.confirm")} value={saved} onChange={setSaved} />
+      <CheckboxInput
+        label={confirmLabel ?? t("recoveryKey.confirm")}
+        value={saved}
+        onChange={setSaved}
+      />
       <Button
         label={continueLabel}
         variant="primary"
