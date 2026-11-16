@@ -9,6 +9,9 @@ on:
   pull_request:
     paths:
       - "web/src/compose/**"
+      - "web/src/locales/*/compose.json"
+      - "web/src/reader/MailFrame.tsx"
+      - "web/src/reader/sanitize.ts"
       - "web/src/reader/SentStatus.tsx"
       - "web/src/reader/sentCopy.ts"
       - "web/src/reader/ReaderToolbar.tsx"
@@ -16,6 +19,8 @@ on:
       - "web/test/compose.test.ts"
       - "web/test/markdown.test.ts"
       - "web/test/stub-send.ts"
+      - "web/vite.config.ts"
+      - "web/package.json"
       - ".github/workflows/send.yml"
   schedule:
     - cron: "57 3 * * *"
