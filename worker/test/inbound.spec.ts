@@ -105,8 +105,8 @@ describe("email() stores", () => {
     // What a restore needs to rebuild the row (docs/M7-ops.md, decision 7).
     expect(object?.customMetadata).toEqual({
       addressId: String(id),
-      envelopeFrom: "sender@example.org",
-      envelopeTo: "shop+news@example.com",
+      envelopeFrom: "sender%40example.org",
+      envelopeTo: "shop%2Bnews%40example.com",
       receivedAt: String(row?.received_at),
     });
     expect(row?.trashed_at).toBeNull();
@@ -114,17 +114,25 @@ describe("email() stores", () => {
     expect(address?.last_received_at).toBe(row?.received_at);
   });
 
-  it("cuts a long envelope address in the metadata and still stores the message", async () => {
+  it("writes envelope addresses as ASCII, cut at a whole character, and still stores the message", async () => {
     await addAddress("shop");
-    const message = inbound("shop@example.com");
-    message.from = `${"x".repeat(400)}@example.org`;
-    await handleEmail(asMessage(message), env);
-    const [row] = await messageRows();
-    expect(row?.envelope_from).toBe(message.from);
-    const head = await env.MAIL.head(row?.r2_key ?? "");
-    expect(head?.customMetadata?.envelopeFrom).toBe(message.from.slice(0, 256));
+    for (const from of ["ü@例え.jp", `${"例".repeat(200)}@example.org`]) {
+      const message = inbound("shop@example.com");
+      message.from = from;
+      await handleEmail(asMessage(message), env);
+    }
+    const rows = await messageRows();
+    expect(rows.map((r) => r.envelope_from)).toEqual([
+      "ü@例え.jp",
+      `${"例".repeat(200)}@example.org`,
+    ]);
+    const [short, long] = await Promise.all(rows.map((r) => env.MAIL.head(r.r2_key)));
+    const encoded = [short?.customMetadata?.envelopeFrom, long?.customMetadata?.envelopeFrom];
+    for (const value of encoded) expect(value).toMatch(/^[\x21-\x7e]{1,512}$/);
+    expect(decodeURIComponent(encoded[0] ?? "")).toBe("ü@例え.jp");
+    // 56 characters of 9 encoded bytes each fit in 512.
+    expect(decodeURIComponent(encoded[1] ?? "")).toBe("例".repeat(56));
   });
-
   it("matches a recipient in any case", async () => {
     const id = await addAddress("shop");
     await handleEmail(asMessage(inbound("SHOP@Example.COM")), env);

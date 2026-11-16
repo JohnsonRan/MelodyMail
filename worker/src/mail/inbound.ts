@@ -177,22 +177,42 @@ async function forwardInstead(
   }
 }
 
-/** Characters of an envelope address kept in the metadata; the field stays small however long. */
-const METADATA_VALUE_MAX = 256;
+/** Characters of an encoded envelope address kept in the metadata, however long the address. */
+const METADATA_VALUE_MAX = 512;
+
+/**
+ * An envelope address as ASCII (percent-encoded UTF-8), cut at a whole character. Whether R2
+ * accepts other characters in custom metadata is not documented; a refused put would bounce the
+ * message, so nothing else is written. The gap tool decodes it with decodeURIComponent.
+ */
+export function metadataValue(value: string): string {
+  let out = "";
+  for (const char of value) {
+    let piece: string;
+    try {
+      piece = encodeURIComponent(char);
+    } catch {
+      piece = "%EF%BF%BD"; // a lone surrogate becomes U+FFFD
+    }
+    if (out.length + piece.length > METADATA_VALUE_MAX) break;
+    out += piece;
+  }
+  return out;
+}
 
 /**
  * Custom metadata on the raw object (docs/M7-ops.md, decision 7): after a restore, the owner's
- * gap tool rebuilds the row of mail that arrived after the restore point from these four fields.
+ * gap tool (worker/scripts/backup-gap.ts) rebuilds the row of mail that arrived after the restore
+ * point from these four fields.
  */
 export function rawMetadata(addressId: number, from: string, to: string, receivedAt: number) {
   return {
     addressId: String(addressId),
-    envelopeFrom: from.slice(0, METADATA_VALUE_MAX),
-    envelopeTo: to.slice(0, METADATA_VALUE_MAX),
+    envelopeFrom: metadataValue(from),
+    envelopeTo: metadataValue(to),
     receivedAt: String(receivedAt),
   };
 }
-
 function rawKey(id: string, now: number): string {
   const d = new Date(now);
   const month = String(d.getUTCMonth() + 1).padStart(2, "0");
