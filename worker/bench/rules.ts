@@ -5,7 +5,9 @@
  * performance.now() during computation, so the budget is measured here with the same code under
  * Bun. Inputs: 50 enabled rules of 10 conditions that never match (every condition runs, no
  * stop), mixing every field and operator, against the worst headers below and against plain
- * headers; and the same rules made to match. Exits 1 when the p95 of any input reaches 1 ms.
+ * headers, and against 20 distinct header names (the HEADER_NAMES_MAX cap), each holding 2,000
+ * characters dense with white space; and the same rules made to match. Exits 1 when the p95 of
+ * any input reaches 1 ms.
  *
  * Usage: bun bench/rules.ts [iterations]
  */
@@ -106,6 +108,31 @@ function ruleRows(hit: boolean): RuleRow[] {
   });
 }
 
+/** The header-name cap (HEADER_NAMES_MAX, 20): each name present with 2,000 characters of words
+ * and white space, so each value costs its full normalization once. */
+const CAP_NAMES = Array.from({ length: 20 }, (_, i) => `x-cap-${i}`);
+
+function cappedHeaders(): MailSource["headers"] {
+  const h = new Headers();
+  const value = "ab 	 ".repeat(400).slice(0, 2000);
+  for (const name of CAP_NAMES) h.set(name, value);
+  return h;
+}
+
+/** 50 rules of 10 header conditions spread over the 20 capped names. */
+function cappedRows(hit: boolean): RuleRow[] {
+  return ruleRows(hit).map((row, r) => ({
+    ...row,
+    conditions: JSON.stringify(
+      (JSON.parse(row.conditions) as Condition[]).map((c, i) => ({
+        ...c,
+        field: "header",
+        name: CAP_NAMES[(r * 10 + i) % CAP_NAMES.length],
+      })),
+    ),
+  }));
+}
+
 const source = (headers: MailSource["headers"]): MailSource => ({
   envelopeFrom: "bounce+123@mailer.example.org",
   headers,
@@ -118,6 +145,8 @@ const inputs: [string, MailSource, RuleRow[]][] = [
   ["50 x 10 conditions, plain headers, no match", source(plainHeaders()), ruleRows(false)],
   ["50 x 10 conditions, worst headers, all match", source(worstHeaders()), ruleRows(true)],
   ["50 x 10 conditions, plain headers, all match", source(plainHeaders()), ruleRows(true)],
+  ["50 x 10 conditions, 20 header names, no match", source(cappedHeaders()), cappedRows(false)],
+  ["50 x 10 conditions, 20 header names, all match", source(cappedHeaders()), cappedRows(true)],
 ];
 
 let over = false;

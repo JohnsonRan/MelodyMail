@@ -14,7 +14,7 @@ import {
   type Rule,
   ruleMatches,
 } from "./evaluate";
-import { parseRule, RULES_MAX, type RuleInput } from "./validate";
+import { HEADER_NAMES_MAX, parseRule, RULES_MAX, type RuleInput } from "./validate";
 
 // Settings > Rules (docs/M6-rules-api.md, "Routes added or changed"). Session routes only: no API
 // key reaches them. Audit rows name rule ids, never condition values. Changing a rule changes no
@@ -71,6 +71,23 @@ function columns(r: RuleInput) {
 }
 
 /** The header block of a raw message (up to its first empty line), as Headers.get reads it. */
+/**
+ * True when saving `rule` enabled would make the enabled rules name more than HEADER_NAMES_MAX
+ * distinct headers. `id` is the rule being replaced, whose stored conditions do not count.
+ */
+async function tooManyHeaderNames(db: D1Database, rule: RuleInput, id: number): Promise<boolean> {
+  const names = (conditions: { field: string; name?: string }[]) =>
+    conditions.flatMap((c) => (c.field === "header" && c.name ? [c.name.toLowerCase()] : []));
+  const all = new Set(names(rule.conditions));
+  if (!rule.enabled || all.size === 0) return false;
+  const { results } = await db
+    .prepare("SELECT conditions FROM rules WHERE enabled = 1 AND id != ?")
+    .bind(id)
+    .all<{ conditions: string }>();
+  for (const r of results) for (const n of names(JSON.parse(r.conditions))) all.add(n);
+  return all.size > HEADER_NAMES_MAX;
+}
+
 export function headersFromRaw(bytes: Uint8Array): MailSource["headers"] {
   const text = new TextDecoder().decode(bytes);
   const end = text.search(/\r?\n\r?\n/);
@@ -102,6 +119,7 @@ export function registerRuleRoutes(rules: Hono<AppEnv>): void {
     if (!rule.ok) return fail(c, 400, rule.error);
     const db = c.env.DB;
     if (await unknownTargets(db, rule.value.targetIds)) return fail(c, 400, "unknown_target");
+    if (await tooManyHeaderNames(db, rule.value, 0)) return fail(c, 409, "too_many_header_names");
     const now = Date.now();
     // The count check and the insert are one statement, so two requests cannot pass 50. The
     // links use the new row's id only when that insert happened (changes() is its row count).
@@ -221,6 +239,7 @@ export function registerRuleRoutes(rules: Hono<AppEnv>): void {
     if (!rule.ok) return fail(c, 400, rule.error);
     const db = c.env.DB;
     if (await unknownTargets(db, rule.value.targetIds)) return fail(c, 400, "unknown_target");
+    if (await tooManyHeaderNames(db, rule.value, id)) return fail(c, 409, "too_many_header_names");
     const now = Date.now();
     const [updated] = await db.batch([
       db

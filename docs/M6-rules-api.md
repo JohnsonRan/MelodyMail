@@ -71,7 +71,12 @@ migration reruns safely and applies on a database with rows. Schema in
 - `api_keys`: see "API keys".
 
 Limits, enforced on write: at most 50 rules; 1 to 10 conditions per rule; at least one action per
-rule; at most 5 forward targets per rule; a condition value of 1 to 256 characters.
+rule; at most 5 forward targets per rule; a condition value of 1 to 256 characters; at most 20
+distinct header names (case-insensitive) in `header` conditions over all enabled rules, checked
+when a rule is created, replaced or enabled (409 `too_many_header_names`). The header-name cap
+bounds the work of `email()`, which reads and normalizes each named header once per message: 50
+rules of 10 conditions over 500 names with 2,000-character values measured 9.3 to 10.9 ms p95
+(review of 2026-11-17).
 
 ### Conditions
 
@@ -84,7 +89,7 @@ A condition is `{ field, op, value }`, plus `name` for the `header` field.
 | `recipient` | The envelope recipient's address without the sub-address tag (`shop@example.com` for `shop+github@example.com`), as `parseRecipient` computes it. The editor offers the owner's addresses. |
 | `tag` | The sub-address tag (`github`); a message without a tag never matches, except `not_contains`. |
 | `subject` | The `Subject` header, RFC 2047 encoded words decoded. |
-| `header` | The value of the named header, for example `List-Id` or `X-GitHub-Reason`. The name is 1 to 64 header-name characters (RFC 5322 `ftext`). |
+| `header` | The value of the named header, for example `List-Id` or `X-GitHub-Reason`. The name is 1 to 64 HTTP token characters (RFC 9110, section 5.6.2): the names `Headers.get` accepts; RFC 5322 `ftext` allows more, and `Headers.get` throws on those. |
 
 Operators: `contains`, `not_contains`, `equals`, `starts_with`, `ends_with`. A field with several
 values (the addresses of `from` and `to`) matches when any value matches; `not_contains` matches
@@ -227,7 +232,9 @@ Benchmark `worker/bench/rules.ts` (`bun run bench:rules`), in the style of `benc
 - inputs: 50 enabled rules of 10 conditions that never match (every condition runs, no `stop`),
   mixing all fields and operators; headers with a 2,000-character subject of base64 and
   quoted-printable encoded words (UTF-8, GBK, ISO-2022-JP), a `To` of 100 addresses, a `header`
-  condition on a header repeated 50 times, a missing `From`; plus the same rules all matching;
+  condition on a header repeated 50 times, a missing `From`; 20 distinct header names (the cap),
+  each present with a 2,000-character value dense with white space; plus the same rules all
+  matching;
 - it includes loading: `JSON.parse` of 50 rule rows;
 - 3 runs of 200 per input on the dev workstation, load recorded;
 - limit: 1 ms p95 per input, a new `REQUIREMENTS.md` "Numbers" row; the script exits 1 over it.

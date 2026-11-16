@@ -337,6 +337,29 @@ describe("rule routes", () => {
     expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM rules").first("n")).toBe(50);
   });
 
+  it("allows at most 20 distinct header names over the enabled rules", async () => {
+    const client = await owner();
+    const named = (names: string[], extra: Json = {}) => ({
+      ...BODY,
+      ...extra,
+      match: "any",
+      conditions: names.map((name) => ({ field: "header", name, op: "contains", value: "x" })),
+    });
+    const names = Array.from({ length: 20 }, (_, i) => `X-H${i}`);
+    await client.json("POST", "/api/rules", named(names.slice(0, 10)), 201);
+    await client.json("POST", "/api/rules", named(names.slice(10)), 201);
+    // Names count once in any case.
+    await client.json("POST", "/api/rules", named(["x-h5"]), 201);
+    const over = { error: "too_many_header_names" };
+    expect(await client.json("POST", "/api/rules", named(["X-New"]), 409)).toEqual(over);
+    const off = (await client.json("POST", "/api/rules", named(["X-New"], { enabled: false }), 201))
+      .rule as Json;
+    expect(await client.json("PUT", `/api/rules/${off.id}`, named(["X-New"]), 409)).toEqual(over);
+    // Replacing a rule does not count its own stored names.
+    const first = ((await client.json("GET", "/api/rules")).rules as Json[])[0];
+    await client.json("PUT", `/api/rules/${first?.id}`, named(["X-New", ...names.slice(1, 10)]));
+  });
+
   it("reorders only with every rule id exactly once", async () => {
     const client = await owner();
     const ids: number[] = [];

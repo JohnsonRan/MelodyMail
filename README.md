@@ -139,6 +139,7 @@ bun run --cwd worker db:migrate:remote
 ```
 
 Settings > Rules holds up to 50 rules. Each rule has 1 to 10 conditions and at least one action.
+The enabled rules can name at most 20 different headers in their header conditions.
 
 - **Conditions** read the envelope and the headers, never the body: From (each address and its
   display name; the envelope sender when there is no `From` header), To or Cc, the recipient
