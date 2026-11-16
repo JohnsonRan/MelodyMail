@@ -3802,6 +3802,8 @@ file and process handling (their pure parts are tested), `scripts/release.ts`.
 
 ### Open questions for the owner
 
+All four were answered by the owner rulings of 2026-11-17 in the review section below.
+
 1. **Approve the proposed numbers**: export page 1 ms p95 (256 KB) and 2 ms p95 (one oversized
    row), 1 MiB or one oversized row and 30 calls per run, 96 MiB a day. Recommended: approve; revisit
    with production `cpuTime` (checklist item 8).
@@ -3852,3 +3854,72 @@ file and process handling (their pure parts are tested), `scripts/release.ts`.
 - REQUIREMENTS: the README check row under "Enforcement" ("AGENTS.md: Documentation") is phase B.
 - `docs/M3-inbound.md` still promises the orphan sweep and Trash clean-up for M7 (design open
   question 3); the comments in code were fixed.
+
+### Review of `f49cbcb` ("FIX FIRST") and owner rulings (2026-11-17)
+
+Owner rulings:
+
+1. The export budgets are approved: pages and the manifest 1 ms p95, the oversized-row page 2 ms
+   p95, 1 MiB or one oversized row and 30 calls per run; revisit with production `cpuTime`.
+   Recorded in `REQUIREMENTS.md`, "Numbers".
+2. Build the gap tool before release (owner-run, local first, a dry run and a report, tested on
+   local state). Done, below.
+3. Replacing a stuck export after 48 hours is accepted.
+4. The cron does not notify open pages after deleting Trash mail.
+
+Fixes (each gate green before its commit):
+
+- Commits `7bc8970` (High), `01c2520` (Medium), `9366865` (Low), `e2ab9f3` (metadata),
+  `c3ed905` (gap tool):
+  - High: `splitQuery` read the oversized row with `SELECT *`, which leaves out an FTS5 rowid; an
+    FTS row over 90,000 bytes (a sent message keeps its whole body as search text) failed with
+    `no such column: one.rowid` and stopped every export. Now `SELECT rowid AS "rowid", *`. The
+    round trip seeds a 50,000-character FTS body; without the fix it fails with that error.
+  - Medium: pruning ran only after a completed export, so failed exports piled up while exports
+    kept failing. Marking a stuck export failed now runs a pruning pass in the same run; the next
+    run starts the new export. The timeout test checks the parts are gone; it fails without the
+    pass, and also when the new export starts in the same run.
+  - Low: `deploy` and `db:migrate:remote` in `worker/package.json` now print a refusal naming
+    `deploy:prod` / `migrate:prod` and exit 1 without running wrangler (`bun run deploy` at the
+    root forwards and refuses). Checked by running all three: exit 1.
+  - Hypothesis (a), settled by removing the risk: envelope addresses in the R2 metadata are
+    percent-encoded ASCII, cut at a whole character to at most 512 characters. Test with
+    `ü@例え.jp` and 200 CJK characters (56 kept); both fail without the change. Bench: 0.002–0.005
+    ms p95.
+  - Gap tool (`worker/scripts/backup-gap.ts`, `worker/scripts/gap-worker.ts`,
+    `worker/src/backup/gap.ts`, `bun run --cwd worker backup-gap`): see the commit message for the
+    design. Proof: `test/gap.spec.ts` (a lost row with the sender `o'brien.ü@例え.jp` and a tag
+    rebuilt, an object without metadata skipped, a present row skipped, the SQL applied twice
+    stores one row, the real consumer parses it); ablation of 8 hunks all red (one after adding the
+    apostrophe to the test address). Local drill (`m7a/gapdrill.ts`): 3 late messages into the
+    source after export `2026-11-16T1859Z`, a restored copy (restored D1 plus the source's R2)
+    had 15 rows; the dry run reported 18 listed, 15 present, 3 to store, in 1.4 s; the SQL
+    applied with `wrangler d1 execute --local --file`; a second dry run reported 0. All local,
+    metrics and the cf fetch off, temp files in the scratchpad.
+- Hypothesis (b), measured, no change: `bun:sqlite` (SQLite in Bun, not D1) with 200
+  `messages_fts` rows of 400,008 characters each (trigram index): the page query took 345–369 ms
+  and the process peaked at 45 MB (27 MB before the query), the same with `temp_store = memory`;
+  3 runs, CPU load 2%. The window does not hold the 200 statements at once. Each such page reads up
+  to 500 rows (D1 rows read) and builds their text in D1, which counts against D1, not the Worker.
+  Not measured on D1 itself.
+
+Not ablated: `pruneExports` skipping `pruned_at` when called without a completed export (an
+UPDATE of `id = NULL` changes nothing either way).
+
+Not verified (added): the gap tool with `--remote` (remote bindings need `wrangler login`); the
+gap Worker's listing on a bucket with more than 1,000 objects a month (it follows the cursor);
+`decodeURIComponent` of metadata written by anything other than `email()`.
+
+### Notes for phase B (added by the review)
+
+- README: the deploy and update steps still name `bun run deploy` and `db:migrate:remote`, which
+  now refuse; use `migrate:prod` and `deploy:prod`.
+- RUNBOOK, rollback: a rollback across M7 runs code that does not maintain `trashed_at`. A message
+  untrashed and trashed again by that code keeps its old time and can be deleted early after the
+  roll-forward. After rolling forward, restart every Trash clock:
+  `UPDATE messages SET trashed_at = <now ms> WHERE trashed = 1` (with `wrangler d1 execute`).
+- RUNBOOK, gap tool: `bun run --cwd worker backup-gap <exportId|ISO time|ms> <out.sql> --local
+  [--persist-to <p>] | --remote --config .wrangler-production.jsonc [--dry-run]`, then
+  `wrangler d1 execute melodymail --file <out.sql> ...`; the cron re-enqueues the rows after 15
+  minutes. An export id is read to the minute, so objects stored in the export's first minute are
+  listed too and skipped when they have a row. Objects stored before M7 are reported, not rebuilt.
