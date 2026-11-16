@@ -169,9 +169,10 @@ run `bun run --cwd web icons` and commit the PNG files.
 
 ## Notifications
 
-MelodyMail sends a Web Push notification for new mail while no MelodyMail page is open. The
-notification shows the sender and the subject, never the message text. Push stays off until the
-Worker has a VAPID key pair and subject; Settings > Notifications then says push is not set up.
+MelodyMail sends a Web Push notification for new mail to each device that has no MelodyMail page
+open; an open page that is hidden shows the notification itself. The notification shows the
+sender and the subject, never the message text. Push stays off until the Worker has a VAPID key
+pair and subject; Settings > Notifications then says push is not set up.
 
 Apply migration 0008 after deploying this version (`bun run --cwd worker db:migrate:remote`).
 Then generate a key pair and store it from `worker/`:
@@ -194,4 +195,5 @@ Settings > Notifications on each device:
 bun run wrangler d1 execute melodymail --remote --command "DELETE FROM push_subscriptions"
 ```
 
-Signing a device out, or revoking its session, also ends its notifications.
+Signing a device out, or revoking its session, also ends its notifications until that device
+signs in again.

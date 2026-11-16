@@ -2,7 +2,7 @@ import { env, exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SESSION_IDLE_MS } from "../src/auth/session";
 import { handleQueue } from "../src/mail/consumer";
-import { type Client, ORIGIN, setupOwner } from "./helpers";
+import { type Client, login, ORIGIN, setupOwner } from "./helpers";
 import { messageRows } from "./mail-helpers";
 import {
   browserSubscription,
@@ -88,7 +88,7 @@ describe("push for new mail", () => {
     expect(second).toMatchObject({ from: "carol@example.org", subject: "長".repeat(200) });
   });
 
-  it("sends nothing when a page is open", async () => {
+  it("sends nothing to a session that has a page open", async () => {
     const { client } = await setupOwner();
     await subscribe(client);
     await connect(client);
@@ -96,6 +96,33 @@ describe("push for new mail", () => {
     await storeRow("p4", "Subject: Seen live");
     await parse("p4");
     expect(sent).toEqual([]);
+  });
+
+  it("pushes to a device whose session has no page open while another session has one", async () => {
+    const { client: phone, authenticator } = await setupOwner();
+    const sub = await subscribe(phone);
+    const laptop = (await login(authenticator)).client;
+    await connect(laptop);
+    const sent = stubPushService(201);
+    await storeRow("p12", "Subject: Phone in pocket");
+    await parse("p12");
+    expect(sent.map((s) => s.url)).toEqual([sub.json.endpoint]);
+  });
+
+  it("still pushes when the open page belongs to a session that expired on its own", async () => {
+    const { client: phone, authenticator } = await setupOwner();
+    const sub = await subscribe(phone);
+    const laptop = (await login(authenticator)).client;
+    await connect(laptop);
+    await env.DB.prepare(
+      "UPDATE sessions SET expires_at = ? WHERE id NOT IN (SELECT session_id FROM push_subscriptions)",
+    )
+      .bind(Date.now() - 1)
+      .run();
+    const sent = stubPushService(201);
+    await storeRow("p13", "Subject: Stale tab");
+    await parse("p13");
+    expect(sent.map((s) => s.url)).toEqual([sub.json.endpoint]);
   });
 
   it("sends nothing to an expired or idle session that was not swept yet", async () => {

@@ -82,10 +82,16 @@ export async function sendTo(
 }
 
 /**
- * Tells every live session's device about a new message. Runs only when no mailbox page is
- * open; a failure is logged per subscription and never thrown.
+ * Tells the device of every live session about a new message, except the sessions in
+ * `skipSessions`, which have a mailbox page open. A failure is logged per subscription and never
+ * thrown.
  */
-export async function pushNewMail(env: Env, messageId: string, now = Date.now()): Promise<void> {
+export async function pushNewMail(
+  env: Env,
+  messageId: string,
+  skipSessions: string[] = [],
+  now = Date.now(),
+): Promise<void> {
   const vapid = vapidConfig(env);
   if (!vapid) return;
   const [mail, subs] = await env.DB.batch([
@@ -97,8 +103,9 @@ export async function pushNewMail(env: Env, messageId: string, now = Date.now())
       `SELECT p.id, p.endpoint, p.p256dh, p.auth FROM push_subscriptions p
        JOIN sessions s ON s.id = p.session_id
        WHERE s.expires_at > ? AND s.last_seen_at > ?
+         AND p.session_id NOT IN (SELECT value FROM json_each(?))
        ORDER BY p.created_at DESC LIMIT ?`,
-    ).bind(now, now - SESSION_IDLE_MS, MAX_SUBSCRIPTIONS),
+    ).bind(now, now - SESSION_IDLE_MS, JSON.stringify(skipSessions), MAX_SUBSCRIPTIONS),
   ]);
   const row = mail?.results[0] as
     | { subject: string | null; fromHdr: string | null; envelopeFrom: string; envelopeTo: string }
