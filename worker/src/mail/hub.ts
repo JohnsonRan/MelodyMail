@@ -16,7 +16,9 @@ const SESSION_HEADER = "x-melodymail-session";
 /** Close code a page reads as "signed out": it goes to sign-in instead of reconnecting. */
 export const SESSION_ENDED = 4001;
 
-export type HubEvent = { type: "message"; id: string };
+/** "message": new inbound mail (pushed to devices without a page). "changed": a sent message or
+ * its delivery status changed; pages refetch, nothing is pushed. */
+export type HubEvent = { type: "message" | "changed"; id: string };
 
 export class Hub extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -53,6 +55,7 @@ export class Hub extends DurableObject<Env> {
         // A socket closing right now; its page reconnects and refetches.
       }
     }
+    if (event.type !== "message") return sent;
     try {
       await pushNewMail(this.env, event.id, [...reached]);
     } catch (err) {

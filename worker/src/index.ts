@@ -12,6 +12,11 @@ import { handleEmail } from "./mail/inbound";
 import { registerMailboxRoutes, registerMessageRoutes } from "./mail/routes";
 import { registerPushRoutes } from "./push/routes";
 import { publicRoute, requireAuthorization, requireSameOrigin } from "./routing";
+import { registerDraftRoutes } from "./send/drafts";
+import { registerSendInfoRoutes } from "./send/info";
+import { registerSendRoute } from "./send/send";
+import { registerUploadBlobRoute, registerUploadRoutes } from "./send/uploads";
+import { registerWebhookRoute } from "./send/webhook";
 
 export { Hub } from "./mail/hub";
 export type { Env };
@@ -40,6 +45,15 @@ registerEventRoutes(app);
 
 // Web Push for new mail: none of these is public.
 registerPushRoutes(app.basePath("/push"));
+
+// Sending (docs/M5-sending.md). Public: the signed attachment URL Resend fetches and the Resend
+// webhook; each checks its own signature.
+registerSendRoute(app.basePath("/messages"));
+registerSendInfoRoutes(app.basePath("/send"));
+registerDraftRoutes(app.basePath("/drafts"));
+registerUploadRoutes(app.basePath("/uploads"));
+registerUploadBlobRoute(app);
+registerWebhookRoute(app);
 
 app.notFound((c) => fail(c, 404, "not_found"));
 app.onError((err, c) => {

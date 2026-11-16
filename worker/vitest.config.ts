@@ -18,6 +18,10 @@ export default defineConfig({
           VAPID_PUBLIC_KEY: vapid.publicKey,
           VAPID_PRIVATE_KEY: vapid.privateKey,
           VAPID_SUBJECT: "https://mail.test",
+          // Requests to Resend are stubbed in every test; these values reach no real account.
+          RESEND_API_KEY: "re_test_not_a_real_key",
+          RESEND_WEBHOOK_SECRET: `whsec_${btoa(crypto.randomUUID())}`,
+          UPLOAD_URL_KEY: crypto.randomUUID(),
         },
       },
     }),
@@ -32,7 +36,12 @@ export default defineConfig({
       optimizer: {
         ssr: {
           enabled: true,
-          include: ["@simplewebauthn/server", "@simplewebauthn/server/helpers"],
+          include: [
+            "@simplewebauthn/server",
+            "@simplewebauthn/server/helpers",
+            "resend",
+            "standardwebhooks",
+          ],
         },
       },
     },

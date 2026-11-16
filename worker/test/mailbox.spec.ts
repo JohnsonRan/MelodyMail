@@ -80,6 +80,9 @@ describe("message lists", () => {
         hasAttachments: false,
         status: "parse_failed",
         threadKey: null,
+        direction: "in",
+        to: "shop@example.com",
+        error: null,
       },
       expect.objectContaining({
         id: "old",
@@ -141,7 +144,7 @@ describe("message lists", () => {
   it("refuses a bad folder, cursor, limit or address", async () => {
     const { client } = await setupOwner();
     for (const query of [
-      "folder=sent",
+      "folder=drafts",
       "folder=__proto__",
       "cursor=nope",
       "cursor=1:a;b",

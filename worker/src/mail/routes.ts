@@ -15,7 +15,8 @@ const QUERY_MAX = 200;
 const ID_MAX = 64;
 
 const FOLDERS = {
-  inbox: "trashed = 0 AND archived = 0",
+  inbox: "direction = 'in' AND trashed = 0 AND archived = 0",
+  sent: "direction = 'out' AND trashed = 0",
   starred: "starred = 1 AND trashed = 0",
   archive: "archived = 1 AND trashed = 0",
   trash: "trashed = 1",
@@ -24,9 +25,11 @@ const FOLDERS = {
 const LIST_COLUMNS = `id, address_id AS addressId, subaddress_tag AS tag,
   COALESCE(from_hdr, envelope_from) AS "from", subject, snippet, received_at AS receivedAt,
   date_hdr AS date, raw_size AS size, read, starred, archived, trashed,
-  has_attachments AS hasAttachments, status, thread_key AS threadKey`;
+  has_attachments AS hasAttachments, status, thread_key AS threadKey, direction,
+  to_hdr AS "to", error`;
 
-const DETAIL_COLUMNS = `${LIST_COLUMNS}, to_hdr AS "to", cc_hdr AS cc,
+const DETAIL_COLUMNS = `${LIST_COLUMNS}, cc_hdr AS cc, bcc_hdr AS bcc,
+  idempotency_key AS idempotencyKey,
   envelope_from AS envelopeFrom, envelope_to AS envelopeTo, forward_failed AS forwardFailed`;
 
 type ListRow = {
@@ -277,7 +280,7 @@ export function registerMailboxRoutes(app: Hono<AppEnv>): void {
     const db = c.env.DB;
     const [folders, addresses] = await db.batch([
       db.prepare(
-        `SELECT COALESCE(SUM(trashed = 0 AND archived = 0), 0) AS inbox,
+        `SELECT COALESCE(SUM(direction = 'in' AND trashed = 0 AND archived = 0), 0) AS inbox,
            COALESCE(SUM(starred = 1 AND trashed = 0), 0) AS starred,
            COALESCE(SUM(archived = 1 AND trashed = 0), 0) AS archive,
            COALESCE(SUM(trashed = 1), 0) AS trash

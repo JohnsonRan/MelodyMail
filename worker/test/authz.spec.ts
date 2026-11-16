@@ -12,6 +12,10 @@ const PUBLIC = [
   "POST /api/auth/login/options",
   "POST /api/auth/login/verify",
   "POST /api/auth/recover",
+  // Resend fetches attachments here; HMAC-signed URL (docs/M5-sending.md).
+  "GET /api/uploads/:id/blob",
+  // Resend delivery events; Svix signature (docs/M5-sending.md).
+  "POST /api/webhooks/resend",
 ];
 
 // Every other route, listed so that a new route fails this file until someone decides.
@@ -53,6 +57,16 @@ const GUARDED = [
   "PUT /api/push/subscription",
   "DELETE /api/push/subscription",
   "POST /api/push/test",
+  "POST /api/messages/send",
+  "GET /api/send/from",
+  "GET /api/send/quota",
+  "GET /api/drafts",
+  "GET /api/drafts/:id",
+  "PUT /api/drafts/:id",
+  "DELETE /api/drafts/:id",
+  "PUT /api/uploads",
+  "GET /api/uploads/:id",
+  "DELETE /api/uploads/:id",
 ];
 
 describe("authorization", () => {

@@ -17,8 +17,14 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "melodymail", "migrations_dir": "migrations" }
   ],
-  // DNS-over-HTTPS JSON endpoint for the domain DNS check (Settings > Domains).
-  "vars": { "DOH_URL": "https://cloudflare-dns.com/dns-query" },
+  // DNS-over-HTTPS JSON endpoint for the domain DNS check (Settings > Domains). Resend: the API
+  // origin and the plan's quota, shown beside the counts Resend reports (docs/M5-sending.md).
+  "vars": {
+    "DOH_URL": "https://cloudflare-dns.com/dns-query",
+    "RESEND_API_URL": "https://api.resend.com",
+    "RESEND_DAILY_LIMIT": "100",
+    "RESEND_MONTHLY_LIMIT": "3000"
+  },
   // Raw inbound mail (raw/{yyyy}/{mm}/{id}.eml). wrangler deploy creates the bucket when it is
   // missing (automatic provisioning, wrangler 4.45 and later).
   "r2_buckets": [{ "binding": "MAIL", "bucket_name": "melodymail-mail" }],
@@ -35,8 +41,8 @@
   // Real-time push to open mailbox pages. Workers Free allows only SQLite-backed Durable Objects.
   "durable_objects": { "bindings": [{ "name": "HUB", "class_name": "Hub" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }],
-  // One trigger (Workers Free allows 5 per account): re-enqueue stuck messages. M7 adds the R2
-  // orphan sweep and trash clean-up here.
+  // One trigger (Workers Free allows 5 per account): re-enqueue stuck messages, remove stale
+  // uploads and old webhook events. M7 adds the R2 orphan sweep and trash clean-up here.
   "triggers": { "crons": ["*/15 * * * *"] },
   // Abuse guard only: counts are approximate and per location. The strict recovery lockout is
   // counted in D1 (login_attempts). namespace_id is chosen here, not issued by an account.
