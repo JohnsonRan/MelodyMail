@@ -9,7 +9,7 @@ import { errorMessage } from "../errors";
 import type { MessageDetail } from "../mailbox/api";
 import { SendStatusLabel } from "../mailbox/SendStatusLabel";
 
-/** The Worker's retry limits (worker/src/send/send.ts). */
+/** The Worker's retry limits (worker/src/send/retry.ts). */
 const SENDING_STALE_MS = 60_000;
 const RETRY_WINDOW_MS = 24 * 3600_000 - 5 * 60_000;
 

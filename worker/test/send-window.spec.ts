@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
-import { RETRY_WINDOW_MS } from "../src/send/send";
+import { RETRY_WINDOW_MS } from "../src/send/retry";
 import {
   type ResendCall,
   resendError,

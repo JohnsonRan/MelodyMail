@@ -1,6 +1,6 @@
 import { env, exports } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
-import { SENDING_STALE_MS } from "../src/send/send";
+import { SENDING_STALE_MS } from "../src/send/retry";
 import { ORIGIN } from "./helpers";
 import { fetchWith, seedMessage } from "./mailbox-helpers";
 import {

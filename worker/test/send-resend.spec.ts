@@ -1,7 +1,7 @@
 import { env, exports } from "cloudflare:workers";
 import { Webhook } from "standardwebhooks";
 import { describe, expect, it, vi } from "vitest";
-import { SENDING_STALE_MS } from "../src/send/send";
+import { SENDING_STALE_MS } from "../src/send/retry";
 import { WEBHOOK_BODY_MAX } from "../src/send/webhook";
 import {
   messageRow,
