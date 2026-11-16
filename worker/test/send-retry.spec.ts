@@ -33,6 +33,8 @@ describe("retrying a send", () => {
     const body = sendBody(from, { uploadIds: [fileId] });
     const before = Math.floor(Date.now() / 1000);
     expect((await send(client, body)).status).toBe(502);
+    // The failed message keeps its attachment for the retry: it cannot be deleted meanwhile.
+    expect((await client.request("DELETE", `/api/uploads/${fileId}`)).status).toBe(409);
 
     // The retry runs ten minutes later; the signed URLs must not change with it.
     const later = Date.now() + 10 * 60_000;
@@ -104,16 +106,16 @@ describe("drafts after a failed send", () => {
 
     const saved = await client.request("PUT", "/api/drafts/draft-k1", draft(body.idempotencyKey));
     expect(saved.status).toBe(200);
+    // Not a final rejection: the session must keep its key, so a retry cannot send twice.
+    const moved = await client.request("PUT", "/api/drafts/draft-k1", draft(crypto.randomUUID()));
+    expect(moved.status).toBe(409);
+    expect(await moved.json()).toEqual({ error: "draft_conflict" });
     // While a retry is still sending, autosave keeps working too.
     await env.DB.prepare("UPDATE messages SET status = 'sending' WHERE idempotency_key = ?")
       .bind(body.idempotencyKey)
       .run();
     const during = await client.request("PUT", "/api/drafts/draft-k1", draft(body.idempotencyKey));
     expect(during.status).toBe(200);
-    // Not a final rejection: the session must keep its key, so a retry cannot send twice.
-    const moved = await client.request("PUT", "/api/drafts/draft-k1", draft(crypto.randomUUID()));
-    expect(moved.status).toBe(409);
-    expect(await moved.json()).toEqual({ error: "draft_conflict" });
   });
 
   it("sends the corrected message under a new key after a final rejection", async () => {
@@ -123,6 +125,7 @@ describe("drafts after a failed send", () => {
     const fileId = ((await res.json()) as { upload: { id: string } }).upload.id;
     const calls = stubResend((n) => (n === 0 ? resendError(422, "validation_error") : resendOk()));
     const rejected = sendBody(from, { uploadIds: [fileId] });
+    await client.json("PUT", "/api/drafts/draft-r1", draft(rejected.idempotencyKey));
     expect((await send(client, rejected)).status).toBe(422);
 
     // The compose session takes a new key; autosave moves the draft to it.
