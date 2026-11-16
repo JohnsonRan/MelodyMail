@@ -92,6 +92,21 @@ describe("binding a chat", () => {
     expect((await telegramRow())?.chatId).toBe(CHAT);
   });
 
+  it("binds one chat when two chats use the same code at once", async () => {
+    await seedTelegram({ chatId: null, code: "code-1" });
+    const replies = await Promise.all(
+      [CHAT, 222].map(async (id) => {
+        const res = await webhook(message("/start code-1", { id }, { id }));
+        return ((await res.json()) as { text: string }).text;
+      }),
+    );
+    expect(replies.filter((text) => text === "Connected. New mail will appear here.")).toHaveLength(
+      1,
+    );
+    expect(replies.filter((text) => text.startsWith("This code is invalid"))).toHaveLength(1);
+    expect([CHAT, 222]).toContain((await telegramRow())?.chatId);
+  });
+
   it("refuses expired and wrong codes, groups and another sender with the one reply", async () => {
     const invalid =
       "This code is invalid or expired. Create a new one in MelodyMail: Settings > Notifications.";
@@ -238,6 +253,7 @@ describe("card buttons", () => {
     await seedMessage({ id: "m1", trashed: true });
     await cardFor("m1");
     await env.DB.prepare("DELETE FROM messages WHERE id = 'm1'").run();
+    expect(await cardRows()).toEqual([]);
     const calls = stubTelegram();
     const res = await webhook(query("star:1"));
     expect(JSON.parse(((await res.json()) as { data: string }).data)).toEqual({ e: "gone" });

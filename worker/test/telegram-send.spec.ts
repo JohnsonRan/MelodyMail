@@ -61,6 +61,15 @@ describe("telegram cards for new mail", () => {
     expect(await cardRows()).toEqual([{ messageId: "m1", chatId: CHAT, tgMessageId: 42 }]);
   });
 
+  it("sends one card when the same message is notified twice at once", async () => {
+    await seedTelegram();
+    await seedMessage({ id: "m1" });
+    const calls = stubTelegram(sentWidget);
+    await Promise.all([notifyNewMail("m1"), notifyNewMail("m1")]);
+    expect(calls.map((c) => c.method)).toEqual(["sendWidget"]);
+    expect(await cardRows()).toHaveLength(1);
+  });
+
   it("cuts long fields to keep chat_data within 1024 bytes and the link within 256", async () => {
     const id = crypto.randomUUID();
     await seedTelegram({ language: "ja-JP" });
