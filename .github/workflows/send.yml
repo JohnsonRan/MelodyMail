@@ -1,0 +1,43 @@
+name: send
+
+# The sending suites (Playwright driven by bun test): compose, replies, attachments, drafts, the
+# Markdown rendering and sanitizing, and the sent-message status in the reader. Split from the
+# browser suite by owner ruling (2026-11-16) so pull requests wait less: it runs every night on
+# main, by hand, and on pull requests that touch compose, the send-related reader files or these
+# tests.
+on:
+  pull_request:
+    paths:
+      - "web/src/compose/**"
+      - "web/src/reader/SentStatus.tsx"
+      - "web/src/reader/sentCopy.ts"
+      - "web/src/reader/ReaderToolbar.tsx"
+      - "web/src/mailbox/SendStatusLabel.tsx"
+      - "web/test/compose.test.ts"
+      - "web/test/markdown.test.ts"
+      - "web/test/stub-send.ts"
+      - ".github/workflows/send.yml"
+  schedule:
+    - cron: "57 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: send-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bunx --bun playwright install --with-deps chromium-headless-shell
+        working-directory: web
+      - run: bun run test:send
