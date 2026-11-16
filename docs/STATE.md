@@ -2398,6 +2398,13 @@ each:
 - A Bot API client library once grammY ships Bot API 10.4 types. Source: the design.
 - Splitting `worker/test/telegram-webhook.spec.ts` (269 lines, over the 242-line p90). Source:
   this build; test-only.
+- A card whose sendWidget result was lost (timeout, but Telegram delivered it) has no stored
+  message id; the first tap marks it "deleted in MelodyMail". No mail is affected. Source: M5b
+  review. Waits: needs Telegram to deliver after our 10 s timeout; the fix would be to answer
+  gone without editing the card.
+- Two Connects at the same moment from two tabs can leave Telegram and D1 with different webhook
+  secrets; every update then gets 401 until Connect runs again. Source: M5b review. Waits: needs
+  two simultaneous owner Connects.
 
 ### Not verified
 

@@ -230,6 +230,7 @@ a new secret each time; run it again after moving to another domain or changing 
 Disconnect removes the webhook and the binding; buttons on old cards then stop working. A
 recovery (`POST /api/auth/recover`) also disconnects Telegram; connect again afterwards. Deleting
 a mail for good does not delete its card in Telegram; its buttons then say the mail was deleted.
+If the bot stops reacting, run Connect again.
 
 ## Sending
 
