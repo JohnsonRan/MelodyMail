@@ -68,11 +68,9 @@ let purifier: ReturnType<typeof DOMPurify> | null = null;
 function purify() {
   if (purifier) return purifier;
   purifier = DOMPurify(window);
+  // Links: ALLOWED_URI_REGEXP below drops every href that is not http(s) or mailto, relative
+  // ones included. This hook only adds the inline styles.
   purifier.addHook("afterSanitizeAttributes", (node) => {
-    if (node.localName === "a") {
-      const href = node.getAttribute("href") ?? "";
-      if (!LINK.test(href)) node.removeAttribute("href");
-    }
     const style = STYLES[node.localName];
     if (style) node.setAttribute("style", style);
   });

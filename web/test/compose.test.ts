@@ -63,6 +63,12 @@ describe("compose end to end", () => {
       .setInputFiles([file, { ...file, name: "extra.txt" }]);
     await compose(s).getByRole("button", { name: "Remove extra.txt" }).click();
     await compose(s).getByText("extra.txt").waitFor({ state: "detached" });
+    // Over 25 MB: refused in the browser, never uploaded.
+    await compose(s)
+      .locator('input[type="file"]')
+      .setInputFiles({ ...file, name: "big.bin", buffer: Buffer.alloc(25 * 1024 * 1024 + 1) });
+    await compose(s).getByText("Larger than 25 MB; not attached.").waitFor();
+    await compose(s).getByRole("button", { name: "Remove big.bin" }).click();
 
     app.send.sendDelay = 300;
     await compose(s).getByRole("button", { name: "Send", exact: true }).dblclick();
@@ -167,9 +173,11 @@ describe("compose end to end", () => {
     const send = compose(s).getByRole("button", { name: "Send", exact: true });
     expect(await send.getAttribute("aria-disabled")).toBe("true");
 
+    app.send.quota.daily.used = 12;
     app.send.setup.configured = false;
     await s.page.reload();
     await compose(s).getByText("Sending is not set up").first().waitFor();
+    await addRecipient(s, "To", "friend@example.org");
     expect(await send.getAttribute("aria-disabled")).toBe("true");
   });
 
@@ -177,7 +185,9 @@ describe("compose end to end", () => {
     const s = await open("/?compose=draft-preview-1");
     await compose(s)
       .getByRole("textbox", { name: "Message" })
-      .fill("# Hi\n\n<script>parent.postMessage('x','*')</script>\n\n[js](javascript:alert(1))");
+      .fill(
+        "# Hi\n\n<script>parent.postMessage('x','*')</script>\n\n[js](javascript:alert(1)) [site](https://example.org)",
+      );
     await compose(s).getByRole("radio", { name: "Preview" }).click();
     const frame = compose(s).locator("iframe");
     expect(await frame.getAttribute("sandbox")).toBe("allow-popups allow-popups-to-escape-sandbox");
@@ -188,6 +198,10 @@ describe("compose end to end", () => {
     expect(srcdoc).toContain("<h1");
     expect(srcdoc).toContain("&lt;script&gt;");
     expect(srcdoc).not.toMatch(/<script|javascript:/);
+    // The reader's sanitizer ran as well: links open a new tab without opener or referrer.
+    expect(srcdoc).toMatch(
+      /href="https:\/\/example.org"[^>]* target="_blank" rel="noopener noreferrer"/,
+    );
     expect(await s.page.frameLocator("[data-compose] iframe").locator("h1").textContent()).toBe(
       "Hi",
     );
