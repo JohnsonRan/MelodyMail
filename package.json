@@ -26,7 +26,7 @@
     "test:browser": "bun run --cwd web test:browser",
     "test:pwa": "bun run --cwd web test:pwa",
     "test:send": "bun run --cwd web test:send",
-    "test:telegram": "bun run --cwd web test:telegram",
+    "test:settings": "bun run --cwd web test:settings",
     "vapid": "bun run --cwd worker vapid",
     "upload-key": "bun run --cwd worker upload-key"
   }
