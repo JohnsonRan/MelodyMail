@@ -4,7 +4,14 @@ import { SESSION_IDLE_MS } from "../src/auth/session";
 import { handleQueue } from "../src/mail/consumer";
 import { type Client, ORIGIN, setupOwner } from "./helpers";
 import { messageRows } from "./mail-helpers";
-import { browserSubscription, decryptPush, pushRows, stubPushService } from "./push-helpers";
+import {
+  browserSubscription,
+  decryptPush,
+  insertSession,
+  insertSubscription,
+  pushRows,
+  stubPushService,
+} from "./push-helpers";
 
 // The Hub sends Web Push for a new message only when it reached no open page
 // (docs/M4b-pwa.md, "Sending"). fetch is stubbed: no request reaches a real push service.
@@ -107,6 +114,21 @@ describe("push for new mail", () => {
     await parse("p6");
     expect(sent).toEqual([]);
     expect(await pushRows()).toHaveLength(1);
+  });
+
+  it("sends to the 10 newest live subscriptions at most", async () => {
+    await setupOwner();
+    const now = Date.now();
+    for (let i = 0; i < 12; i++) {
+      await insertSession(`d${i}`, now);
+      await insertSubscription(`d${i}`, `https://fcm.googleapis.com/fcm/send/d${i}`, now + i);
+    }
+    const sent = stubPushService(201);
+    await storeRow("p11", "Subject: Many devices");
+    await parse("p11");
+    expect(sent.map((s) => s.url.split("/").pop()).sort()).toEqual(
+      Array.from({ length: 10 }, (_, i) => `d${i + 2}`).sort(),
+    );
   });
 
   it("deletes a subscription the push service reports gone", async () => {

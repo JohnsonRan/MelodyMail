@@ -96,6 +96,11 @@ describe("subscription endpoint check", () => {
       ["p256dh 66 bytes", { ...json.keys, p256dh: point(66) }],
       ["p256dh compressed", { ...json.keys, p256dh: point(65, 2) }],
       ["p256dh not base64url", { ...json.keys, p256dh: `${json.keys.p256dh.slice(1)}+` }],
+      // Standard base64 with padding decodes to the same 65 bytes; only base64url is accepted.
+      [
+        "p256dh padded base64",
+        { ...json.keys, p256dh: `${json.keys.p256dh.replaceAll("-", "+").replaceAll("_", "/")}=` },
+      ],
       ["auth 15 bytes", { ...json.keys, auth: b64(new Array(15).fill(1)) }],
       ["auth 17 bytes", { ...json.keys, auth: b64(new Array(17).fill(1)) }],
       ["auth missing", { p256dh: json.keys.p256dh }],

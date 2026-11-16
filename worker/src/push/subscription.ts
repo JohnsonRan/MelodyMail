@@ -22,10 +22,7 @@ export function isAllowedEndpoint(value: string): boolean {
   }
   if (url.protocol !== "https:" || url.username || url.password || url.port) return false;
   const host = url.hostname;
-  return (
-    EXACT_HOSTS.has(host) ||
-    HOST_SUFFIXES.some((suffix) => host.endsWith(suffix) && host.length > suffix.length)
-  );
+  return EXACT_HOSTS.has(host) || HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
 }
 
 function base64urlBytes(value: unknown): Uint8Array | null {
