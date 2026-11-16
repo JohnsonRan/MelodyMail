@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { openSession, type Session, shutdown } from "./browser";
 import { StubApp } from "./stub-app";
+import { sentMessage } from "./stub-send";
 
 // Sending end to end through the built app (docs/M5-sending.md, "Proof"): compose, chips,
 // attachments, autosave, the Markdown request, replies with their source, a failed send and
@@ -63,10 +64,16 @@ describe("compose end to end", () => {
       .setInputFiles([file, { ...file, name: "extra.txt" }]);
     await compose(s).getByRole("button", { name: "Remove extra.txt" }).click();
     await compose(s).getByText("extra.txt").waitFor({ state: "detached" });
-    // Over 25 MB: refused in the browser, never uploaded.
+    // Over 25 MB: refused in the browser, never uploaded. Built in the page, because sending
+    // 25 MB through the DevTools protocol takes about a second.
     await compose(s)
       .locator('input[type="file"]')
-      .setInputFiles({ ...file, name: "big.bin", buffer: Buffer.alloc(25 * 1024 * 1024 + 1) });
+      .evaluate((input: HTMLInputElement) => {
+        const files = new DataTransfer();
+        files.items.add(new File([new Uint8Array(25 * 1024 * 1024 + 1)], "big.bin"));
+        input.files = files.files;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      });
     await compose(s).getByText("Larger than 25 MB; not attached.").waitFor();
     await compose(s).getByRole("button", { name: "Remove big.bin" }).click();
 
@@ -142,30 +149,21 @@ describe("compose end to end", () => {
     expect(await compose(s).getByLabel("Subject").inputValue()).toBe("Draft subject");
   });
 
-  test("shows a failed send and retries it under the same key", async () => {
+  test("retries a failed send under the same key and a rejected one under a new key", async () => {
     const s = await open();
-    app.send.answers = ["fail"];
-    await s.page.keyboard.press("c");
-    await addRecipient(s, "To", "friend@example.org");
-    await compose(s).getByRole("button", { name: "Send", exact: true }).click();
-    await compose(s).getByText("The message was not sent").waitFor();
-    await compose(s).getByText("The mail service could not be reached").waitFor();
-    await compose(s).getByRole("button", { name: "Send again" }).click();
-    await s.page.getByText("Message sent", { exact: true }).first().waitFor();
-    expect(app.send.sends).toHaveLength(2);
-    expect(app.send.sends[1]?.idempotencyKey).toBe(app.send.sends[0]?.idempotencyKey);
-  });
-
-  test("sends the corrected message under a new key after a rejection", async () => {
-    const s = await open();
-    app.send.answers = ["rejected"];
+    app.send.answers = ["fail", "rejected"];
     await s.page.keyboard.press("c");
     await addRecipient(s, "To", "friend@example.org");
     await compose(s).getByLabel("Subject").fill("Typo");
     await compose(s).getByRole("button", { name: "Send", exact: true }).click();
+    await compose(s).getByText("The message was not sent").waitFor();
+    await compose(s).getByText("The mail service could not be reached").waitFor();
+    await compose(s).getByRole("button", { name: "Send again" }).click();
+    // A rejection: no Retry; the owner corrects the message and sends it as a new one.
     await compose(s).getByText("The mail service refused this message").waitFor();
     expect(await compose(s).getByRole("button", { name: "Send again" }).count()).toBe(0);
     const firstKey = app.send.sends[0]?.idempotencyKey;
+    expect(app.send.sends[1]?.idempotencyKey).toBe(firstKey);
     // The draft moves to the new key at once, so autosave keeps working.
     const moved = () => app.send.draftSaves.find((d) => d.idempotencyKey !== firstKey);
     for (let i = 0; i < 100 && !moved(); i++) await Bun.sleep(20);
@@ -174,23 +172,17 @@ describe("compose end to end", () => {
 
     await compose(s).getByLabel("Subject").fill("Fixed");
     await compose(s).getByRole("button", { name: "Send", exact: true }).click();
-    await compose(s).waitFor({ state: "detached" });
-    expect(app.send.sends).toHaveLength(2);
-    expect(app.send.sends[1]).toMatchObject({ subject: "Fixed", idempotencyKey: newKey });
+    await s.page.getByText("Message sent", { exact: true }).first().waitFor();
+    expect(app.send.sends).toHaveLength(3);
+    expect(app.send.sends[2]).toMatchObject({ subject: "Fixed", idempotencyKey: newKey });
   });
 
   test("explains a delivery failure that Resend reported, without Retry", async () => {
-    const s = await open();
-    await s.page.keyboard.press("c");
-    await addRecipient(s, "To", "friend@example.org");
-    await compose(s).getByLabel("Subject").fill("Undelivered note");
-    await compose(s).getByRole("button", { name: "Send", exact: true }).click();
-    await compose(s).waitFor({ state: "detached" });
-    const sent = app.store.get("sent-1");
-    if (sent) sent.item.status = "delivery_failed";
-    await s.page.getByRole("link", { name: "Sent" }).click();
-    await s.page.locator('[data-message-row="sent-1"]').getByText("Delivery failed").waitFor();
-    await s.page.locator('[data-message-row="sent-1"]').click();
+    const body = { to: ["friend@example.org"], subject: "Lost", text: "Hi", idempotencyKey: "k-1" };
+    app.store.set("sent-lost", sentMessage("sent-lost", body, "delivery_failed"));
+    session = await openSession(app.origin, "/sent?m=sent-lost");
+    const s = session;
+    await s.page.locator('[data-message-row="sent-lost"]').getByText("Delivery failed").waitFor();
     await s.page.getByText("Resend reported that this message could not be delivered.").waitFor();
     expect(await s.page.getByRole("button", { name: "Send again" }).count()).toBe(0);
   });

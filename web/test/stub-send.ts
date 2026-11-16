@@ -5,6 +5,51 @@ import type { Stored } from "./stub-app";
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 
+/** A sent message as the Worker stores it: the row and the JSON copy the reader shows. */
+export function sentMessage(id: string, body: Record<string, unknown>, status = "sent"): Stored {
+  const to = (body.to as string[]) ?? [];
+  const copy = {
+    from: "Shop <shop@example.com>",
+    to,
+    cc: body.cc ?? [],
+    bcc: body.bcc ?? [],
+    subject: body.subject,
+    text: body.text,
+    html: body.html,
+    attachments: [],
+  };
+  return {
+    item: {
+      id,
+      addressId: 1,
+      tag: null,
+      from: copy.from,
+      subject: body.subject,
+      snippet: String(body.text).slice(0, 200),
+      receivedAt: Date.now(),
+      date: null,
+      size: 1,
+      read: true,
+      starred: false,
+      archived: false,
+      trashed: false,
+      hasAttachments: false,
+      status,
+      threadKey: id,
+      direction: "out",
+      to: to.join(", "),
+      error: null,
+      cc: null,
+      bcc: null,
+      idempotencyKey: body.idempotencyKey,
+      envelopeFrom: "shop@example.com",
+      envelopeTo: to.join(", "),
+      forwardFailed: 0,
+    },
+    raw: JSON.stringify(copy),
+  };
+}
+
 type Upload = {
   id: string;
   filename: string;
@@ -92,47 +137,7 @@ export class SendStub {
     if (answer === "quota") return json({ error: "daily_quota_exceeded", id: "failed-1" }, 429);
     if (answer === "rejected") return json({ error: "send_rejected", id: "failed-1" }, 422);
     const id = `sent-${this.sends.length}`;
-    const to = (body.to as string[]) ?? [];
-    const copy = {
-      from: "Shop <shop@example.com>",
-      to,
-      cc: body.cc ?? [],
-      bcc: body.bcc ?? [],
-      subject: body.subject,
-      text: body.text,
-      html: body.html,
-      attachments: [],
-    };
-    store.set(id, {
-      item: {
-        id,
-        addressId: 1,
-        tag: null,
-        from: copy.from,
-        subject: body.subject,
-        snippet: String(body.text).slice(0, 200),
-        receivedAt: Date.now(),
-        date: null,
-        size: 1,
-        read: true,
-        starred: false,
-        archived: false,
-        trashed: false,
-        hasAttachments: false,
-        status: "sent",
-        threadKey: id,
-        direction: "out",
-        to: to.join(", "),
-        error: null,
-        cc: null,
-        bcc: null,
-        idempotencyKey: body.idempotencyKey,
-        envelopeFrom: "shop@example.com",
-        envelopeTo: to.join(", "),
-        forwardFailed: 0,
-      },
-      raw: JSON.stringify(copy),
-    });
+    store.set(id, sentMessage(id, body));
     for (const [key, d] of this.drafts) {
       if (d.idempotencyKey === body.idempotencyKey) this.drafts.delete(key);
     }
