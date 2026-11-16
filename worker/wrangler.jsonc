@@ -44,7 +44,8 @@
   "durable_objects": { "bindings": [{ "name": "HUB", "class_name": "Hub" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }],
   // One trigger (Workers Free allows 5 per account): re-enqueue stuck messages, remove stale
-  // uploads and old webhook events. M7 adds the R2 orphan sweep and trash clean-up here.
+  // uploads and old webhook events, delete mail in Trash for 30 days, and the D1 export to R2
+  // (docs/M7-ops.md). The R2 orphan sweep is deferred (owner ruling 3, 2026-11-17).
   "triggers": { "crons": ["*/15 * * * *"] },
   // Abuse guard only: counts are approximate and per location. The strict recovery lockout is
   // counted in D1 (login_attempts). namespace_id is chosen here, not issued by an account.

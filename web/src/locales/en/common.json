@@ -45,6 +45,7 @@
     "listActions": "Actions on selected messages",
     "messageActions": "Message actions",
     "selected": "Selected: {{count}}",
+    "trashNote": "Mail in Trash for 30 days is deleted forever.",
     "archive": "Archive",
     "moveToInbox": "Move to Inbox",
     "trash": "Move to Trash",

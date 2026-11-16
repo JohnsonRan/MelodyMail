@@ -3,6 +3,7 @@ import { errorText, log } from "../http";
 import { removeOldWebhookEvents, removeStaleUploads } from "../send/cleanup";
 import { notifyHub } from "./hub";
 import { type ParsedHeaders, parseSlice, SLICE_BYTES, threadKey } from "./parse";
+import { expireTrash } from "./trash";
 
 // The inbound queue consumer and the cron step that feeds it again. Each job is { id } of a
 // messages row; a job for a row that is not "stored" is a duplicate and is dropped.
@@ -152,13 +153,14 @@ export async function requeueStored(env: Env, now: number): Promise<number> {
 /**
  * The one cron trigger. Each job is contained (worker/AGENTS.md, Background work): a failing
  * job is logged with its name and the others still run; the invocation then fails, so the
- * failure shows in the Cron Events log. M7 adds the R2 orphan sweep and trash clean-up here.
+ * failure shows in the Cron Events log. The R2 orphan sweep is deferred (M7 owner ruling 3).
  */
 export async function handleScheduled(controller: ScheduledController, env: Env): Promise<void> {
   const jobs: [string, () => Promise<unknown>][] = [
     ["requeue_stored", () => requeueStored(env, controller.scheduledTime)],
     ["remove_stale_uploads", () => removeStaleUploads(env, controller.scheduledTime)],
     ["remove_old_webhook_events", () => removeOldWebhookEvents(env, controller.scheduledTime)],
+    ["expire_trash", () => expireTrash(env, controller.scheduledTime)],
   ];
   let failed = 0;
   for (const [job, run] of jobs) {

@@ -45,6 +45,7 @@
     "listActions": "对所选邮件的操作",
     "messageActions": "邮件操作",
     "selected": "已选择：{{count}}",
+    "trashNote": "在“已删除”中满 30 天的邮件会被永久删除。",
     "archive": "存档",
     "moveToInbox": "移到收件箱",
     "trash": "移到已删除",

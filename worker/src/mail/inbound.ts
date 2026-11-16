@@ -150,7 +150,7 @@ async function forwardAll(
 /**
  * Forwards a message that could not be stored. Returns when at least one forward went out;
  * rethrows the storage error when none did, so the sender is told. A raw object written before
- * the D1 failure is named in the audit row for the M7 orphan sweep.
+ * the D1 failure is named in the audit row for an orphan sweep (deferred, M7 owner ruling 3).
  */
 async function forwardInstead(
   env: Env,
@@ -236,8 +236,8 @@ export async function handleEmail(message: ForwardableEmailMessage, env: Env): P
       env.DB.prepare(
         `INSERT INTO messages (id, address_id, direction, status, envelope_from, envelope_to,
            subaddress_tag, raw_size, r2_key, forward_failed, read, starred, archived, trashed,
-           received_at)
-         VALUES (?, ?, 'in', 'stored', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           trashed_at, received_at)
+         VALUES (?, ?, 'in', 'stored', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         id,
         address.id,
@@ -251,6 +251,7 @@ export async function handleEmail(message: ForwardableEmailMessage, env: Env): P
         Number(rules.starred),
         Number(rules.archived),
         Number(rules.trashed),
+        rules.trashed ? now : null,
         now,
       ),
       env.DB.prepare("UPDATE addresses SET last_received_at = ? WHERE id = ?").bind(
