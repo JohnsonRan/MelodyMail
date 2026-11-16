@@ -16,7 +16,11 @@ export function ruleSummary(t: TFunction, rule: RuleDraft, emailOf: (id: number)
     .join(t(rule.match === "all" ? "summary.and" : "summary.or"));
   const actions = [
     ...(rule.targetIds.length > 0
-      ? [t("action.forwardTo", { targets: rule.targetIds.map(emailOf).join(", ") })]
+      ? [
+          t("action.forwardTo", {
+            targets: rule.targetIds.map(emailOf).join(t("summary.listSeparator")),
+          }),
+        ]
       : []),
     ...ACTIONS.filter((a) => rule[a]).map((a) => t(`action.${a}`)),
   ];

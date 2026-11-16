@@ -34,6 +34,13 @@ export function RuleTestPanel({ draft }: { draft: RuleDraft }) {
       .catch(() => setSamples([]));
   }, []);
 
+  // A result describes the rule as it was when tested; any edit makes it stale.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: draft is the trigger, not a value read
+  useEffect(() => {
+    setResult(null);
+    setError(null);
+  }, [draft]);
+
   const run = async () => {
     setTesting(true);
     setError(null);
@@ -49,10 +56,11 @@ export function RuleTestPanel({ draft }: { draft: RuleDraft }) {
 
   const label = (s: Sample) =>
     `${s.from} · ${s.subject ?? t("test.noSubject")} · ${formatListDate(s.receivedAt, i18n.language)}`;
+  const sep = t("summary.listSeparator");
   const actions = result
     ? [
         ...(result.targets.length > 0
-          ? [t("action.forwardTo", { targets: result.targets.join(", ") })]
+          ? [t("action.forwardTo", { targets: result.targets.join(sep) })]
           : []),
         ...ACTIONS.filter((a) => result[a]).map((a) => t(`action.${a}`)),
       ]
@@ -87,12 +95,21 @@ export function RuleTestPanel({ draft }: { draft: RuleDraft }) {
         <Banner
           status={result.matched ? "success" : "info"}
           title={result.matched ? t("test.matched") : t("test.notMatched")}
-          description={[
-            ...result.conditions.map((c, i) =>
-              t(c.matched ? "test.conditionMatched" : "test.conditionNotMatched", { n: i + 1 }),
-            ),
-            ...(actions.length > 0 ? [t("test.actions", { actions: actions.join(", ") })] : []),
-          ].join(" ")}
+          description={
+            <VStack gap={1}>
+              {result.conditions.map((c, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: one line per condition, in order
+                <Text key={i}>
+                  {t(c.matched ? "test.conditionMatched" : "test.conditionNotMatched", {
+                    n: i + 1,
+                  })}
+                </Text>
+              ))}
+              {actions.length > 0 && (
+                <Text>{t("test.actions", { actions: actions.join(sep) })}</Text>
+              )}
+            </VStack>
+          }
         />
       )}
     </VStack>

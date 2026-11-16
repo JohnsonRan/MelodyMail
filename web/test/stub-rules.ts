@@ -12,6 +12,7 @@ export class RulesStub {
   rules: Rule[] = [];
   targets = [
     { id: 7, email: "me@out.test", note: "", addressCount: 0, ruleCount: 0, createdAt: 0 },
+    { id: 8, email: "you@out.test", note: "", addressCount: 0, ruleCount: 0, createdAt: 0 },
   ];
   calls: RulesCall[] = [];
   testAnswer: Record<string, unknown> = {

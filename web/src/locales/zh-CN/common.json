@@ -283,12 +283,13 @@
     "telegram_not_connected": "尚未连接 Telegram。请先连接。",
     "telegram_failed": "Telegram 未接受此请求。请过几分钟后重试。",
     "invalid_rule_name": "请输入不超过 100 个字符的名称。",
-    "invalid_condition": "每个条件都需要不超过 256 个字符的值，邮件头条件还需要邮件头名称，例如 List-Id。",
+    "invalid_condition": "每个条件都需要不超过 256 个字符的值。邮件头条件还需要邮件头名称，例如 List-Id：只能使用字母、数字和 - . _，不能有空格或括号。",
     "no_rule_action": "请至少选择一个操作。",
     "too_many_rule_targets": "一条规则最多可以转发到 5 个地址。",
     "too_many_rules": "最多可以有 50 条规则。请先删除一条。",
     "order_mismatch": "规则在此期间已更改。请重新加载页面后重试。",
-    "no_raw": "这封邮件无法用于测试。请选择一封你收到的邮件。"
+    "no_raw": "这封邮件无法用于测试。请选择一封你收到的邮件。",
+    "too_many_header_names": "已启用的规则最多只能检查 20 个不同的邮件头。请使用其他规则已检查的邮件头，或者停用一条规则。"
   },
   "common": {
     "cancel": "取消"

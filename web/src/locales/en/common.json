@@ -283,12 +283,13 @@
     "telegram_not_connected": "Telegram isn't connected. Connect it first.",
     "telegram_failed": "Telegram didn't accept the request. Try again in a few minutes.",
     "invalid_rule_name": "Enter a name of up to 100 characters.",
-    "invalid_condition": "Each condition needs a value of up to 256 characters, and a header condition needs a header name such as List-Id.",
+    "invalid_condition": "Each condition needs a value of up to 256 characters. A header condition also needs a header name such as List-Id: letters, digits and - . _ only, no spaces or brackets.",
     "no_rule_action": "Choose at least one action.",
     "too_many_rule_targets": "A rule can forward to up to 5 addresses.",
     "too_many_rules": "You can have up to 50 rules. Delete one first.",
     "order_mismatch": "The rules changed in the meantime. Reload the page and try again.",
-    "no_raw": "This message can't be used for a test. Choose a message you received."
+    "no_raw": "This message can't be used for a test. Choose a message you received.",
+    "too_many_header_names": "The rules that are on can check at most 20 different headers. Use a header that another rule already checks, or turn a rule off."
   },
   "common": {
     "cancel": "Cancel"

@@ -68,7 +68,11 @@ describe("Settings > Rules", () => {
 
     await dialog.getByRole("button", { name: "Test rule" }).click();
     await dialog.getByText("The rule matches this message").first().waitFor();
-    await dialog.getByText("Condition 1 matches. It would: Archive.").first().waitFor();
+    await dialog.getByText("Condition 1 matches.").first().waitFor();
+    await dialog.getByText("It would: Archive.").first().waitFor();
+    // Any edit makes the result stale, so it goes.
+    await dialog.getByLabel("Name").fill("GitHub mail");
+    expect(await dialog.getByText("The rule matches this message").count()).toBe(0);
     const tested = app.rules.calls.find((c) => c.path === "/api/rules/test");
     expect(tested?.body).toMatchObject({
       messageId: "hostile",
@@ -81,7 +85,11 @@ describe("Settings > Rules", () => {
       .getByText('From ends with "@github.com" → Forward to me@out.test, Archive')
       .first()
       .waitFor();
-    expect(app.rules.rules[0]).toMatchObject({ name: "GitHub", targetIds: [7], archive: true });
+    expect(app.rules.rules[0]).toMatchObject({
+      name: "GitHub mail",
+      targetIds: [7],
+      archive: true,
+    });
   });
 
   test("reorders, switches off and deletes with the keyboard alone", async () => {
@@ -113,13 +121,16 @@ describe("Settings > Rules", () => {
   });
 
   test("stacks at phone width without sideways scroll, in Chinese", async () => {
-    app.rules.rules = [{ ...RULE, id: 1, name: "GitHub" }];
+    app.rules.rules = [{ ...RULE, id: 1, name: "GitHub", targetIds: [7, 8] }];
     const page = await open(390, "zh-CN");
-    await page.getByText("发件人结尾是“@github.com” → 归档").first().waitFor();
+    await page
+      .getByText("发件人结尾是“@github.com” → 转发到 me@out.test、you@out.test、归档")
+      .first()
+      .waitFor();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
     expect(await page.locator("table").count()).toBe(0);
     const select = await page
-      .getByText("发件人结尾是“@github.com” → 归档")
+      .getByText("发件人结尾是“@github.com” → 转发到 me@out.test、you@out.test、归档")
       .evaluate((el) => getComputedStyle(el).userSelect);
     expect(select).toBe("none");
   });

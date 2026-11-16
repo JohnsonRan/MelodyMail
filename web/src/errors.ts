@@ -62,6 +62,7 @@ const KNOWN = new Set([
   "too_many_rules",
   "order_mismatch",
   "no_raw",
+  "too_many_header_names",
   "network",
 ]);
 
