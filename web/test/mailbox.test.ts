@@ -207,6 +207,48 @@ describe("mailbox end to end", () => {
     expect(await s.page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
   });
 
+  test("keeps settings in their own navigation, reached from one Settings entry", async () => {
+    const s = await open();
+    const nav = s.page.getByRole("navigation", { name: "Side navigation" });
+    const links = () => nav.getByRole("link").allTextContents();
+    expect(await nav.getByRole("group", { name: "Receiving addresses" }).count()).toBe(1);
+    const mail = await links();
+    for (const name of ["Domains", "Forwarding", "Rules", "Security", "API keys"])
+      expect(mail).not.toContain(name);
+    expect(mail.filter((n) => n === "Settings")).toHaveLength(1);
+    await nav.getByRole("link", { name: "Settings" }).click();
+    await s.page.waitForURL("**/settings/domains");
+    await nav.getByRole("link", { name: "Back to mailbox" }).waitFor();
+    expect(await nav.getByRole("link", { name: "Inbox" }).count()).toBe(0);
+    expect(await nav.locator("[aria-current=page]").allTextContents()).toEqual(["Domains"]);
+    expect(await nav.getByRole("group").count()).toBe(4);
+    expect((await links()).slice(1)).toEqual([
+      "Domains",
+      "Addresses",
+      "Forwarding",
+      "Rules",
+      "Notifications",
+      "Security",
+      "API keys",
+    ]);
+    expect(await userSelect(s, "nav a")).toBe("none");
+    await nav.getByRole("link", { name: "Back to mailbox" }).click();
+    await s.page.waitForURL(`${app.origin}/`);
+    await s.page.goto(`${app.origin}/settings`);
+    await s.page.waitForURL("**/settings/domains");
+  });
+
+  test("shows the navigation of the current view in the phone menu", async () => {
+    const s = await open("/", 390);
+    await s.page.getByRole("button", { name: "Open navigation" }).click();
+    await s.page.getByRole("link", { name: "Settings" }).waitFor();
+    expect(await s.page.getByRole("link", { name: "Back to mailbox" }).count()).toBe(0);
+    await s.page.goto(`${app.origin}/settings/rules`);
+    await s.page.getByRole("button", { name: "Open navigation" }).click();
+    await s.page.getByRole("link", { name: "Back to mailbox" }).waitFor();
+    expect(await s.page.getByRole("link", { name: "Inbox" }).count()).toBe(0);
+  });
+
   test("puts new mail on top when the hub sends an event", async () => {
     const s = await open();
     const fresh = message("fresh", PLAIN(9), "Fresh mail", Date.now() + 1000);

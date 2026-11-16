@@ -5,7 +5,10 @@
   "nav": {
     "main": "Main navigation",
     "mail": "Mail",
-    "manage": "Manage",
+    "receivingAddresses": "Receiving addresses",
+    "settings": "Settings",
+    "backToMailbox": "Back to mailbox",
+    "account": "Account",
     "security": "Security",
     "domains": "Domains",
     "addresses": "Addresses",

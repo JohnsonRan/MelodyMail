@@ -5,7 +5,10 @@
   "nav": {
     "main": "メインナビゲーション",
     "mail": "メール",
-    "manage": "管理",
+    "receivingAddresses": "受信アドレス",
+    "settings": "設定",
+    "backToMailbox": "メールボックスに戻る",
+    "account": "アカウント",
     "security": "セキュリティ",
     "domains": "ドメイン",
     "addresses": "アドレス",

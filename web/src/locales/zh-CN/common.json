@@ -5,7 +5,10 @@
   "nav": {
     "main": "主导航",
     "mail": "邮件",
-    "manage": "管理",
+    "receivingAddresses": "收件地址",
+    "settings": "设置",
+    "backToMailbox": "返回邮箱",
+    "account": "账户",
     "security": "安全",
     "domains": "域名",
     "addresses": "地址",
