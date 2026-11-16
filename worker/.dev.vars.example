@@ -5,3 +5,9 @@ SETUP_TOKEN=replace-with-at-least-32-random-characters
 VAPID_PUBLIC_KEY=
 VAPID_PRIVATE_KEY=
 VAPID_SUBJECT=
+# Sending through Resend (README, "Sending"). Leave RESEND_API_KEY empty to keep sending off;
+# without UPLOAD_URL_KEY attachments are off, without RESEND_WEBHOOK_SECRET the webhook answers 404.
+# Generate UPLOAD_URL_KEY with `bun run upload-key`.
+RESEND_API_KEY=
+RESEND_WEBHOOK_SECRET=
+UPLOAD_URL_KEY=
