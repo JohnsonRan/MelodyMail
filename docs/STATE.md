@@ -3287,3 +3287,41 @@ Stopped and reported in that round, then settled by the owner rulings below:
   2,000-character slice: the native join's CPU time is not measured.
 - Bun (JavaScriptCore) against production V8 for `includes` on repetitive values: the benchmark
   numbers are Bun's.
+
+### Third review of `035d74a` (one Medium, two Lows)
+
+1. **The 50-address cap did not bound the parse (Medium)** — `83666bd`. `addressParser` parsed
+   the whole header and the first 50 were taken afterwards; 2,000 characters of short addresses
+   (about 300 per header) or of groups cost the parse almost twice the bench's adversarial case.
+   `cutAddressList` now cuts the raw value before its 50th top-level comma or semicolon (outside
+   quoted strings with backslash escapes, nested comments and angle brackets; commas inside a group
+   count, so a group cannot hide addresses), then parses. The slice after parsing was removed: the
+   parser cannot return more than 50 after the cut (`addressParser("a@b c@d e@f")` returns one
+   entry). The design describes the cut; bench comments are corrected and the "Headers as
+   Headers.get reads them" JSDoc is back above `worstHeaders`.
+   - Tests in `rules.spec.ts`: 60 short addresses, the 50th matches and the 51st does not; the
+     scanner with a plain list, a comma inside quotes, an escaped quote, nested comments, angle
+     brackets with a source route, a group, and a list under the cap.
+   - Mutations, one at a time, CPU load 7–10%: the cut not wired before the parse, the quoted
+     string, the escape, nested comments (red after the test used `(Doe (J), K)`; the first form
+     `(Doe, (J, K))` could not tell), the comment end, the comment start, angle brackets, the
+     semicolon: all red, 2.3–2.4 s each.
+   - Bench without the cut (load 16%): short addresses p95 2.02–2.44 ms, groups 2.11–2.25 ms,
+     exit 1.
+2. **Bench JSDoc placement (Low)** — `83666bd`.
+3. **No line break in a normalized value (Low)** — `790affc`: `=?UTF-8?Q?x=0Aevil_y?=` does not
+   satisfy equals or starts_with "evil" and satisfies equals "x evil y". Red when `normalize`
+   collapses only spaces (2 failed, 2.3 s, load 7%).
+
+Bench after the fix, 12 inputs, 3 runs of 200, CPU load 37%, 9%, 5%, exit 0 each run:
+
+| Input | p95 | Budget |
+| --- | --- | --- |
+| 100 addresses in From, To and Cc, no match / all match | 1.10–1.16 / 1.12–1.21 ms | 2 ms |
+| the same with the 20 capped names, no match / all match | 1.25–1.49 / 1.20–1.23 ms | 2 ms |
+| short addresses, no match / all match | 0.88–0.99 / 0.63–0.76 ms | 2 ms |
+| address groups, no match / all match | 0.94–1.03 / 0.91–0.94 ms | 2 ms |
+| plain headers | 0.18–0.23 ms | 1 ms |
+| 20 capped header names | 0.38–0.72 ms | 1 ms |
+
+Gate: 14.3 s at `83666bd` (CPU load 67%), 14.6 s at `790affc` (84%).
