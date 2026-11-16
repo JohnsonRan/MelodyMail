@@ -2390,6 +2390,138 @@ and concurrent notify tests the reviewer asked for as hypotheses (both green; no
 test-only). The lost-send-result card and the simultaneous Connect race are deferred below
 (`95fb198`), with a README note to run Connect again if the bot stops reacting.
 
+### Buttons on the plain message (owner ruling 7, built 2026-11-16)
+
+The real-bot tunnel test found every `sendWidget` refused with `INPUT_MEDIA_WIDGET_NOT_ALLOWED`
+(design, "Addendum: widgets refused for general bots"). Commit `fe6c61b` gives the fallback
+message the card's four actions; the widget path is unchanged. Risk class High (a public
+webhook path that changes flags).
+
+- The fallback `sendMessage` carries an inline keyboard: Open (`url`) and the read button, then
+  archive and star. Labels toggle with the message's flags in the binding's language; callback
+  data is `<action>:<target value>`, the widget's request format. The test card keeps Open only.
+- The fallback stores its Telegram `message_id` in `telegram_cards.tg_message_id` (deviation 2
+  above, the null id, now holds only for a 200 without a Bot API answer).
+- `callback_query` passes the widget's checks in the same function (`perform` in the new
+  `worker/src/telegram/actions.ts`, which also holds the widget handler moved from
+  `webhook.ts`): bound chat, private chat, chat id and `from.id` equal to the bound chat. A query
+  from an inline message has no `message`, so it fails the chat check. Then the card lookup by
+  `(message.chat.id, message.message_id)` and `updateMessageFlags`.
+- Answer: `answerCallbackQuery` in the webhook response with a notice; then
+  `editMessageReplyMarkup` (5 s timeout) and `notifyHub` "changed". Bad data answers the card's
+  failure line, a refused query its "no longer connected" line, a missing card its "deleted"
+  line, and none of the three edits anything.
+- `allowed_updates` is `["message", "widget_query", "callback_query"]`; README "Telegram" says to
+  run Connect again after upgrading and that cards arrive as messages with buttons for now.
+
+Bot API facts read again on 2026-11-16 (TinyFish `fetch_content` on the machine-readable pages
+`answercallbackquery`, `editmessagereplymarkup`, `callbackquery`, `inlinekeyboardbutton`,
+`maybeinaccessiblemessage`, `inaccessiblemessage`, `update`, `setwebhook`, `sendmessage`; the API
+page's "Making requests when getting updates" through Exa `web_fetch_exa`, because TinyFish
+returned only the changelog headings for it):
+
+- `CallbackQuery`: `id`, `from`, optional `message` (a `MaybeInaccessibleMessage`; present when
+  the button was on a message the bot sent), optional `inline_message_id`, `chat_instance`,
+  optional `data`. Clients show a progress bar until `answerCallbackQuery` is called.
+- `InaccessibleMessage` still carries `chat` and `message_id` (`date` is 0), so a tap on a
+  message the bot can no longer read finds its card the same way.
+- `answerCallbackQuery`: `callback_query_id` required, `text` 0–200 characters. The longest
+  notice ("Telegram is no longer connected to MelodyMail.") is 46 characters.
+- `editMessageReplyMarkup`: `chat_id` + `message_id` (or `inline_message_id`) and
+  `reply_markup`.
+- `InlineKeyboardButton`: exactly one of `url`, `callback_data` (1–64 bytes), …; the longest
+  data here is 6 bytes.
+- A webhook answer may carry one method call; its result cannot be known.
+- `setWebhook` `allowed_updates` omitted keeps the previous list (unchanged from the design).
+
+Copy: the button labels and the deleted, unbound and failure lines repeat `card.html` word for
+word (a worker test compares them for all three locales). The six success notices are new:
+"Marked as read" / "Marked as unread", "Archived" / "Moved to Inbox", "Starred" / "Star
+removed", and in zh-CN and ja-JP in the panel's terms (已存档, アーカイブしました as in
+`mail.done.archived`).
+
+Proof (worker, 374 tests, 4 more; `fetch` stubbed, no request to Telegram):
+
+- fallback: the keyboard with the row's flags (a starred mail shows "Remove star", `star:0`),
+  `tg_message_id` stored; the test card refused as a widget: Open only, no card row;
+- `allowed_updates` with `callback_query`;
+- each of `read`, `arch`, `star` set and cleared from the plain message: exactly that flag,
+  the notice, one `editMessageReplyMarkup` to `(chat, 42)` whose keyboard shows the new labels
+  and target values, a `changed` event per tap; a 500 on the edit still sets the flag and
+  answers;
+- another chat, a group, another sender, an inline-message query and an unbound row: the
+  "no longer connected" notice in the binding's language (ja-JP), no flag change, no Bot API
+  call;
+- bad data (`trash:1`, `read:2`, `read:1:m2`, empty) and a missing card (no row; a row with a
+  null message id): their notices, no flag change, no Bot API call;
+- the copy check above; the log test now also taps the plain message with a fetch that throws
+  the token.
+
+Ablation (the scratchpad's `ablate-m5b-buttons.ts`, the three Telegram specs per mutation): 43
+hunks, 38 red, 5 survivors:
+
+- `chat id equals bound` and `lookup by chat id`: survive as before, by Telegram's invariants
+  (in a private chat the chat id is the user's id; rebinding deletes the old chat's cards).
+- `typeof tgMessageId !== "number"`: every `Message` and `InaccessibleMessage` has a
+  `message_id`, and an inline query fails the chat check first; the guard narrows the type for
+  the D1 bind.
+- `!card` in the gone condition: with no card no flag changes and `mail` is null, so `!mail`
+  alone gives the same result; `!card` narrows the type for `card.id`.
+- the 5 s timeout on `editMessageReplyMarkup`: a value only; observing it needs a stalled
+  request and fake timers, as for the widget edit.
+
+Not ablated: the README; the comment and type moves into `actions.ts`.
+
+File length: p90 stays 242 lines over 200 files (the scratchpad's `p90.ts` on `fe6c61b`).
+`worker/test/telegram-webhook.spec.ts` grows to 389 lines (deferred split below) and
+`worker/test/telegram-send.spec.ts` to 275 (the copy check and the fallback keyboard; it keeps
+the sending fixtures in one place). `actions.ts` is 162 lines and `webhook.ts` 103.
+
+Numbers (`bun run check`, dev workstation, Ryzen 9 9950X3D; the scratchpad's `time-buttons.sh`,
+CPU load averaged over each run by `typeperf`, the gate's own work included). The host carried
+other load for most of the session, and the gate went over its 12 s limit with and without
+this change:
+
+- the base `9044c08` before any edit: 9.8 and 9.5 s, 370 tests, load 2–6% sampled before;
+- interleaved pairs on the same host, head `fe6c61b` against the base: head 13.5, 12.7, 12.8 s
+  (load 32–38%), base 13.2, 13.2, 13.0 s (load 31–33%); an earlier interleaved series with load
+  sampled before each run: head 13.7 (50%), 12.1 (1%), 11.3 s (2%), base 12.4 (59%), 11.6 (5%),
+  11.8 s (3%);
+- head alone at the quietest point: 11.5 and 11.3 s (load 20% and 18%), worker suite 10.4 s;
+  later runs 12.6–17.2 s at load 27–65%.
+
+The change adds no measurable time (the pairs differ by −0.5 to +1.3 s in both directions). The
+12 s limit and the 10.8 s worker-suite limit were not met on the loaded host by either side; no
+limit was changed. Open question 1 below.
+
+Two gate runs failed without a test failure. One (28 s) left no log. In the other, the worker
+pool could not start 10 test files (`ENOENT … web\dist\sw.mjs`); the other 253 tests passed.
+`scripts/check.ts` runs `build` and `test` at the same time, and the worker pool reads
+`web/dist` (the `assets` directory in `wrangler.jsonc`) while `build` rewrites it. The race
+predates this change; it was not reproduced on the base. Open question 2 below.
+
+Deviations from the addendum:
+
+1. The notices for a refused query and bad data reuse the card's "Telegram is no longer
+   connected to MelodyMail." and "MelodyMail didn't answer. Try again.", so the plain message
+   says what the widget would.
+2. The widget handler moved to `actions.ts` with the shared checks, so the two paths cannot
+   drift and `webhook.ts` stays under the p90; its behaviour is unchanged (the existing widget
+   tests pass unmodified, and its hunks were ablated again).
+
+Open questions for the owner:
+
+1. The merge gate took 11.3–17.2 s on the loaded host today, against its 12 s limit, with the
+   base at the same time 11.6–13.2 s. Re-measure on a quiet host, or decide on the limit?
+2. The gate's concurrent `build` and worker `test` race on `web/dist` (one run of about 20
+   failed with `ENOENT`). Fix it in `scripts/check.ts` (run `build` before `test`, or point the
+   worker tests at a stable assets directory)? Not changed here: it is outside this task and
+   would change the gate's timing.
+
+Not verified: a real tap on the plain message's buttons and the real `answerCallbackQuery` in a
+webhook response (the real-bot tunnel test again, ruling 1); how each client draws the 2 × 2
+keyboard at phone width.
+
 ### Deferred
 
 - Coalescing cards above one per second per chat (429 is recorded, the card is lost). Source:
@@ -2397,12 +2529,14 @@ test-only). The lost-send-result card and the simultaneous Connect race are defe
 - Deleting the Telegram message with the mail (ruling 5) and editing cards from panel actions
   (ruling 2).
 - A Bot API client library once grammY ships Bot API 10.4 types. Source: the design.
-- Splitting `worker/test/telegram-webhook.spec.ts` (269 lines, over the 242-line p90). Source:
-  this build; test-only.
+- Splitting `worker/test/telegram-webhook.spec.ts` (389 lines after the plain-message buttons,
+  over the 242-line p90) into a buttons file. Source: this build; test-only. Waits: a new spec
+  file adds a workerd start to a merge gate already near its 12 s limit.
 - A card whose sendWidget result was lost (timeout, but Telegram delivered it) has no stored
   message id; the first tap marks it "deleted in MelodyMail". No mail is affected. Source: M5b
   review. Waits: needs Telegram to deliver after our 10 s timeout; the fix would be to answer
-  gone without editing the card.
+  gone without editing the card. The plain message's buttons (ruling 7) already answer that
+  way, so it no longer arises while Telegram refuses widgets.
 - Two Connects at the same moment from two tabs can leave Telegram and D1 with different webhook
   secrets; every update then gets 401 until Connect runs again. Source: M5b review. Waits: needs
   two simultaneous owner Connects.
