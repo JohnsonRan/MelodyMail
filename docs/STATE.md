@@ -9,7 +9,7 @@ Working state for the current milestone. The plan is in `docs/PLAN.md`.
 - Worker: Hono app with `GET /api/health` and a JSON 404 for unknown API routes; `email()` rejects
   every recipient until the address list exists (M2/M3). Static assets from `web/dist`, with
   `/api/*` always reaching the Worker.
-- Web: React 19, Vite, Astryx 0.7.16 (neutral theme), `AppShell` with folder navigation and a
+- Web: React 19, Vite, Astryx 0.7.16 (neutral theme; the local `melody` theme extending it since M5c), `AppShell` with folder navigation and a
   centred empty inbox state; language (zh-CN, en, ja-JP) and theme (system, light, dark)
   selectors, remembered in `localStorage`.
 - Gate: `bun run check` (lint, typecheck, worker tests, script tests, i18n check, build,
@@ -2878,8 +2878,11 @@ the ordinary toasts ("Setting saved." and errors stay inverted).
   visually hidden "New mail" names it ("New mail Sender Subject"). Three slots as before; no
   body; focus stays where it was.
 - Toast's `type` is a closed union and `theme build` emits no augmentation for it, so the code
-  casts `"mail"` and sets `isAutoHide: true` explicitly (Toast keeps errors open; a custom type is
-  neither).
+  casts `"mail"`. `isAutoHide: true` is redundant today (the viewport auto-hides every type but
+  `"error"`, ToastViewport.tsx:294) and kept as a guard against a changed default.
+- Deferred (M5c review hypothesis): with several cards on screen, their Open and Close buttons
+  share accessible names; naming them with the sender would help screen-reader users. Waits: not
+  checked with a screen reader.
 - Generated theme files are excluded from Biome, as `astryx-themes.ts` already was.
 - Found by the browser tier after the switch: the neutral module had been what imported Figtree
   (`fonts.css`, aliased to the self-hosted `src/fonts.css`). `src/main.tsx` now imports

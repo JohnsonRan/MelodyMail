@@ -49,8 +49,9 @@ export function useMailNotice(): (id: string) => Promise<void> {
         body: t("notification.notice", { from, subject }),
         uniqueID: `new-mail-${slot}`,
         // The theme's "mail" type paints the card (src/themes/melody/melodyTheme.ts). Toast's
-        // type is a closed union and `theme build` emits no augmentation for it, hence the cast;
-        // a custom type is not "error", so auto-hide is set here.
+        // type is a closed union and `theme build` emits no augmentation for it, hence the cast.
+        // The viewport already auto-hides any type but "error"; explicit, so the card keeps
+        // auto-hiding should Astryx change that default.
         type: "mail" as ToastType,
         isAutoHide: true,
         renderContent: ({ dismiss }) => (
