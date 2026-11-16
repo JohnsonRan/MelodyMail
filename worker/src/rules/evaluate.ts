@@ -46,6 +46,8 @@ export type Decision = {
 
 /** Each header value is cut to this before decoding, as ADDRESS_LIST_MAX in mail/parse.ts. */
 export const VALUE_MAX = 2000;
+/** Separates the values of one field in FieldReader's joined string. */
+const NL = "\n";
 /** Addresses read from each of From, To and Cc. */
 export const ADDRESSES_MAX = 50;
 
@@ -71,22 +73,25 @@ function addressValues(raw: string): string[] {
 }
 
 /**
- * The normalized values of each field, read once per message however many conditions use them.
- * A field with no value (no tag, no Subject, a missing header) has an empty list.
+ * The normalized values of each field, read once per message however many conditions use them,
+ * as one string with each value between line breaks. A normalized value holds no line break, so
+ * one search over that string answers for every value at once. A field with no value (no tag, no
+ * Subject, a missing header) is two line breaks, which no condition value matches.
  */
 export class FieldReader {
-  private readonly cache = new Map<string, string[]>();
+  private readonly cache = new Map<string, string>();
 
   constructor(private readonly source: MailSource) {}
 
-  values(field: Field, name = ""): string[] {
+  joined(field: Field, name = ""): string {
     const key = field === "header" ? `header:${name.toLowerCase()}` : field;
-    let values = this.cache.get(key);
-    if (!values) {
-      values = this.read(field, name).map(normalize);
-      this.cache.set(key, values);
+    let joined = this.cache.get(key);
+    if (joined === undefined) {
+      const values = this.read(field, name).map(normalize);
+      joined = `${NL}${values.join(NL)}${NL}`;
+      this.cache.set(key, joined);
     }
-    return values;
+    return joined;
   }
 
   private read(field: Field, name: string): string[] {
@@ -117,25 +122,25 @@ export class FieldReader {
   }
 }
 
-function compare(op: Op, value: string, wanted: string): boolean {
+/** Whether any of the values in `joined` (see FieldReader) matches. */
+function compare(op: Op, joined: string, wanted: string): boolean {
   switch (op) {
     case "contains":
     case "not_contains":
-      return value.includes(wanted);
+      return joined.includes(wanted);
     case "equals":
-      return value === wanted;
+      return joined.includes(`${NL}${wanted}${NL}`);
     case "starts_with":
-      return value.startsWith(wanted);
+      return joined.includes(`${NL}${wanted}`);
     case "ends_with":
-      return value.endsWith(wanted);
+      return joined.includes(`${wanted}${NL}`);
   }
 }
 
 /** A field with several values matches when any value does; not_contains when none contains it. */
 export function conditionMatches(condition: Condition, reader: FieldReader): boolean {
-  const values = reader.values(condition.field, condition.name);
-  const wanted = normalize(condition.value);
-  const any = values.some((v) => compare(condition.op, v, wanted));
+  const joined = reader.joined(condition.field, condition.name);
+  const any = compare(condition.op, joined, normalize(condition.value));
   return condition.op === "not_contains" ? !any : any;
 }
 
