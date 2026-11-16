@@ -2984,3 +2984,9 @@ input, the reader header and body, a DNS value), `test/telegram.test.ts` (the co
 
 Not verified: Safari and Firefox; iOS long-press in inputs; a drag over the page by hand (the
 owner checks on `wrangler dev`). No test asserts the Banner opt-in. No screenshots (owner's call).
+
+Timing of `bun run test:browser` (total, with the build), same session, interleaved, CPU load read
+just before each run. Base is main at ae10a10 (58 tests), new is this branch (59 tests, the
+selection assertions folded into the first and the dark-reading tests of `test/mailbox.test.ts`):
+base 28 s (29%), 27 s (28%), 30 s (28%); new 28 s (28%), 28 s (53%), 27 s (47%). Before the fold, a
+separate test measured 30 to 32 s.
