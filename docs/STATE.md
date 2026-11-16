@@ -1378,6 +1378,19 @@ Rulings on the review of `c1a3ebf` (2026-11-16):
 8. **Browser tests:** the compose and Markdown suites move to `bun run test:send` with their own
    workflow, limit 14 s; `test:browser` comes back under 26 s.
 
+Rulings on the re-review and the open questions (2026-11-16):
+
+9. **Retry after 24 h (open question 4).** Re-sign with a fresh expiry only when the stored `exp`
+   has passed, and write it back to the R2 sent copy so later retries stay byte-identical; safe
+   because Resend's idempotency window has closed by then.
+10. **A row stuck at `sending` (open question 5).** The reader offers Retry when the row is older
+    than 60 s and younger than 24 h, where Resend dedupes; past 24 h it shows "status unknown,
+    check Resend" without Retry. `claimRetry` enforces the same window.
+11. **The rejected row in Sent (open question 6)** stays as a final record: no Retry, no
+    attachment downloads; `claimRetry` refuses it.
+12. **REQUIREMENTS "Frontend entry chunk"** is redefined as the entry plus its statically
+    preloaded JS, gzip, limit 270 kB.
+
 ### Library choices (checked 2026-11-16)
 
 | Package | Release | License | Dependencies | Verdict |
@@ -1671,6 +1684,67 @@ Numbers after the review fixes (2026-11-16, dev workstation, Ryzen 9 9950X3D):
   3.4 kB; first paint 322.9 → 311.8 kB (319.0 before M5), 7 assets instead of 31; total 736.7 →
   715.5 kB; compose chunk 51.4 kB, the only chunk with marked.
 
+### Second fix round (re-review of `c1a3ebf..06e2c7b`, "FIX FIRST")
+
+Commits: `f5300a4` a rejected send is final, `ced05f7` the stored origin, `b464062` re-signing an
+expired URL, `70fa3df` Retry for a send stuck at `sending`, `c7500d7` the `Content-Length` cap,
+`a6c3287` the `send.yml` paths, and the docs commit after them. New worker tests are in
+`worker/test/send-resend.spec.ts`; the browser test for the reader states is in
+`web/test/compose.test.ts` ("offers Retry in the reader only where it may still send").
+
+- **[High] Reader Retry of a `send_rejected` row.** `claimRetry` takes a `failed` row only when
+  its error is not `send_rejected`; a repeat under that key answers 422 `send_rejected` without
+  a Resend call. The reader shows the rejection without Retry and lists no attachments for it
+  (they went back to the draft). Tests: worker (after the rotation, a Retry with the old key
+  answers 422 and Resend's call count stays 1; the corrected send then goes out once) and
+  browser (rejected row: banner, no "Send again", no attachment name).
+- **Ruling 9 (Q4).** On a retry whose stored `exp` has passed, the route signs a fresh one and
+  writes it back to the R2 sent copy. Test: a retry 25 h later carries `exp` = that time + 24 h,
+  the R2 copy holds it, and the next retry 10 minutes on sends a byte-identical body.
+- **Ruling 10 (Q5).** `claimRetry` takes a `sending` row only between 60 s and 24 h after its
+  last attempt (`SENDING_RETRY_MAX_MS`); older answers 409 without a call. The reader offers
+  Retry for a `sending` row in that window ("Not finished sending") and, past 24 h, a warning
+  "Status unknown" telling the owner to check the Resend dashboard, without Retry; copy in en,
+  zh-CN and ja-JP. Tests: worker (25 h old refused with no call, 23 h old sent) and browser
+  (10 s: no Retry; 25 h: the unknown banner, no Retry; 5 minutes: Retry sends
+  `{ idempotencyKey }`).
+- **Ruling 11 (Q6).** The rejected row stays in Sent as a final record (the High fix).
+- **Ruling 12.** REQUIREMENTS "Frontend entry chunk" now measures the entry chunk plus the JS
+  that `index.html` preloads statically: 263.0 kB (5 files) against 270 kB. No script in the
+  repository reads that row; the measuring script is the session's bundle script plus a sum of
+  the preloaded JS.
+- **Hypothesis 1, another hostname.** The origin is stored in the sent copy with the expiry and
+  every attempt signs from it. Test: a send fails, the retry comes through
+  `https://mail.other.test`, and the two bodies are byte-identical.
+- **Low, webhook.** A `Content-Length` over 256 KB answers 413 before the body is read; the
+  length read is still checked for a chunked body. Test: a declared-length request gets 413 and
+  `Request.prototype.arrayBuffer` is never called; a stream body without a length gets 413 and
+  the signature is never checked.
+- **Low, `send.yml`.** Paths added: `web/vite.config.ts`, `web/package.json`,
+  `web/src/locales/*/compose.json`, `web/src/reader/MailFrame.tsx`,
+  `web/src/reader/sanitize.ts`.
+
+Ablation of the second round (same method): 13 hunks, all red. Worker: `claimRetry` refusing
+`send_rejected`, the 422 answer, signing with the stored origin, re-signing an expired URL,
+writing it back, the 24 h bound for `sending`, the `Content-Length` cap, the read-length cap.
+Web, against a rebuild and `compose.test.ts`: no Retry for a rejection in the reader, no
+downloads for it, Retry for a stalled send, the unknown state after 24 h, no Retry under 60 s.
+Not ablated: the Banner colour (warning for a stalled or unknown send, error for a failure),
+which no test can tell apart.
+
+Numbers after the second round (2026-11-16, dev workstation, Ryzen 9 9950X3D):
+
+- `bun run check`: 9.20, 9.18, 9.46 s wall, CPU load 0–7%; worker suite (vitest Duration)
+  7.98, 7.99, 8.22 s; 327 worker tests.
+- `bun run test:browser`: 25.14, 21.66, 20.73 s wall including the build, CPU load 1–4%
+  (limit 26 s). The first run of the series was slow (23.57 s of test time against 19–20 s),
+  as in the reviewer's single run of 25.2 s; the margin under 26 s is small.
+- `bun run test:send`: 13.13, 12.89, 12.67 s wall including the build, CPU load 0–3% (limit
+  14 s).
+- `bun run test:pwa`: 12.25 s wall, one run (limit 15 s).
+- Bundle (3 builds identical): entry plus statically preloaded JS 263.0 kB; first paint
+  311.8 kB; total 715.9 kB; compose chunk 51.4 kB.
+
 ### Deviations from the design (decisions taken, open to the owner)
 
 1. **`uploads.message_id`.** The design's `uploads` has only `draft_id`; the cron could not tell
@@ -1722,14 +1796,14 @@ Numbers after the review fixes (2026-11-16, dev workstation, Ryzen 9 9950X3D):
    a reply to a message started in MelodyMail threads by its In-Reply-To, which no stored row
    carries; it starts a new thread. Setting our own `Message-ID` header through Resend's `headers`
    is untested against the real API. Try it during the manual test?
-4. **A Retry more than 24 hours after the first attempt** signs with the stored, expired `exp`
+4. Settled by ruling 9. **A Retry more than 24 hours after the first attempt** signs with the stored, expired `exp`
    (ruling 4), so Resend cannot fetch the attachments. Resend's idempotency key has expired by
    then too, so a fresh `exp` would not conflict. Keep the ruling as it is, or re-sign when the
    stored expiry has passed?
-5. **A message stuck at `sending`** (a 409 idempotency conflict, or a Worker that died
+5. Settled by ruling 10. **A message stuck at `sending`** (a 409 idempotency conflict, or a Worker that died
    mid-send) shows "Sending" in the reader with no action; only a repeat from the same compose
    session claims it after 60 s. Offer Retry in the reader for a `sending` row older than 60 s?
-6. **The rejected row after a correction** stays in Sent as "Not sent" with Retry, and its
+6. Settled by ruling 11. **The rejected row after a correction** stays in Sent as "Not sent" with Retry, and its
    attachments now belong to the draft: Discard deletes them, and the rejected row's copy then
    names attachments that are gone. Remove the rejected row once the corrected message is sent,
    or keep it as a record?
@@ -1740,6 +1814,13 @@ Numbers after the review fixes (2026-11-16, dev workstation, Ryzen 9 9950X3D):
 - An address book for recipient suggestions (the Tokenizer takes a search source).
 - Pushing flag changes and delivery statuses to other tabs beyond the `changed` event's list
   refresh (only the open list refetches its first page).
+- Webhook events for an unknown email id answer 409 so that Resend retries them (hypothesis A).
+  An id that is not ours is then retried on Resend's schedule until Resend gives up. Option:
+  answer 200 for such an event once it is older than a few minutes (its `svix-timestamp`),
+  when the send it could have overtaken has long finished. Source: re-review of `06e2c7b`.
+- The `delivery_failed` badge variant in Sent was not ablated: the label reads the same as
+  plain text and Astryx Badge exposes no attribute a test could assert. Source: ablation of the
+  first review round.
 
 ### Not verified
 
