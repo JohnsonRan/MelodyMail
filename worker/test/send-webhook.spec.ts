@@ -1,5 +1,7 @@
 import { exports } from "cloudflare:workers";
-import { describe, expect, it } from "vitest";
+import { Webhook } from "standardwebhooks";
+import { describe, expect, it, vi } from "vitest";
+import { WEBHOOK_BODY_MAX } from "../src/send/webhook";
 import {
   messageRow,
   resendOk,
@@ -12,7 +14,8 @@ import {
 
 // The Resend webhook beyond the basics in send-extras.spec.ts (owner rulings and review of
 // 2026-11-16): a delivery failure Resend reports is final, and an event that arrives before the
-// send stored Resend's id is left for Resend to retry.
+// send stored Resend's id is left for Resend to retry. A body too large is refused before the
+// signature is computed.
 
 const event = (type: string, emailId: string) => ({ type, data: { email_id: emailId } });
 const post = (req: Request) => exports.default.fetch(req);
@@ -57,5 +60,25 @@ describe("Resend webhook, ordering", () => {
     // Resend retries a failed delivery with the same svix-id.
     expect((await post(delivered())).status).toBe(200);
     expect(await messageRow(id)).toMatchObject({ status: "delivered" });
+  });
+});
+
+describe("Resend webhook, body size", () => {
+  it("refuses a body over the cap before verifying it", async () => {
+    const client = await signedIn();
+    const from = await sender();
+    stubResend(() => resendOk("re_big"));
+    const sent = await client.json("POST", "/api/messages/send", sendBody(from));
+    const id = (sent.message as { id: string }).id;
+    const verify = vi.spyOn(Webhook.prototype, "verify");
+    const pad = "a".repeat(WEBHOOK_BODY_MAX);
+    const big = { type: "email.delivered", data: { email_id: "re_big", pad } };
+    const res = await post(webhookRequest(big));
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: "payload_too_large" });
+    expect(verify).not.toHaveBeenCalled();
+    expect(await messageRow(id)).toMatchObject({ status: "sent" });
+    // A normal event still passes.
+    expect((await post(webhookRequest(event("email.delivered", "re_big")))).status).toBe(200);
   });
 });

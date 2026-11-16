@@ -28,12 +28,21 @@ const RANK_OF: Record<string, number> = { sent: 1, delayed: 2, delivered: 3 };
 
 type Event = { type?: unknown; data?: { email_id?: unknown } };
 
+/**
+ * standardwebhooks computes the HMAC over the whole body in JS before it can refuse it: about
+ * 1 ms for 256 KB, 12 ms for 4 MB (Bun, dev workstation), and Workers Free allows 10 ms of CPU.
+ * Resend's email events carry ids, addresses and a subject, a few kB at most.
+ */
+export const WEBHOOK_BODY_MAX = 256 * 1024;
+
 export function registerWebhookRoute(app: Hono<AppEnv>): void {
   signedWebhookRoute(app, "/webhooks/resend", async (c) => {
     const secret = c.env.RESEND_WEBHOOK_SECRET;
     if (!secret) return fail(c, 404, "not_found");
     const svixId = c.req.header("svix-id") ?? "";
-    const raw = await c.req.text();
+    const body = await c.req.arrayBuffer();
+    if (body.byteLength > WEBHOOK_BODY_MAX) return fail(c, 413, "payload_too_large");
+    const raw = new TextDecoder().decode(body);
     let event: Event;
     try {
       event = new Webhook(secret).verify(raw, {
