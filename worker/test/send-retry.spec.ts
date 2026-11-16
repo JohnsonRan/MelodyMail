@@ -104,6 +104,12 @@ describe("drafts after a failed send", () => {
 
     const saved = await client.request("PUT", "/api/drafts/draft-k1", draft(body.idempotencyKey));
     expect(saved.status).toBe(200);
+    // While a retry is still sending, autosave keeps working too.
+    await env.DB.prepare("UPDATE messages SET status = 'sending' WHERE idempotency_key = ?")
+      .bind(body.idempotencyKey)
+      .run();
+    const during = await client.request("PUT", "/api/drafts/draft-k1", draft(body.idempotencyKey));
+    expect(during.status).toBe(200);
     // Not a final rejection: the session must keep its key, so a retry cannot send twice.
     const moved = await client.request("PUT", "/api/drafts/draft-k1", draft(crypto.randomUUID()));
     expect(moved.status).toBe(409);
