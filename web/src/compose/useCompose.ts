@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../api";
-import { getMessage } from "../mailbox/api";
-import { formatFullDate } from "../mailbox/format";
-import { fetchRaw, parseMail } from "../reader/parseMail";
-import { fetchSentCopy } from "../reader/sentCopy";
-import type { MailPart } from "../reader/types";
 import {
   type Attachment,
   deleteDraft,
@@ -21,7 +16,7 @@ import {
   uploadFile,
 } from "./api";
 import { emailHtml } from "./markdown";
-import { prefill } from "./quote";
+import { startFromSource } from "./start";
 
 // One compose session (docs/M5-sending.md, "Screens" and "Sending"): the draft id and the
 // idempotency key are fixed when it opens, so a double click, a retry and a second tab send one
@@ -65,21 +60,6 @@ const doneEntry = (a: Attachment): Entry => ({
   upload: a,
   error: null,
 });
-
-/** The source message's parsed content: raw MIME for inbound, the stored copy for sent mail. */
-async function loadSource(id: string) {
-  const { message } = await getMessage(id);
-  const mail =
-    message.direction === "out" ? await fetchSentCopy(id) : await parseMail(await fetchRaw(id));
-  return { message, mail };
-}
-
-async function partBlob(part: MailPart): Promise<Blob> {
-  if (!part.uploadId) return new Blob([part.content], { type: part.mimeType });
-  const res = await fetch(`/api/uploads/${encodeURIComponent(part.uploadId)}`);
-  if (!res.ok) throw new ApiError("internal", res.status);
-  return res.blob();
-}
 
 export function useCompose(options: {
   draftId: string;
@@ -196,32 +176,16 @@ export function useCompose(options: {
           kind.current = source;
           const start: Fields = { ...EMPTY, addressId: sendSetup.addresses[0]?.id ?? null };
           if (source) {
-            const { message, mail } = await loadSource(source.id);
+            const started = await startFromSource({
+              source,
+              setup: sendSetup,
+              own: opts.current.own,
+              t,
+              locale: i18n.language,
+            });
             if (!live) return;
-            const sender = mail.from[0]?.name || mail.from[0]?.address || message.from;
-            const header = t("quoteHeader", {
-              date: formatFullDate(message.receivedAt, i18n.language),
-              sender,
-            });
-            const own = opts.current.own;
-            const filled = prefill({
-              kind: source.kind,
-              from: message.from,
-              subject: message.subject,
-              mail,
-              own,
-              header,
-            });
-            // Reply from the address the message arrived at, when it can send.
-            const arrived = sendSetup.addresses.find((a) => a.id === message.addressId);
-            Object.assign(start, filled, { addressId: arrived?.id ?? start.addressId });
-            if (source.kind === "forward" && sendSetup.attachments) {
-              const parts = mail.parts.filter((p) => p.disposition !== "inline" || !p.contentId);
-              const blobs = await Promise.all(parts.map(partBlob));
-              addFiles(
-                blobs.map((blob, i) => ({ blob, name: parts[i]?.filename ?? "attachment" })),
-              );
-            }
+            Object.assign(start, started.fields);
+            addFiles(started.files);
           }
           setFields(start);
           dirty.current = true;
