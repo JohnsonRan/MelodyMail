@@ -2127,3 +2127,300 @@ en, zh-CN and ja-JP. `scrollWidth` equalled the viewport width in all 252. Taken
 against `web/dist` and the in-memory API stand-in. Found and fixed from them: the "Cc and Bcc"
 button was cut off beside the To field (now under it), and the status badge in a Sent row shrank
 to an ellipsis (it keeps its width now; the recipients are cut instead).
+
+## M5b: Telegram notifications (built 2026-11-16, branch `m5b-telegram`, not pushed)
+
+Design: `docs/M5b-telegram.md`, with the owner's rulings of 2026-11-16 at its end. Risk class
+High (a public webhook that changes flags, the bot token, a table linking the mailbox to a chat,
+Worker requests to the Bot API carrying sender, subject and address). Waits for the independent
+review the risk class asks for, the real-bot tunnel test (ruling 1, run by the coordinator with
+the owner) and the owner's look at the screenshots.
+
+Commits on `339d865`: `36cab01` migration 0011; `97e7c95` Worker: Connect, webhook, cards;
+`952436d` recovery disconnects Telegram; `b07dc98` widget size check; `7dab8d5` benchmark;
+`ab4813f` tests from the ablation; `a036bde` the card in Chromium; `827de0f` Settings >
+Notifications > Telegram; and the docs commit after them.
+
+### Telegram facts re-checked (2026-11-16)
+
+Every fact the build relies on was read again from the live pages: `sendWidget`,
+`answerWidgetQuery`, `editMessageWidgetData`, `setWebhook`, `deleteWebhook`, `sendMessage`,
+`WidgetQuery`, `WidgetQueryType(Data)`, `Update`, `User`, `ResponseParameters` (machine-readable
+pages `core.telegram.org/bots/api/methods/<name>.md` and `/bots/api/types/<name>.md`; the paths
+without `.md` answer "Page not found"), the API page, the widgets guide (`/bots/widgets.md`),
+Bot features ("Deep Linking") and the Bot FAQ. No fact differs from the design. Additions the
+build used:
+
+- `TelegramWidget.chatData` is `null` when there is no state; the card's `parse()` handles it.
+- `request()` resolves with `{ result: string | null }` and rejects with a `WidgetRequestError`
+  whose `code` is `NOT_ALLOWED`, `BUSY`, `RATE_LIMITED`, `TIMEOUT`, `FAILED` or `INVALID_ANSWER`;
+  the card shows its own line for `RATE_LIMITED` and the generic line for the rest.
+- The `WidgetQuery` type page itself states "at most 5 queries per 5 seconds"; whether a query
+  over the limit reaches the bot is still not stated.
+- `hidden`, `:disabled` on `<button>`, `overflow-wrap`, grid and `em` are in widget profile 1;
+  the card uses nothing from the "Out" lists.
+
+Fetching: TinyFish `fetch_content` returned the method and type pages in full, but cut the
+widgets guide at its first inline `<style` in every format (markdown, html, json). The guide
+was read through Exa `web_fetch_exa` (the next provider in the fetch order), 101 kB, and
+grepped from the saved file.
+
+### Library choices
+
+- **Bot API client: none, as the design decided.** Re-checked: no grammY release with Bot API
+  10.4 types was found; the six methods go through `worker/src/telegram/api.ts` (80 lines).
+- **No new dependency** in the Worker or the web app. The card is a Text module
+  (`card.html`); wrangler's default rules upload it as one (`wrangler deploy --dry-run` lists
+  `<hash>-card.html` beside `index.js`), and the vitest pool imports it as a string too.
+
+### Done
+
+- Migration `0011_telegram.sql` (drizzle-kit, `IF NOT EXISTS`): `telegram` (one row) and
+  `telegram_cards` (claim per message, cascade with the mail, unique `(chat_id,
+  tg_message_id)`). `db:migrate:local` applied it to the local D1 holding 20 messages; a second
+  run reported nothing to apply; the file run again by hand succeeded.
+- Routes `GET /api/telegram`, `POST|DELETE /api/telegram/link`, `DELETE /api/telegram`,
+  `POST /api/telegram/test` (Connect: fresh Passkey and `TELEGRAM_LIMITER`, 5 per 60 s per
+  session; test card: the limiter) and the public `POST /api/webhooks/telegram`
+  (`signedWebhookRoute`). `REQUIREMENTS.md`, "Exceptions", has its row.
+- The Hub sends the card next to Web Push (`Promise.all`, each failure caught and logged).
+- Recovery deletes the binding and its cards in its own batch.
+- `bun run check:widget` (Python zlib) and its planted-violation test in `bun run test:scripts`.
+- `bun run --cwd worker bench:telegram`.
+- Settings > Notifications > Telegram in three locales; four error codes in `web/src/errors.ts`.
+- README "Notifications" > "Telegram", `worker/.dev.vars.example`, `wrangler.jsonc`
+  (`TELEGRAM_API_URL`, `TELEGRAM_LIMITER`).
+
+Usability references: GitHub Settings > Notifications lists every delivery channel on one page;
+Telegram's Bot features page names the deep-link `start` parameter as the way to connect a
+Telegram account to another platform's account.
+
+### Proof
+
+Worker (`bun --bun vitest run`, 368 tests, 33 more than before M5b, in `telegram.spec.ts`,
+`telegram-webhook.spec.ts` and `telegram-send.spec.ts`; `api.spec.ts` asserts the test token
+and the `.invalid` API host). `fetch` is stubbed in every test and `TELEGRAM_API_URL` is
+`https://api.telegram.invalid`, so no request can reach Telegram. `vitest.config.ts` binds
+`TELEGRAM_BOT_TOKEN` itself: the vitest pool also loads `worker/.dev.vars` ("Using secrets
+defined in .dev.vars"), and the explicit binding wins over a real token there.
+
+- route walk: the webhook is the only new public route; the five others answer 401 without a
+  session; Connect answers 403 `reauth_required` without fresh auth, before any Bot API call;
+- status: `notConfigured` without a token, `off`, `httpsRequired` on `http:`, `pending` only
+  until the code expires, `on` with the label and the last error;
+- Connect: `getMe` then `setWebhook` with `<origin>/api/webhooks/telegram`, `allowed_updates`
+  `["message","widget_query"]`, `drop_pending_updates`, a 43-character `secret_token` of the
+  allowed alphabet whose SHA-256 is stored and accepted by the webhook, a 22-character code,
+  the deep link, a 10-minute expiry; `http:`, port 8080 and an origin over 160 characters
+  refused with 409 and no call; port 8443 accepted; 404 without a token; a failing `getMe` or
+  `setWebhook` answers `{"error":"telegram_failed"}` without upstream text and stores nothing;
+  both rate-limited routes answer 429 from the limiter;
+- webhook auth: no row 404; wrong, missing and over-long secret 401; right secret 200 with an
+  empty body; an update over 64 KB by declared length, by bytes read (a chunked body) and
+  invalid JSON answer 200 with no effect;
+- binding: a valid code binds once (a second chat with the same code gets the invalid reply,
+  in Japanese for `language_code` `ja`); the reply in the chat's language (`zh-hans` →
+  zh-CN); a wrong code, a bare `/start`, a group, another `from.id` and an expired code get the
+  one fixed reply and bind nothing; other text gets an empty 200; a new chat's bind drops the
+  old chat's cards; recovery removes binding and cards;
+- sending: one card per message when `notify` runs twice; the request carries the template,
+  `allow_queries`, `protect_content`, no `parse_mode`, the caption, a timeout signal, and
+  `chat_data` with content, link and flags; a long CJK subject, a quoted Japanese sender and a
+  318-character address stay within 1024 bytes (the address cut to its 200-byte budget), the
+  link within 256 characters, the caption within 1024; "(no subject)" in the bound language;
+  nothing without a bound chat or without a token, and no warning then; a card while a page is
+  open; a 400 falls back to `sendMessage` with the caption and an Open button, the claim row
+  keeping a null message id; 403, 429 and 502 record `blocked`, `rate_limited`, `failed` and
+  send nothing else; a success clears it; a 200 without a Bot API answer and a network error
+  record `failed`; `notify` resolves in every failure;
+- actions: each of `read`, `arch`, `star` with 1 and 0 changes exactly that flag; the edit
+  carries the full new `chat_data`; the response is `answerWidgetQuery` with all three flags;
+  the page socket receives `{"type":"changed"}`; another chat, a group, another sender and an
+  unbound row answer `unbound` and change nothing; unknown data answers `bad`; a deleted message
+  answers `gone` and edits `chat_data` to `{"v":1,"g":1}`; `message is not modified` is logged
+  as info and a 500 on the edit as a warning, and both still answer the true flags;
+- disconnect: `deleteWebhook` with `drop_pending_updates`, binding and cards gone, a later
+  webhook 404; a failing `deleteWebhook` still disconnects; the test card goes to the bound
+  chat with `x:1` and the bound language, makes no card row, 409 without a chat;
+- logs: across bind, invalid code, a failed send, a thrown fetch whose message holds the token,
+  a tap and a wrong secret, no log line contains the token, its numeric id, the chat id, a
+  code, the webhook secret, the subject, the sender, an address or Telegram's description.
+
+Browser tier (`bun run test:browser`, 64 tests, 12 more):
+
+- `telegram.test.ts` (against the API stand-in): not set up and needs-https banners without a
+  Connect button; Connect through the Passkey prompt (a Chromium virtual authenticator, the
+  stand-in's reauth routes; the request order is asserted), the deep link (`target=_blank`),
+  the `/start` command and the expiry line, the 3-second poll (Playwright's fake clock) ending
+  in "Connected to @owner since …" with a toast, and no poll afterwards; the code expiring back
+  to Connect; a pending code after a reload offers a new code, Cancel sends DELETE; the test
+  card's toast, a failed test card's error toast and warning banner; Disconnect only after the
+  confirmation dialog.
+- `telegram-card.test.ts` (the card with a stand-in `TelegramWidget`): `<img onerror>` and
+  `<script>` in sender, subject and address written as text, nothing run, no `<img>`; `read:1`
+  then `read:0` with the label following the answer, then `arch:1` and `star:1`; each answer
+  and error code mapped to its line; `gone` drops the content and hides the buttons; a
+  `chatDataChanged` redraw; Open calls `openLink` with the link, an invalid link shows its
+  line; the test card answers without a request; a double tap sends one request; `zh-TW` →
+  Simplified, `ja`, `fr-FR` and empty → their copy or English; the three locale blocks have the
+  same keys.
+
+Widget size: `bun run check:widget` passes the card (3,809 bytes, 1,989 compressed); its test
+fails it, as planted, on the card padded with random text, 32,769 raw bytes, a NUL and invalid
+UTF-8, and exits 2 on an empty and a missing file. Worst-case `chat_data` measured by the test:
+within 1024 bytes.
+
+### Ablation
+
+Scripts in the session scratchpad (`ablate-m5b-worker.ts`, `ablate-m5b-web.ts`) apply one
+mutation at a time, run the touched suites (Worker: the three Telegram specs, `authz`,
+`recover`, `login`, `api`; web: a rebuild and `telegram.test.ts` for the panel, or
+`telegram-card.test.ts` for the card), and restore the file.
+
+Worker, 89 hunks: the failure classes (429, 403, not modified), the `ok` check, the logged
+fields (no description, no fetch message), the timeout; the language mapping, the byte cuts and
+their escaped-form measure, the three field cuts, the flags, the link, the test marker, the
+no-subject copy, the caption cut; `allow_queries`, `protect_content`, the 400-only fallback,
+the fallback itself and its Open button, the last-error mapping, the token, binding and claim
+checks, recording and clearing the error, the stored message id; the origin's scheme, port and
+length, each status branch, Connect's three guards and origin check, the `getMe` and
+`setWebhook` failures, `allowed_updates`, `drop_pending_updates`, the two stored hashes, the
+TTL, cancel, Disconnect's three parts, the test card's checks, outcome and data; the webhook's
+404, secret, both size caps, invalid JSON, the `/start` match, the private, sender, expiry,
+code and single-use conditions, the card drop on rebind, label, language and reply; the four
+unbound conditions, the data pattern, the card lookup, the flag value and name, the gone edit,
+the edit, the Hub event and the answer; the Hub call, `hashMatches`, the recovery deletes and
+the public marker. First pass: 75 red, 14 survivors. Ten got tests (`ab4813f`; all red now):
+the address cut, the Japanese reply, the `ok` check, the timeout signal, the origin length, the
+read cap, the `setWebhook` failure, the test card on a row without a chat, the missing binding
+in the Hub, the not-modified log level. One condition was removed as dead
+(`config.chatId === null`: a null chat never equals the query's chat id). Three survive by
+Telegram's own invariants and stay as stated in the design:
+
+- `chat.id !== bound chat` in an action: in a private chat the chat id is the user's id, so the
+  `from.id` check already refuses;
+- `chat.type === "private"` at bind: a group's id is negative and never equals `from.id`;
+- `chat_id` in the card lookup: rebinding deletes the old chat's cards, so no other chat's row
+  exists; the condition keeps the lookup on the unique index.
+
+Web, 38 hunks: the poll's refetch, stop, guard and expiry, the connected toast, Connect through
+`withReauth`, keeping the link, the cancel, test and disconnect requests, the reload after a
+test, the confirmation, both banners, the hidden-code branch, the last-error banner, the error
+entry, the section on the page; in the card: `textContent`, the target value, the read toggle,
+the label, applying the answer, gone, unbound, an error answer, the error-code line, the test
+card, the busy guard, Open's catch, the `chatDataChanged` handler, the two-letter locale, the
+English fallback, hiding the buttons and dropping the content when gone, "(no subject)", the
+"To:" prefix, disabling the buttons while busy. First pass: 35 red, 3 survivors. The poll guard
+and the disabled buttons got tests (red now); the card's `if (busy) return` was redundant with
+the disabled buttons and was removed (`a036bde`). 37 of 37 red.
+
+Not ablated: the README and copy, the Hub's `catch` around `telegramNewMail` (a throw there
+needs D1 to fail inside the Durable Object), the `chat_not_found` and `widget_refused` classes
+(logged only), `cutEscaped` on a surrogate pair at the budget edge.
+
+### Numbers (2026-11-16, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
+
+Timed with the scratchpad's `time-m5b.ts` on `827de0f`, the runs in a row, CPU load read before
+each:
+
+- `bun run check`: 10.45, 10.28, 10.00 s wall, CPU load 11–24% (limit 12 s); worker suite
+  (vitest Duration) 9.41, 9.19, 8.99 s, 368 tests (limit 10.8 s). Earlier in the session, with
+  the host at 40–55% load from other work, the gate took 12.0–12.7 s and the suite 11.0–11.6 s;
+  green before every commit.
+- `bun run test:browser`: 29.52, 25.81, 26.11 s wall including the build (bun test
+  28.32/24.57/24.95 s), 64 tests in 8 files, CPU load 15–25% (limit 30 s). Open question 1.
+- `bun run test:send`: 14.33, 14.31, 14.23 s wall, 9 tests, CPU load 1–13% (limit 18 s).
+- `bun run test:pwa`: 11.03, 11.69, 11.74 s wall, 11 tests, CPU load 0–4% (limit 15 s).
+- Bundle (the scratchpad's `bundle2.ts`, the recorded `bundle.ts` with the dist path as an
+  argument; vite build, gzip -6; 3 builds identical): entry plus
+  preloaded JS 263.0 → 263.1 kB (limit 270), first paint 311.8 → 311.8 kB (limit 370), total
+  716.5 → 720.3 kB (limit 770); the base `339d865` was built in a worktree with the same script.
+  The Telegram section is in the lazy `NotificationsPage` chunk.
+- Worker bundle (`wrangler deploy --dry-run`): 1285.33 KiB / 265.86 KiB gzip at the base,
+  1303.21 KiB / 272.89 KiB after (wrangler's figures); `index.js` gzip -6 271.3 → 276.3 kB plus
+  the card module, 3,809 bytes raw.
+- Card: 3,809 bytes, **1,989 bytes after zlib level 9** (limit 4,096); 156–164 px tall in the
+  320 and 430 px browser stand-in (cap 600).
+- `bun worker/bench/telegram.ts`: 64 KB update p95 0.078–0.087 ms, a tap p95 ≤ 0.007 ms, the
+  worst-case card p95 0.047–0.064 ms, 3 runs of 200 (limit 3 ms; `REQUIREMENTS.md` row).
+- p90 file length: 242 lines over 199 files (the scratchpad's `p90.ts`); above it from M5b:
+  `worker/test/telegram-webhook.spec.ts` 269 lines (webhook auth, binding and buttons over one
+  fixture set; split by those three groups when it next grows) and `worker/src/db/schema.ts`
+  389 (+39, the two tables; one file keeps the migrations' source in one place).
+
+### Deviations from the design (decisions taken, open to the owner)
+
+1. **`pending` carries no code.** The design's status returns `url` and `code`, but only the
+  code's SHA-256 is stored. The panel shows the code from Connect's answer; after a reload a
+  pending code shows "A code is waiting, but it is shown only once" with "Create a new code"
+  and Cancel.
+2. **The fallback keeps the claim row** with a null `tg_message_id` (the design says "without a
+  card row"): deleting it would let a repeated `notify` send the message twice. A null id never
+  matches a tap. A 200 without a Bot API answer is also kept this way.
+3. **A fallback that went out clears `last_error`**: the notification arrived.
+4. **The test card uses the same fallback** on a 400, so the owner sees something either way.
+5. **Recovery makes no `deleteWebhook` call**: the recovery path stays free of a network call;
+  without the row the webhook answers 404 and acts on nothing. Telegram may repeat updates it
+  had in flight a few times, then gives up.
+6. **A bare `/start`** (opening the bot without the link) gets the invalid-code reply.
+7. **Audit entries** `telegram_link_created` and `telegram_connected` besides the design's
+  `telegram_disconnected`.
+8. **The size check runs inside `bun run test:scripts`** (in the merge gate) rather than as its
+  own gate step: the test runs it on the card and on the planted files, so a second step would
+  run the same check twice. `bun run check:widget` is the manual command.
+9. **`card.html` is excluded from Biome** (`biome.json`): Biome's HTML formatter would expand
+  the deliberately compact file.
+10. **The card has no `if (busy) return`**: the disabled buttons cover a double tap (tested),
+  and Telegram answers a second request with `BUSY`.
+
+### Open questions for the owner
+
+1. **Browser tier at 25.8–29.5 s against 30 s.** M5b adds 12 tests (about 4–5 s). One run of
+   three came within 0.5 s of the limit. Options: leave it (recommended for now: two runs at
+   about 26 s, and the first run of a series has been the slow one since M5), or move the two
+   Telegram suites into their own `bun run test:telegram` with a workflow, as was done for the
+   PWA and send suites, if a run goes over.
+2. **The tunnel test may need `--local-protocol https`.** Connect reads the origin from the
+   request URL, and the CSRF guard compares the browser's `Origin` with it. Behind a quick
+   tunnel, `wrangler dev` likely sees `http://` and the panel would show "needs the deployed
+   address" (not verified). Recommended for the coordinator: run `wrangler dev --local-protocol
+   https` and point `cloudflared` at `https://localhost:8787` with `--no-tls-verify` and
+   `--http-host-header <tunnel host>`, then check that `GET /api/telegram` reports `off`, not
+   `httpsRequired`, before connecting.
+3. **Recovery and the registered webhook** (deviation 5). Recommended: keep it as built.
+
+### Deferred
+
+- Coalescing cards above one per second per chat (429 is recorded, the card is lost). Source:
+  the design's limits.
+- Deleting the Telegram message with the mail (ruling 5) and editing cards from panel actions
+  (ruling 2).
+- A Bot API client library once grammY ships Bot API 10.4 types. Source: the design.
+- Splitting `worker/test/telegram-webhook.spec.ts` (269 lines, over the 242-line p90). Source:
+  this build; test-only.
+
+### Not verified
+
+- A real bot, a real webhook from Telegram and real taps (owner ruling 1: the coordinator runs
+  the tunnel test with the owner); the webhook response carrying `answerWidgetQuery` and
+  `sendMessage`; the card's rendering on iOS, Android, Desktop and web clients (only a Chromium
+  stand-in, which draws more than Telegram does); whether `navigator.language` in the widget is
+  Telegram's interface language; the 1-message-per-second limit under a burst; production CPU.
+- `wrangler dev`: the routes ran in workerd through the vitest pool; no token was put in
+  `worker/.dev.vars`, which was not read.
+- The Microsoft localization style guides are PDFs behind `aka.ms` links; only their index was
+  read. The zh-CN and ja-JP copy follows the existing locale files' terms and the repository's
+  rules (spacing between CJK and Latin, full-width punctuation in zh-CN).
+- WCAG contrast of the new section was not measured; the browser tier and new suites have not
+  run in CI (nothing was pushed).
+
+### Screenshots
+
+156 PNG files in the session scratchpad, folder `shots-m5b` (outside the repository): the
+Telegram section not set up, needs the deployed address, off, pending with the code, pending
+after a reload, connected, connected with a failed send, and the Disconnect dialog, at 390,
+1280 and 1920 px, light and dark, en, zh-CN and ja-JP (144); the card at 320 and 430 px with a
+light and a dark palette in the three locales (12). `scrollWidth` equalled the viewport width in
+all 156. Taken with Playwright against `web/dist` and the in-memory API stand-in. No layout bug
+was found; the page keeps the M4b layout (one column of sections; at 1280 and 1920 px the page is
+two sections tall).
