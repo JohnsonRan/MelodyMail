@@ -9,7 +9,8 @@
     "security": "安全",
     "domains": "域名",
     "addresses": "地址",
-    "forwarding": "转发"
+    "forwarding": "转发",
+    "notifications": "通知"
   },
   "folder": {
     "inbox": "收件箱",
@@ -210,7 +211,10 @@
     "invalid_email": "这不是有效的电子邮件地址。请检查后重试。",
     "target_exists": "此转发地址已添加。",
     "target_in_use": "仍有地址转发到此地址。请确认将它从这些地址中移除。",
-    "not_in_trash": "只能永久删除“已删除”中的邮件。请先将其移到“已删除”。"
+    "not_in_trash": "只能永久删除“已删除”中的邮件。请先将其移到“已删除”。",
+    "not_subscribed": "此设备尚未订阅。请先开启通知。",
+    "push_failed": "无法发送通知。请稍后重试。",
+    "invalid_subscription": "无法保存此浏览器的订阅。请重试。"
   },
   "common": {
     "cancel": "取消"
@@ -335,5 +339,31 @@
   "notification": {
     "newMail": "新邮件",
     "testBody": "此设备可以正常接收通知。"
+  },
+  "notifications": {
+    "title": "通知",
+    "sectionTitle": "此设备上的通知",
+    "description": "MelodyMail 未打开时，收到新邮件会通知你。通知显示发件人和主题，不显示邮件正文。",
+    "switch": "新邮件通知",
+    "stateOn": "已在此设备上开启。",
+    "stateOff": "已在此设备上关闭。",
+    "sendTest": "发送测试通知",
+    "testSent": "测试通知已发送，几秒钟后会显示。",
+    "turnedOn": "已开启通知。",
+    "turnedOff": "已关闭通知。",
+    "blockedTitle": "通知已被阻止",
+    "blockedDescription": "请在浏览器设置中允许此网站发送通知，然后重新加载此页面。",
+    "notSetUpTitle": "此服务器尚未设置推送",
+    "notSetUpDescription": "请先为 Worker 添加 VAPID 密钥对。操作步骤见 README 中的“Notifications”一节。",
+    "unsupported": {
+      "browser": {
+        "title": "此浏览器无法显示推送通知",
+        "description": "请使用最新版本的 Chrome、Edge、Firefox 或 Safari。"
+      },
+      "homeScreen": {
+        "title": "请先将 MelodyMail 添加到主屏幕",
+        "description": "在 iPhone 和 iPad 上，只有从主屏幕打开的应用才能收到通知。请在 Safari 中轻点“共享”，然后轻点“添加到主屏幕”。"
+      }
+    }
   }
 }

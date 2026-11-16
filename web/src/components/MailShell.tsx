@@ -10,6 +10,7 @@ import {
   ArchiveBoxIcon,
   ArrowUturnRightIcon,
   AtSymbolIcon,
+  BellIcon,
   EnvelopeIcon,
   GlobeAltIcon,
   InboxIcon,
@@ -130,6 +131,12 @@ function MailNav() {
           icon={ArrowUturnRightIcon}
           isSelected={pathname === "/settings/forwarding"}
           href="/settings/forwarding"
+        />
+        <SideNavItem
+          label={t("nav.notifications")}
+          icon={BellIcon}
+          isSelected={pathname === "/settings/notifications"}
+          href="/settings/notifications"
         />
         <SideNavItem
           label={t("nav.security")}

@@ -54,6 +54,11 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
     path: "/settings/security",
     component: lazyRouteComponent(() => import("./pages/SecurityPage"), "SecurityPage"),
   });
+  const notificationsRoute = createRoute({
+    getParentRoute: () => shellRoute,
+    path: "/settings/notifications",
+    component: lazyRouteComponent(() => import("./pages/NotificationsPage"), "NotificationsPage"),
+  });
   const domainsRoute = createRoute({
     getParentRoute: () => shellRoute,
     path: "/settings/domains",
@@ -112,6 +117,7 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
     shellRoute.addChildren([
       ...mailboxRoutes,
       securityRoute,
+      notificationsRoute,
       domainsRoute,
       domainDnsRoute,
       addressesRoute,

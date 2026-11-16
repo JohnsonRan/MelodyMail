@@ -27,6 +27,9 @@ const KNOWN = new Set([
   "target_exists",
   "target_in_use",
   "not_in_trash",
+  "not_subscribed",
+  "push_failed",
+  "invalid_subscription",
   "network",
 ]);
 

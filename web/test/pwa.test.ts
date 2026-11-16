@@ -77,6 +77,8 @@ describe("installable app", () => {
     await page.locator("iframe").waitFor();
     await page.goto(`${app.origin}/starred`);
     await page.getByRole("heading", { name: "Starred", level: 1 }).waitFor();
+    await page.goto(`${app.origin}/settings/notifications`);
+    await page.getByText("Push isn't set up on this server").waitFor();
     const cached = await page.evaluate(async () => {
       const urls: string[] = [];
       for (const name of await caches.keys()) {
@@ -132,5 +134,128 @@ describe("updates", () => {
     expect(
       await page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.waiting),
     ).toBeNull();
+  });
+});
+
+// Chromium's real PushManager would register with Google's push service, which tests must not
+// reach (AGENTS.md, hard limits); these pages get a stand-in that keeps one subscription in memory.
+const KEY = Buffer.from([4, ...Array.from({ length: 64 }, (_, i) => i)]).toString("base64url");
+
+async function pushPage(options: { permission?: NotificationPermission; hidden?: boolean } = {}) {
+  const p = await context.newPage();
+  await p.addInitScript((opts) => {
+    const w = window as unknown as { shown: { title: string; options: NotificationOptions }[] };
+    w.shown = [];
+    let current: unknown = null;
+    const decode = (k: string) =>
+      Uint8Array.from(atob(k.replaceAll("-", "+").replaceAll("_", "/")), (c) => c.charCodeAt(0));
+    PushManager.prototype.subscribe = async (o?: PushSubscriptionOptionsInit) => {
+      const key = decode(String(o?.applicationServerKey));
+      current = {
+        endpoint: "https://fcm.googleapis.com/fcm/send/stand-in",
+        options: { applicationServerKey: key.buffer },
+        toJSON: () => ({
+          endpoint: "https://fcm.googleapis.com/fcm/send/stand-in",
+          keys: { p256dh: "p", auth: "a" },
+        }),
+        unsubscribe: async () => {
+          current = null;
+          return true;
+        },
+      };
+      return current as PushSubscription;
+    };
+    PushManager.prototype.getSubscription = async () => current as PushSubscription | null;
+    ServiceWorkerRegistration.prototype.showNotification = async (title, options = {}) => {
+      w.shown.push({ title, options });
+    };
+    if (opts.permission) {
+      Object.defineProperty(Notification, "permission", { get: () => opts.permission });
+      Notification.requestPermission = async () => opts.permission as NotificationPermission;
+    }
+    if (opts.hidden) Object.defineProperty(document, "visibilityState", { get: () => "hidden" });
+  }, options);
+  return p;
+}
+
+describe("notifications settings", () => {
+  test("says push is not set up when the Worker has no key", async () => {
+    const p = await pushPage({ permission: "granted" });
+    await p.goto(`${app.origin}/settings/notifications`);
+    await p.getByText("Push isn't set up on this server").waitFor();
+    expect(await p.getByRole("switch").count()).toBe(0);
+    await p.close();
+  });
+
+  test("subscribes on the owner's click, sends a test and unsubscribes", async () => {
+    app.pushKey = KEY;
+    const p = await pushPage({ permission: "granted" });
+    await p.goto(`${app.origin}/settings/notifications`);
+    const toggle = p.getByRole("switch", { name: "Notify me about new mail" });
+    await toggle.waitFor();
+    expect(await toggle.isChecked()).toBe(false);
+    expect(app.push.filter((c) => c.method !== "GET")).toEqual([]);
+    await toggle.click();
+    await p.getByText("Notifications turned on.").first().waitFor();
+    expect(app.push).toContainEqual({
+      method: "PUT",
+      path: "/api/push/subscription",
+      body: {
+        endpoint: "https://fcm.googleapis.com/fcm/send/stand-in",
+        keys: { p256dh: "p", auth: "a" },
+      },
+    });
+    await p.getByRole("button", { name: "Send test notification" }).click();
+    await p.getByText("Test notification sent.").first().waitFor();
+    expect(app.push).toContainEqual({ method: "POST", path: "/api/push/test", body: {} });
+    await toggle.click();
+    await p.getByText("Notifications turned off.").first().waitFor();
+    expect(app.push).toContainEqual({
+      method: "DELETE",
+      path: "/api/push/subscription",
+      body: null,
+    });
+    await p.close();
+  });
+
+  test("explains a blocked permission", async () => {
+    app.pushKey = KEY;
+    const p = await pushPage({ permission: "denied" });
+    await p.goto(`${app.origin}/settings/notifications`);
+    await p.getByText("Notifications are blocked").waitFor();
+    await p.close();
+  });
+});
+
+describe("notification from an open page", () => {
+  test("a hidden page with push on shows new mail itself; a visible one does not", async () => {
+    app.pushKey = KEY;
+    for (const hidden of [true, false]) {
+      const p = await pushPage({ permission: "granted", hidden });
+      await p.goto(`${app.origin}/settings/notifications`);
+      await p.getByRole("switch", { name: "Notify me about new mail" }).click();
+      await p.getByText("Notifications turned on.").first().waitFor();
+      for (const ws of app.sockets) ws.send(JSON.stringify({ type: "message", id: "hostile" }));
+      if (hidden)
+        await p.waitForFunction(() => (window as unknown as { shown: unknown[] }).shown.length > 0);
+      else await p.waitForTimeout(300);
+      const shown = await p.evaluate(() => (window as unknown as { shown: unknown[] }).shown);
+      expect(shown).toEqual(
+        hidden
+          ? [
+              {
+                title: "Sender",
+                options: {
+                  body: "Hostile\nshop@example.com",
+                  tag: "message:hostile",
+                  icon: "/pwa-192x192.png",
+                  data: { url: "/?m=hostile" },
+                },
+              },
+            ]
+          : [],
+      );
+      await p.close();
+    }
   });
 });

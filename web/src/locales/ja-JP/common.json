@@ -9,7 +9,8 @@
     "security": "セキュリティ",
     "domains": "ドメイン",
     "addresses": "アドレス",
-    "forwarding": "転送"
+    "forwarding": "転送",
+    "notifications": "通知"
   },
   "folder": {
     "inbox": "受信トレイ",
@@ -210,7 +211,10 @@
     "invalid_email": "有効なメールアドレスではありません。確認してもう一度お試しください。",
     "target_exists": "この転送先アドレスは既に追加されています。",
     "target_in_use": "まだこのアドレスに転送しているアドレスがあります。それらから削除することを確認してください。",
-    "not_in_trash": "完全に削除できるのはごみ箱内のメッセージだけです。先にごみ箱に移動してください。"
+    "not_in_trash": "完全に削除できるのはごみ箱内のメッセージだけです。先にごみ箱に移動してください。",
+    "not_subscribed": "このデバイスは登録されていません。先に通知をオンにしてください。",
+    "push_failed": "通知を配信できませんでした。しばらくしてからもう一度お試しください。",
+    "invalid_subscription": "このブラウザーの登録を保存できませんでした。もう一度お試しください。"
   },
   "common": {
     "cancel": "キャンセル"
@@ -335,5 +339,31 @@
   "notification": {
     "newMail": "新着メール",
     "testBody": "このデバイスで通知を受け取れます。"
+  },
+  "notifications": {
+    "title": "通知",
+    "sectionTitle": "このデバイスの通知",
+    "description": "MelodyMail を開いていないときに新着メールを通知します。通知には差出人と件名が表示され、本文は表示されません。",
+    "switch": "新着メールを通知する",
+    "stateOn": "このデバイスでオンになっています。",
+    "stateOff": "このデバイスでオフになっています。",
+    "sendTest": "テスト通知を送信",
+    "testSent": "テスト通知を送信しました。数秒で表示されます。",
+    "turnedOn": "通知をオンにしました。",
+    "turnedOff": "通知をオフにしました。",
+    "blockedTitle": "通知がブロックされています",
+    "blockedDescription": "ブラウザーの設定でこのサイトの通知を許可してから、このページを再読み込みしてください。",
+    "notSetUpTitle": "このサーバーではプッシュが設定されていません",
+    "notSetUpDescription": "最初に Worker に VAPID キー ペアを追加してください。手順は README の「Notifications」セクションにあります。",
+    "unsupported": {
+      "browser": {
+        "title": "このブラウザーではプッシュ通知を表示できません",
+        "description": "最新バージョンの Chrome、Edge、Firefox、または Safari を使用してください。"
+      },
+      "homeScreen": {
+        "title": "最初に MelodyMail をホーム画面に追加してください",
+        "description": "iPhone と iPad では、ホーム画面から開いたアプリだけが通知を受け取れます。Safari で [共有] をタップし、[ホーム画面に追加] をタップしてください。"
+      }
+    }
   }
 }

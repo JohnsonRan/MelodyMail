@@ -124,8 +124,7 @@ Backend endpoints with no frontend caller:
 
 | Endpoint | Caller | Reason |
 | --- | --- | --- |
-| GET /api/health | deploy and uptime checks | liveness probe; carries no data |
-| GET /api/messages/:id | none yet | one message's metadata, as `docs/M4-mailbox.md` defines; the M4 reader reads the thread route instead (open question in `docs/STATE.md`, M4) |
+| GET /api/health | deploy and uptime checks; the app probes it while offline (`web/src/network.ts`) | liveness probe; carries no data |
 
 Intentional designs that look like defects:
 
