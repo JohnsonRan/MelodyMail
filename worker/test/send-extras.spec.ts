@@ -169,9 +169,11 @@ describe("Resend webhook", () => {
     expect(replay.status).toBe(200);
     expect((await messageRow(id))?.status).toBe("sent");
 
-    for (const unknown of [event("email.delivered", "re_unknown"), event("email.opened")]) {
-      expect((await post(webhookRequest(unknown))).status).toBe(200);
-    }
+    // An unknown type is ignored; an id no message carries is left for Resend to retry.
+    expect((await post(webhookRequest(event("email.opened")))).status).toBe(200);
+    const unknown = await post(webhookRequest(event("email.delivered", "re_unknown")));
+    expect(unknown.status).toBe(409);
+    expect(await unknown.json()).toEqual({ error: "unknown_email" });
     expect((await messageRow(id))?.status).toBe("sent");
   });
 

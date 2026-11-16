@@ -116,7 +116,10 @@ at `sent` or later (owner ruling 2026-11-16).
   final). `email.failed` maps to `delivery_failed`, not to `failed`: `failed` is a local send
   failure the owner may retry, while Resend's report is final, so `claimRetry` never takes it
   (owner ruling 2026-11-16).
-  Unknown ids and other event types answer 200 and are ignored.
+  Other event types answer 200 and are ignored. An email id that no message carries answers 409
+  and its `svix-id` is not recorded: the event may have overtaken the send that stores
+  `resend_id`, and Resend delivers it again later. An id that is not ours is retried on Resend's
+  schedule until Resend gives up.
 - Log the event type and message id only.
 
 ## Screens

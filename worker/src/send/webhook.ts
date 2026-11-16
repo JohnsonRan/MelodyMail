@@ -47,37 +47,39 @@ export function registerWebhookRoute(app: Hono<AppEnv>): void {
     if (svixId.length > 128) return fail(c, 400, "bad_request");
 
     const status = typeof event.type === "string" ? STATUS_BY_EVENT[event.type] : undefined;
-    const emailId = event.data?.email_id;
+    const emailId = status && typeof event.data?.email_id === "string" ? event.data.email_id : null;
     const db = c.env.DB;
-    const now = Date.now();
     // The status change and the replay guard commit together, so a failed update is retried by
-    // Resend instead of being remembered as handled.
-    const update =
-      status && typeof emailId === "string"
-        ? [
-            db
-              .prepare(
-                `UPDATE messages SET status = ? WHERE resend_id = ? AND direction = 'out'
-                   AND ${RANK} < ?
-                   AND NOT EXISTS (SELECT 1 FROM webhook_events WHERE svix_id = ?)
-                 RETURNING id`,
-              )
-              .bind(status, emailId, RANK_OF[status] ?? 4, svixId),
-          ]
-        : [];
-    const results = await db.batch<{ id: string }>([
-      ...update,
+    // Resend instead of being remembered as handled. An event for an id no message carries yet
+    // is not remembered either: it may have overtaken the send that stores resend_id.
+    const [updated, known] = await db.batch<{ id?: string; known?: number }>([
       db
         .prepare(
-          "INSERT INTO webhook_events (svix_id, received_at) VALUES (?, ?) ON CONFLICT DO NOTHING",
+          `UPDATE messages SET status = ? WHERE resend_id = ? AND direction = 'out'
+             AND ${RANK} < ?
+             AND NOT EXISTS (SELECT 1 FROM webhook_events WHERE svix_id = ?)
+           RETURNING id`,
         )
-        .bind(svixId, now),
+        .bind(status ?? null, emailId, RANK_OF[status ?? ""] ?? 4, svixId),
+      db
+        .prepare("SELECT EXISTS (SELECT 1 FROM messages WHERE resend_id = ?) AS known")
+        .bind(emailId),
+      db
+        .prepare(
+          `INSERT INTO webhook_events (svix_id, received_at)
+           SELECT ?, ? WHERE ? IS NULL OR EXISTS (SELECT 1 FROM messages WHERE resend_id = ?)
+           ON CONFLICT DO NOTHING`,
+        )
+        .bind(svixId, Date.now(), emailId, emailId),
     ]);
-    const changed = update.length > 0 ? results[0]?.results[0]?.id : undefined;
-    log("info", "webhook_event", {
-      type: typeof event.type === "string" ? event.type.slice(0, 64) : null,
-      messageId: changed ?? null,
-    });
+    const changed = updated?.results[0]?.id;
+    const type = typeof event.type === "string" ? event.type.slice(0, 64) : null;
+    if (emailId && !known?.results[0]?.known) {
+      // A non-2xx answer makes Resend deliver the event again later, with the same svix-id.
+      log("info", "webhook_event_unmatched", { type });
+      return fail(c, 409, "unknown_email");
+    }
+    log("info", "webhook_event", { type, messageId: changed ?? null });
     if (changed) await notifyHub(c.env, { type: "changed", id: changed });
     return c.json({ ok: true });
   });
