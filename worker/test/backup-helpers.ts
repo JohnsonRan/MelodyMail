@@ -132,6 +132,9 @@ export async function seedAll(): Promise<void> {
       trashed: i === 1,
     });
   }
+  // A sent message's search text holds its whole body (up to 512 K characters), so an FTS row can
+  // pass the split size too.
+  await seedMessage({ id: "sent-long", body: `${"长文".repeat(25_000)}'end` });
   await db.batch([
     db
       .prepare("UPDATE messages SET raw_size = 3000000000, trashed_at = ? WHERE id = 'm01'")

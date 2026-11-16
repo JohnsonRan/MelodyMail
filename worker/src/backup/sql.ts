@@ -48,7 +48,8 @@ WHERE i = 1 OR (acc <= ?3 AND big = 0) ORDER BY r`;
  * One oversized row by rowid ?1, as ready statements in order (column s): the INSERT with every
  * text value over ?2 bytes left empty, then for each such value one UPDATE per ?3 characters that
  * appends the next piece. substr() counts characters, so no piece ends inside one, and each
- * UPDATE stays under 4 × ?3 bytes plus its WHERE clause.
+ * UPDATE stays under 4 × ?3 bytes plus its WHERE clause. `*` leaves out an FTS5 table's rowid,
+ * which is its key, so it is selected by name.
  */
 export function splitQuery(table: ExportTable): string {
   const values = table.columns
@@ -62,7 +63,7 @@ export function splitQuery(table: ExportTable): string {
     .map((c) => `CASE WHEN ${isLong(`one.${ident(c)}`)} THEN one.${ident(c)} END`)
     .join(", ");
   const names = JSON.stringify(table.columns);
-  return `WITH RECURSIVE one AS (SELECT * FROM ${ident(table.name)} WHERE rowid = ?1),
+  return `WITH RECURSIVE one AS (SELECT rowid AS "rowid", * FROM ${ident(table.name)} WHERE rowid = ?1),
 longs AS (
   SELECT j.key AS o, json_extract('${names}', '$[' || j.key || ']') AS name, j.value AS v
   FROM one, json_each(json_array(${longs})) AS j WHERE j.value IS NOT NULL
