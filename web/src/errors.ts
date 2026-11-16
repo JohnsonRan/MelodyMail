@@ -55,6 +55,13 @@ const KNOWN = new Set([
   "telegram_needs_https",
   "telegram_not_connected",
   "telegram_failed",
+  "invalid_rule_name",
+  "invalid_condition",
+  "no_rule_action",
+  "too_many_rule_targets",
+  "too_many_rules",
+  "order_mismatch",
+  "no_raw",
   "network",
 ]);
 

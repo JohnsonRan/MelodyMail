@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Server, ServerWebSocket } from "bun";
+import { RulesStub } from "./stub-rules";
 import { SendStub } from "./stub-send";
 import { TelegramStub } from "./stub-telegram";
 
@@ -119,6 +120,7 @@ export class StubApp {
   store = seed();
   send = new SendStub();
   telegram = new TelegramStub();
+  rules = new RulesStub();
   patches: { path: string; body: Record<string, unknown> }[] = [];
   push: PushCall[] = [];
   /** null answers GET /api/push/key with 404, as a Worker without VAPID keys does. */
@@ -168,6 +170,7 @@ export class StubApp {
     this.store = seed();
     this.send = new SendStub();
     this.telegram = new TelegramStub();
+    this.rules = new RulesStub();
     this.patches = [];
     this.push = [];
     this.reports = [];
@@ -225,6 +228,8 @@ export class StubApp {
     }
     const telegram = this.telegram.handle(req, url);
     if (telegram) return telegram;
+    const rules = await this.rules.handle(req, url);
+    if (rules) return rules;
     const sending = await this.send.handle(req, url, this.store);
     if (sending) return sending;
     if (path === "/api/messages" && req.method === "GET") {

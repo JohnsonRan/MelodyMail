@@ -10,7 +10,8 @@
     "domains": "ドメイン",
     "addresses": "アドレス",
     "forwarding": "転送",
-    "notifications": "通知"
+    "notifications": "通知",
+    "rules": "ルール"
   },
   "folder": {
     "inbox": "受信トレイ",
@@ -251,7 +252,7 @@
     "invalid_display_name": "差出人名が長すぎるか、改行が含まれています。1 行で 100 文字以内にしてください。",
     "invalid_email": "有効なメールアドレスではありません。確認してもう一度お試しください。",
     "target_exists": "この転送先アドレスは既に追加されています。",
-    "target_in_use": "まだこのアドレスに転送しているアドレスがあります。それらから削除することを確認してください。",
+    "target_in_use": "まだこのアドレスに転送しているアドレスまたはルールがあります。それらから削除することを確認してください。",
     "not_in_trash": "完全に削除できるのはごみ箱内のメッセージだけです。先にごみ箱に移動してください。",
     "not_subscribed": "このデバイスは登録されていません。先に通知をオンにしてください。",
     "push_failed": "通知を配信できませんでした。しばらくしてからもう一度お試しください。",
@@ -280,7 +281,14 @@
     "telegram_not_configured": "このサーバーでは Telegram が設定されていません。設定方法は README の「Notifications」セクションを参照してください。",
     "telegram_needs_https": "Telegram は、デプロイされた MelodyMail の https:// アドレスにしかアクセスできません。そのアドレスでこのページを開いてください。",
     "telegram_not_connected": "Telegram が接続されていません。先に接続してください。",
-    "telegram_failed": "Telegram がリクエストを受け付けませんでした。数分後にもう一度お試しください。"
+    "telegram_failed": "Telegram がリクエストを受け付けませんでした。数分後にもう一度お試しください。",
+    "invalid_rule_name": "100 文字以内で名前を入力してください。",
+    "invalid_condition": "各条件には 256 文字以内の値が必要です。ヘッダーの条件には List-Id などのヘッダー名も必要です。",
+    "no_rule_action": "少なくとも 1 つのアクションを選択してください。",
+    "too_many_rule_targets": "1 つのルールで転送できるのは 5 件のアドレスまでです。",
+    "too_many_rules": "ルールは 50 件まで作成できます。先に 1 件削除してください。",
+    "order_mismatch": "その間にルールが変更されました。ページを再読み込みしてもう一度お試しください。",
+    "no_raw": "このメッセージはテストに使用できません。受信したメッセージを選択してください。"
   },
   "common": {
     "cancel": "キャンセル"
@@ -393,7 +401,10 @@
     "removeTitle": "{{email}} を削除しますか?",
     "removeDescription": "このアドレスにはメールが転送されなくなります。",
     "removeInUse": "次のアドレスから削除されます: {{addresses}}。この操作は元に戻せません。",
-    "switchesToStore": "{{addresses}} の最後の転送先アドレスのため、これらのアドレスは転送のみではなくなり、MelodyMail にコピーを保存します。"
+    "switchesToStore": "{{addresses}} の最後の転送先アドレスのため、これらのアドレスは転送のみではなくなり、MelodyMail にコピーを保存します。",
+    "usedByRules": "使用しているルール数",
+    "removeFromRules": "次のルールから削除されます: {{rules}}。",
+    "rulesDisabled": "次のルールは実行するアクションがなくなるため、無効になります: {{rules}}。"
   },
   "system": {
     "offlineTitle": "オフラインです",
@@ -480,5 +491,8 @@
     "warning": "上限に近づいています",
     "dailyUsed": "今日の送信枠を使い切りました。UTC 0:00 にリセットされます。",
     "monthlyUsed": "今月の送信枠を使い切りました。"
+  },
+  "rulesPage": {
+    "create": "ルールを作成"
   }
 }

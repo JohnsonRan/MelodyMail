@@ -12,6 +12,7 @@ export function FormDialog({
   submitLabel,
   isSubmitting,
   onSubmit,
+  width = 480,
   children,
 }: {
   isOpen: boolean;
@@ -20,11 +21,18 @@ export function FormDialog({
   submitLabel: string;
   isSubmitting: boolean;
   onSubmit: () => void;
+  /** The rule editor needs room for a condition row; the other forms keep 480. */
+  width?: number;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
-    <Dialog isOpen={isOpen} onOpenChange={(open) => !open && onClose()} purpose="form" width={480}>
+    <Dialog
+      isOpen={isOpen}
+      onOpenChange={(open) => !open && onClose()}
+      purpose="form"
+      width={width}
+    >
       <Layout
         header={<DialogHeader title={title} onOpenChange={(open) => !open && onClose()} />}
         content={
