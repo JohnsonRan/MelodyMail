@@ -400,3 +400,47 @@ export const settings = sqliteTable(
   },
   (t) => [check("settings_single_row", sql`${t.id} = 1`)],
 );
+
+// M6: rules (docs/M6-rules-api.md, "Rules"). email() reads the enabled rules in position order;
+// a rule's conditions are a JSON array validated on write (worker/src/rules/validate.ts). API keys
+// arrive in migration 0014.
+export const rules = sqliteTable(
+  "rules",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    enabled: integer("enabled").notNull().default(1),
+    position: integer("position").notNull(),
+    match: text("match", { enum: ["all", "any"] }).notNull(),
+    conditions: text("conditions").notNull(),
+    markRead: integer("mark_read").notNull().default(0),
+    star: integer("star").notNull().default(0),
+    archive: integer("archive").notNull().default(0),
+    trash: integer("trash").notNull().default(0),
+    stop: integer("stop").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [
+    index("rules_enabled_position").on(t.enabled, t.position),
+    check("rules_match", sql`${t.match} IN ('all', 'any')`),
+  ],
+);
+
+// A rule forwards only to stored targets (docs/M6-rules-api.md, Decision 2). Deleting either side
+// removes the link.
+export const ruleForwards = sqliteTable(
+  "rule_forwards",
+  {
+    ruleId: integer("rule_id")
+      .notNull()
+      .references(() => rules.id, { onDelete: "cascade" }),
+    targetId: integer("target_id")
+      .notNull()
+      .references(() => forwardTargets.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.ruleId, t.targetId] }),
+    index("rule_forwards_target_id").on(t.targetId),
+  ],
+);
