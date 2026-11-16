@@ -15,6 +15,7 @@ const TABLES = [
   "uploads",
   "webhook_events",
   "send_quota",
+  "settings",
   "rule_forwards",
   "api_keys",
   "rules",

@@ -1,3 +1,4 @@
+import { runExport } from "../backup/export";
 import type { Env } from "../env";
 import { errorText, log } from "../http";
 import { removeOldWebhookEvents, removeStaleUploads } from "../send/cleanup";
@@ -153,7 +154,7 @@ export async function requeueStored(env: Env, now: number): Promise<number> {
 /**
  * The one cron trigger. Each job is contained (worker/AGENTS.md, Background work): a failing
  * job is logged with its name and the others still run; the invocation then fails, so the
- * failure shows in the Cron Events log. The R2 orphan sweep is deferred (M7 owner ruling 3).
+ * failure shows in the Cron Events log. The D1 export runs last (docs/M7-ops.md, "Paging").
  */
 export async function handleScheduled(controller: ScheduledController, env: Env): Promise<void> {
   const jobs: [string, () => Promise<unknown>][] = [
@@ -161,6 +162,7 @@ export async function handleScheduled(controller: ScheduledController, env: Env)
     ["remove_stale_uploads", () => removeStaleUploads(env, controller.scheduledTime)],
     ["remove_old_webhook_events", () => removeOldWebhookEvents(env, controller.scheduledTime)],
     ["expire_trash", () => expireTrash(env, controller.scheduledTime)],
+    ["backup_export", () => runExport(env, controller.scheduledTime)],
   ];
   let failed = 0;
   for (const [job, run] of jobs) {
