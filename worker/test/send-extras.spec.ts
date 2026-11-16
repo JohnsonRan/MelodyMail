@@ -63,7 +63,7 @@ describe("uploads", () => {
     expect(await ok.text()).toBe("file body");
 
     const expired = await signUpload(secret, id, nowS - 1);
-    const tampered = `${sig.slice(0, -1)}${sig.endsWith("A") ? "B" : "A"}`;
+    const tampered = `${sig[0] === "A" ? "B" : "A"}${sig.slice(1)}`;
     for (const path of [
       `${id}/blob?exp=${nowS - 1}&sig=${expired}`,
       `${other}/blob?exp=${exp}&sig=${sig}`,
