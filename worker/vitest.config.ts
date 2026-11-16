@@ -12,6 +12,9 @@ export default defineConfig({
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
+        // A fixed assets directory instead of ../web/dist: the merge gate runs `build` beside this
+        // suite, and the pool failed with ENOENT when it listed web/dist while vite rewrote it.
+        assets: { directory: "./test/assets" },
         bindings: {
           TEST_MIGRATIONS: migrations,
           SETUP_TOKEN: "test-setup-token-0123456789abcdef0123456789",
