@@ -5,5 +5,9 @@
   },
   "include": ["./**/*.ts", "../src", "../bench", "../scripts"],
   // Bun programs that run on the owner's machine, like the root scripts/: no Bun types here.
-  "exclude": ["../scripts/prod-config.ts", "../scripts/backup-restore.ts"]
+  "exclude": [
+    "../scripts/prod-config.ts",
+    "../scripts/backup-restore.ts",
+    "../scripts/backup-gap.ts"
+  ]
 }

@@ -30,6 +30,7 @@
     "migrate:prod": "bun scripts/prod-config.ts && wrangler d1 migrations apply melodymail --remote --config .wrangler-production.jsonc",
     "deploy:prod": "bun scripts/prod-config.ts && bun run --cwd ../web build && wrangler deploy --config .wrangler-production.jsonc",
     "backup-restore": "bun scripts/backup-restore.ts",
+    "backup-gap": "bun scripts/backup-gap.ts",
     "bench:auth": "bun bench/auth.ts",
     "bench:backup": "bun bench/backup.ts",
     "bench:parse": "bun bench/parse.ts",
