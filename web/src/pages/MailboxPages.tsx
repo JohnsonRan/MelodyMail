@@ -13,6 +13,8 @@ function FolderPage({ folder }: { folder: Folder }) {
 
 export const InboxPage = () => <FolderPage folder="inbox" />;
 export const StarredPage = () => <FolderPage folder="starred" />;
+export const SentPage = () => <FolderPage folder="sent" />;
+export { DraftsPage } from "./DraftsPage";
 export const ArchivePage = () => <FolderPage folder="archive" />;
 export const TrashPage = () => <FolderPage folder="trash" />;
 

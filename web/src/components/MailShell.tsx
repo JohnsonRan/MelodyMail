@@ -11,10 +11,12 @@ import {
   ArrowUturnRightIcon,
   AtSymbolIcon,
   BellIcon,
+  DocumentTextIcon,
   EnvelopeIcon,
   GlobeAltIcon,
   InboxIcon,
   MagnifyingGlassIcon,
+  PaperAirplaneIcon,
   ShieldCheckIcon,
   StarIcon,
   TrashIcon,
@@ -28,9 +30,11 @@ import { useNetwork } from "../network";
 import { PreferenceSelectors } from "../preferences";
 import { SystemBanners } from "./SystemBanners";
 
-const FOLDER_NAV: { folder: Folder; path: string; icon: typeof InboxIcon }[] = [
+const FOLDER_NAV: { folder: Folder | "drafts"; path: string; icon: typeof InboxIcon }[] = [
   { folder: "inbox", path: "/", icon: InboxIcon },
   { folder: "starred", path: "/starred", icon: StarIcon },
+  { folder: "sent", path: "/sent", icon: PaperAirplaneIcon },
+  { folder: "drafts", path: "/drafts", icon: DocumentTextIcon },
   { folder: "archive", path: "/archive", icon: ArchiveBoxIcon },
   { folder: "trash", path: "/trash", icon: TrashIcon },
 ];
@@ -95,7 +99,7 @@ function MailNav() {
             icon={icon}
             isSelected={pathname === path}
             href={path}
-            endContent={<Unread count={counts?.folders[folder]} />}
+            endContent={folder === "drafts" ? null : <Unread count={counts?.folders[folder]} />}
           />
         ))}
       </SideNavSection>

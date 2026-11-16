@@ -24,6 +24,8 @@
     "deploy": "bun run --filter @melodymail/worker deploy",
     "test:browser": "bun run --cwd web test:browser",
     "test:pwa": "bun run --cwd web test:pwa",
-    "vapid": "bun run --cwd worker vapid"
+    "test:send": "bun run --cwd web test:send",
+    "vapid": "bun run --cwd worker vapid",
+    "upload-key": "bun run --cwd worker upload-key"
   }
 }

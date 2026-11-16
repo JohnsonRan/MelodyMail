@@ -7,6 +7,7 @@ import { Heading, Text } from "@astryxdesign/core/Text";
 import { useTheme } from "@astryxdesign/core/theme";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { ComposeKind } from "../compose/api";
 import {
   type Folder,
   getThread,
@@ -17,6 +18,7 @@ import {
 import { formatListDate } from "../mailbox/format";
 import { MessageView } from "./MessageView";
 import { type ReaderAction, ReaderToolbar } from "./ReaderToolbar";
+import { SentStatus } from "./SentStatus";
 
 type Props = {
   id: string;
@@ -27,6 +29,8 @@ type Props = {
   onAction: (action: ReaderAction, message: MessageDetail) => Promise<boolean>;
   /** Called once the open message is shown, so the page can mark it read. */
   onOpened: (message: MessageDetail) => void;
+  /** Reply, reply all or forward the open message, or send it again as a new one. */
+  onCompose: (kind: ComposeKind, message: MessageDetail) => void;
   busy: string | null;
   /** Side by side the pane pads itself; alone, the page frame already does. */
   isPadded: boolean;
@@ -54,6 +58,7 @@ export default function Reader({
   onBack,
   onAction,
   onOpened,
+  onCompose,
   busy,
   isPadded,
 }: Props) {
@@ -103,6 +108,18 @@ export default function Reader({
     [],
   );
 
+  const setStatus = (messageId: string, status: string) =>
+    setThread((prev) =>
+      prev.state === "ready"
+        ? {
+            state: "ready",
+            messages: prev.messages.map((m) =>
+              m.id === messageId ? { ...m, status: status as MessageDetail["status"] } : m,
+            ),
+          }
+        : prev,
+    );
+
   const run = async (action: ReaderAction) => {
     if (!current) return;
     const ok = await onAction(action, current);
@@ -132,6 +149,7 @@ export default function Reader({
       onDelete={() => setConfirmDelete(true)}
       darkReading={current && mode === "dark" && html.has(current.id) ? dark.has(current.id) : null}
       onDarkReading={(on) => current && setDark((prev) => withMember(prev, current.id, on))}
+      onCompose={(kind) => current && onCompose(kind, current)}
     />
   );
 
@@ -149,6 +167,13 @@ export default function Reader({
       {thread.state === "ready" && (
         <>
           <Heading level={2}>{current?.subject || t("mail.noSubject")}</Heading>
+          {current?.direction === "out" && (
+            <SentStatus
+              message={current}
+              onRetried={(status) => setStatus(current.id, status)}
+              onSendAsNew={() => onCompose("again", current)}
+            />
+          )}
           {canShowRemote && (
             <Text type="supporting" color="secondary">
               {t("mail.remoteBlocked")}

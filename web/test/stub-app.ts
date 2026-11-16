@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Server, ServerWebSocket } from "bun";
+import { SendStub } from "./stub-send";
 
 // The built app (web/dist) behind an in-memory stand-in for the Worker API, shared by the end to
 // end suites. It answers like the routes in worker/src; the Worker itself has its own suite.
@@ -76,6 +77,8 @@ export function message(id: string, raw: string, subject: string, receivedAt: nu
       hasAttachments: false,
       status: "parsed",
       threadKey: null,
+      direction: "in",
+      error: null,
       to: "shop@example.com",
       cc: null,
       envelopeFrom: "sender@example.org",
@@ -102,9 +105,10 @@ const json = (data: unknown, status = 200) => Response.json(data, { status });
 
 function inFolder(item: Record<string, unknown>, folder: string) {
   if (folder === "trash") return item.trashed;
+  if (folder === "sent") return item.direction === "out" && !item.trashed;
   if (folder === "archive") return item.archived && !item.trashed;
   if (folder === "starred") return item.starred && !item.trashed;
-  return !item.archived && !item.trashed;
+  return item.direction === "in" && !item.archived && !item.trashed;
 }
 
 export type PushCall = { method: string; path: string; body: unknown };
@@ -112,6 +116,7 @@ export type PushCall = { method: string; path: string; body: unknown };
 /** One running stand-in: its origin, what the app sent it, and the open live-update sockets. */
 export class StubApp {
   store = seed();
+  send = new SendStub();
   patches: { path: string; body: Record<string, unknown> }[] = [];
   push: PushCall[] = [];
   /** null answers GET /api/push/key with 404, as a Worker without VAPID keys does. */
@@ -154,6 +159,7 @@ export class StubApp {
 
   reset(): void {
     this.store = seed();
+    this.send = new SendStub();
     this.patches = [];
     this.push = [];
     this.pushKey = null;
@@ -196,6 +202,8 @@ export class StubApp {
       }
       return json({ ok: true });
     }
+    const sending = await this.send.handle(req, url, this.store);
+    if (sending) return sending;
     if (path === "/api/messages" && req.method === "GET") {
       const folder = url.searchParams.get("folder") ?? "inbox";
       const items = [...this.store.values()].map((m) => m.item).filter((i) => inFolder(i, folder));

@@ -499,6 +499,11 @@ addresses as an account-level list, verified once and shared by every address.
 
 ### Deferred
 
+- Threading replies to mail started in MelodyMail: SES replaces any custom Message-ID (real
+  Resend test), so a reply arrives as a new thread. A fix would need the delivered Message-ID
+  (not returned by Resend) or matching on subject and participants. Source: real Resend test.
+- The quota display may read one low if Resend's quota headers count before the request.
+  Source: real Resend test; confirm against Resend's dashboard after the first deploy.
 - `SecurityPage` still draws its own `Layout` and loading code; move it onto `PageFrame` and
   `useSettingsPage` when it is next touched (source: M2, consistency).
 - Resend domain verification state (`domains` column) waits for M5, which owns its shape.
@@ -932,6 +937,28 @@ Not ablated (no test reaches them): the download-progress state over 5 MiB, the 
 reconnect, infinite scroll, permanent delete from the reader UI (the route itself is covered by
 the worker suite), expanding older thread messages, and revoking the object URL.
 
+### Real Resend test (2026-11-16, owner and coordinator, local `wrangler dev`)
+
+The owner put their own `RESEND_API_KEY` in `worker/.dev.vars` (never read by an agent) and sent
+from a new address on their verified domain, without attachments.
+
+- Three messages, to `delivered@resend.dev`, `bounced@resend.dev` and the owner's own mailbox
+  (Send clicked twice quickly on the third). Local D1 afterwards: three outbound rows, all `sent`,
+  each with a `resend_id`, `maybe_accepted = 0`; the double click made one row and one email.
+- The owner's mailbox received the message; the owner reported it rendered correctly.
+- Quota after the third send: `daily_used = 2`, `monthly_used = 3`. The owner's panel showed
+  "Today 2". The headers most likely carry the count **before** the request (an earlier send this
+  month explains the monthly 3). Not confirmed against Resend's dashboard; recorded as a deferred
+  item, the display may read one low.
+- **Message-ID:** Resend sends through Amazon SES, and the delivered Message-ID is SES's own
+  (`<…-000000@ap-northeast-1.amazonses.com>`), unrelated to the Resend id. A probe that set a
+  custom `Message-ID` header (a temporary local edit, reverted, never committed) was **not kept**:
+  the delivered header was SES's again. So replies to a message started in MelodyMail cannot be
+  threaded by our own Message-ID (open question 3 answered: known limitation, deferred).
+- Not exercised: the webhook (cannot reach localhost), attachments (Resend cannot fetch from
+  localhost), bounce status (`bounced@resend.dev` shows `sent` locally; the bounce is visible only
+  in Resend's dashboard).
+
 ### Deviations from the design (decisions taken, open to the owner)
 
 1. The frame has a fixed height (`70dvh`) and scrolls inside. The parent cannot measure an
@@ -1338,3 +1365,761 @@ Allowed by the owner. Local VAPID keys in `worker/.dev.vars` (not committed).
 
 Still unverified: Firefox, Safari and iOS delivery; stable Chrome's `fcm.googleapis.com` path
 (covered only by stubbed tests).
+
+## M5: sending through Resend (built 2026-11-16, branch `m5-sending`, not pushed)
+
+Design: `docs/M5-sending.md`. Risk class High (mail to the outside world under the owner's
+domains, two public endpoints, three secrets, migration 0009). Waits for the independent review
+the risk class asks for, the owner's manual Resend test and the owner's look at the screenshots.
+
+### Owner rulings (2026-11-16)
+
+1. **Body editor: Markdown.** A plain text area; the browser renders it with a maintained library;
+   raw HTML in the source is not rendered; DOMPurify before sending; links keep only http(s) and
+   mailto; `text` = the Markdown source, `html` = the sanitized rendering in a minimal inline-styled
+   document without remote resources; a Write / Preview toggle that previews in the sandboxed mail
+   frame; replies quote with `> `; the library only in the compose chunk; first paint must not
+   grow; drafts and the sent copy keep the Markdown source (and the sent copy the HTML).
+2. **Real Resend test allowed.** The owner puts `RESEND_API_KEY` into `worker/.dev.vars`; the
+   coordinator runs the manual test with the owner. The app works with only that key set:
+   attachments say they are off without `UPLOAD_URL_KEY`, the webhook answers 404 without
+   `RESEND_WEBHOOK_SECRET`. No real mail was sent in this build and `worker/.dev.vars` was not read.
+3. **Open and click tracking stays off.** No tracking option is sent; Resend sets tracking per
+   domain, so README "Sending" tells the owner to leave it off there.
+
+Rulings on the review of `c1a3ebf` (2026-11-16):
+
+4. **Signed attachment URLs.** `exp` is computed once when the sent copy is prepared, stored in
+   it and signed from on every attempt, so a retry is byte-identical; the TTL is 24 hours, as long
+   as Resend keeps an idempotency key. Resend's 409 `invalid_idempotent_request` and
+   `concurrent_idempotent_requests` must not land as a retryable `failed`.
+5. **Resend-reported delivery failure** (`email.failed`): final, no Retry, kept apart from a local
+   send failure; the reader says Resend reported it and that the owner forwards the message or
+   writes a new one; `claimRetry` refuses it server-side.
+6. **Rejected send, then corrected.** After `send_rejected` the compose session gets a new key, so
+   the corrected message is a new send and autosave keeps working; a draft save answers
+   `already_sent` only for a message at `sent` or later. Network errors, timeouts and 5xx keep
+   the key.
+7. **First paint** goes back to about 319 kB through a chunk rule in `web/vite.config.ts`; the
+   compose chunk stays separate with marked only in it.
+8. **Browser tests:** the compose and Markdown suites move to `bun run test:send` with their own
+   workflow, limit 14 s; `test:browser` comes back under 26 s.
+
+Rulings on the re-review and the open questions (2026-11-16):
+
+9. **Retry after 24 h (open question 4).** Narrowed by ruling 13. Re-sign with a fresh expiry only when the stored `exp`
+   has passed, and write it back to the R2 sent copy so later retries stay byte-identical; safe
+   because Resend's idempotency window has closed by then.
+10. **A row stuck at `sending` (open question 5).** Its window part is replaced by ruling 13. The reader offers Retry when the row is older
+    than 60 s and younger than 24 h, where Resend dedupes; past 24 h it shows "status unknown,
+    check Resend" without Retry. `claimRetry` enforces the same window.
+11. **The rejected row in Sent (open question 6)** stays as a final record: no Retry, no
+    attachment downloads; `claimRetry` refuses it.
+12. **REQUIREMENTS "Frontend entry chunk"** is redefined as the entry plus its statically
+    preloaded JS, gzip, limit 270 kB.
+
+### Library choices (checked 2026-11-16)
+
+| Package | Release | License | Dependencies | Verdict |
+| --- | --- | --- | --- | --- |
+| `resend` 6.38.1 | 2026-11-13 | MIT | `postal-mime` 2.7.6, `standardwebhooks` 1.1.1 | **chosen** for the send call |
+| `standardwebhooks` 1.1.1 | 2026-08-28 | MIT | `@stablelib/base64`, `fast-sha256` | **chosen** for the webhook signature |
+| `svix` 2.10.0 | 2026-11-09 | MIT | `standardwebhooks`; 1.68 MB unpacked (the whole Svix API client) | not needed: it verifies through `standardwebhooks` |
+| `marked` 18.2.0 | 2026-11-09 | MIT | none; GFM built in | **chosen** for Markdown |
+| `markdown-it` 15.0.3 | 2026-10-16 | MIT | 6 (`linkify-it`, `entities`, `mdurl`, ...) | larger, more dependencies |
+| `micromark` 4.0.3 (+ `micromark-extension-gfm`) | 2026-09-26 | MIT | 18 for the core alone | most CommonMark-exact, many small packages |
+
+Resend SDK: one `fetch` per send and no retry of its own; `emails.send(payload, { idempotencyKey })`
+sets `Idempotency-Key`; every answer returns the response headers, so the quota headers are read
+on success and on error. It reads `process.env` only for an unset key, `RESEND_BASE_URL`,
+`RESEND_USER_AGENT` and `RESEND_DEBUG`. The Worker passes the key and `baseUrl` (new var
+`RESEND_API_URL`) and never sets `RESEND_DEBUG`, which would make the SDK log upstream error
+text. The SDK's error `message` is upstream text and is never returned or logged.
+
+workerd without `nodejs_compat`: a probe Worker importing `resend` and `standardwebhooks`, with a
+config that has no compatibility flags, built with `wrangler deploy --dry-run` (200 KiB, gzip
+42 KiB) and ran under local `wrangler dev`. `emails.send` against an unreachable base URL returned
+the SDK's network error, and `Webhook.sign` reproduced Svix's published test vector
+(`v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE=`). The probe was removed afterwards.
+
+Worker bundle (`wrangler deploy --dry-run`, gzip -6): 1074 KB raw / 220.0 kB gzip before, 1309 KB
+/ 270.3 kB after (wrangler reports 264.8 KiB). The SDK brings its own `postal-mime` 2.7.6 beside
+the Worker's 4.2.1. Workers Free allows 3 MB compressed.
+
+Markdown: `marked` has no dependencies and GFM (tables, strikethrough, autolinks, task lists) in
+its core. It is not exactly CommonMark in every corner case, which does not matter for mail the
+owner writes. Renderer overrides: raw HTML escaped, images as their alt text, task boxes as ☑/☐.
+DOMPurify (already in the project) runs as its own instance with a fixed tag list.
+
+### Done
+
+- `031cfc5` migration `0009_sending.sql` (drizzle-kit; every CREATE with `IF NOT EXISTS`):
+  `messages` gains `bcc_hdr`, `resend_id` (unique), `idempotency_key` (unique), `error`, and an
+  index `(direction, trashed, received_at DESC, id DESC)` for Sent; tables `drafts`, `uploads`,
+  `webhook_events`, `send_quota`. `db:migrate:local` applied it to the local D1 holding 16
+  messages; a second run reported nothing to apply. The four `ALTER TABLE ... ADD` statements
+  cannot run twice by hand (as with 0006); wrangler's migration table prevents a second run.
+- `df665b4` Worker (`worker/src/send/`): `POST /api/messages/send`, `GET /api/send/from`,
+  `GET /api/send/quota`, drafts CRUD, `PUT|GET|DELETE /api/uploads[/:id]`, the public
+  `GET /api/uploads/:id/blob` and `POST /api/webhooks/resend`, the Sent folder (Inbox now lists
+  inbound mail only), two cron jobs, Hub event `changed`.
+- `66776c8` README "Sending", `bun run upload-key`, `worker/.dev.vars.example`.
+- `88a7021` web: compose (a panel from 1280 px, a page below), reply, reply all, forward, Markdown
+  with Write / Preview, chips, attachments with progress, autosave, Discard with confirmation,
+  the quota line, Sent and Drafts, status and Retry in the reader, shortcuts `c r a f` and
+  Ctrl+Enter, copy in three locales (compose strings in their own `compose` namespace).
+- `0dc8ea9` Worker tests for the ablation survivors; `0f85969` `useCompose` split (316 lines over
+  the pass bar) into `compose/start.ts`; `1894fae` prefill unit tests, two stronger browser tests
+  and the redundant link check removed.
+
+Usability references: Gmail compose and shortcuts (https://support.google.com/mail/answer/6594):
+`c` compose, `r` reply, `a` reply all, `f` forward, Ctrl+Enter send; a reply to one's own sent
+message goes to its recipients, as in Gmail. Gmail and Outlook both list Drafts and Sent beside the
+Inbox, autosave drafts and quote the source under "On <date>, <sender> wrote:".
+
+### Proof
+
+Worker (`bun --bun vitest run`, 315 tests at `c1a3ebf` (an earlier count of 336 was wrong), 324 after the review fixes, in `send.spec.ts` and
+`send-extras.spec.ts`; `fetch` stubbed in every test, no request reaches Resend):
+
+- route walk: the 10 new session routes answer 401 without a session; exactly the two public
+  routes are marked public;
+- the request to Resend: `Authorization`, `Idempotency-Key`, the quoted From display name,
+  to/cc/bcc, subject, `text` (Markdown) and `html`, no tracking field; the stored row (`sent`,
+  `resend_id`, thread key), the R2 JSON copy, the FTS row (search finds it), the quota row, the
+  draft with the same key deleted; Sent lists it and Inbox does not;
+- validation, each without a Resend call: domain without sending, disabled address, unknown
+  address, 51 recipients, a non-address, no recipients, CRLF in the subject, unknown upload,
+  31 MiB of attachments, unknown source, a malformed key;
+- idempotency: a second request while the first waits for Resend gets 409 `send_in_progress`; a
+  repeat afterwards returns the message; one call in total. A failed send and a `sending` row older
+  than 60 s are sent again with the same key and the stored copy (a changed body is ignored); a
+  fresh `sending` row answers 409;
+- replies: `In-Reply-To`, `References` (source References plus its Message-ID), "Re:" once, "RE:"
+  kept, the source's thread key, the reply shows in the source's thread; forward: "Fwd:", "FW:"
+  kept, no thread headers;
+- attachments go as `path` URLs on the request's origin that open the bytes through the public
+  route; a sent upload cannot be deleted or attached again;
+- error mapping: 429 daily and monthly quota, 429 rate limit, 422, 500 and a network error map to
+  `daily_quota_exceeded`, `monthly_quota_exceeded`, `rate_limited`, `send_rejected`,
+  `send_failed`, stored on the row; upstream text appears in neither response nor log; a
+  malformed error name is logged as null;
+- uploads: streamed in and out with octet-stream, `filename*` and nosniff; over 25 MiB 413; bad
+  percent-encoding and a newline in the name 400; delete removes the R2 object;
+- signed URL: valid; expired, another id, a later expiry, a changed signature, missing `sig`,
+  missing `exp` and no parameters all 403 without detail;
+- drafts: save, update, list, read with attachments, delete; another key for the same draft and
+  the key of another draft 409; saving after the send 409 `already_sent`;
+- webhook: Svix test vector; delivered, then a late delayed ignored, bounced final; a replayed
+  `svix-id` does nothing; unknown email id and unknown type 200; bad signature, a 6-minute-old
+  timestamp and a request without headers 401; 404 without the secret;
+- cron: uploads older than 24 h without a live draft or stored message go with their R2 objects;
+  young, live-draft and sent uploads stay; replay rows older than 7 days go;
+- the quota reads 0 after Resend's UTC day; sending, attachments and the from list report "not
+  set up" without their secrets.
+
+Browser tier (`bun run test:browser`, 60 tests, 13 more than before M5):
+
+- `markdown.test.ts`: headings, lists, tables, inline and fenced code, links, autolinks (`<...>`,
+  `www.`, `mailto:`), strikethrough, task marks, inline styles; raw `<script>`, `<img onerror>`,
+  `<b>` and a raw `<a>` shown as text; `javascript:`, `data:`, `vbscript:` and relative links lose
+  their href; an image keeps only its alt text; the sent document has no `<link>`, `<style>`,
+  `@import` or `<img>`;
+- `compose.test.ts`: `c` opens compose; chips (a non-address refused and named); two files
+  attached and one removed; a file over 25 MB refused in the browser; a double click on Send makes
+  one request with the Markdown `text`, the sanitized `html` and the upload id; the message appears
+  in Sent as "To: ..."; Reply from the toolbar prefills the sender, "Re: Note 1" and the `> `
+  quote, and Ctrl+Enter sends with `sourceId`/`sourceKind`; `f` opens a forward with "Fwd:"; `a`
+  opens a reply all; autosave waits 2 s (fake clock: nothing at 1.5 s, saved at 2.1 s) and the
+  draft opens again from Drafts; a failed send shows the reason and "Send again" resends under the
+  same key; the quota warning at 85/100, Send blocked at 100/100 and without a Resend key; Preview
+  renders in the sandboxed frame with the CSP first, the script escaped, no `javascript:`, nothing
+  remote.
+
+- `quote.test.ts` (unit): "Re:"/"Fwd:" once, the `> ` quote, reply all without the owner's
+  addresses, a reply to one's own message going to its recipients, a forward without recipients.
+
+PWA tier (`bun run test:pwa`): 11 tests green, unchanged.
+
+### Numbers
+
+- `bun run check`: green at every commit; 3 runs at the end 8.3, 8.6, 8.6 s, CPU load 1% (limit 10 s); worker
+  suite (vitest Duration) 7.40, 7.69, 7.71 s (limit 9 s), 315 tests (336 was a miscount). After the review fixes: below. One fresh-worktree run of `031cfc5` failed in
+  the worker suite on a cold cache; it passed on the two reruns and the failure did not repeat.
+- `bun run test:browser`: 60 tests green (55 end to end and corpus, 5 prefill unit tests); 3 runs
+  31.17–34.07 s (wall 32.5–35.3 s including the build), CPU load 0–2%. The same host ran the 47 suites from before M5 in 20.06 s twice (21.3 s
+  wall), so the 8 new tests add about 10 s. Over the 26 s limit: open question 2.
+- `bun run test:pwa`: 11 tests green; 3 runs 10.35–10.57 s (wall 11.7–11.8 s), limit 15 s.
+- Bundle (vite build, gzip -6, the same script for both sides; the script reproduces the recorded
+  M4b numbers on main): entry 16.2 → 16.5 kB; first paint 319.0 → 322.9 kB (limit 370);
+  total 660.0 → 736.4 kB (limit 770); the compose chunk `ComposeView` 51.8 kB gzip
+  (marked, the compose screens and the Tokenizer, Selector, FileInput, SegmentedControl and
+  TextArea components). marked is in no first-paint asset. First paint: open question 1.
+- Worker bundle: 220.0 → 270.3 kB gzip (above, "Library choices").
+
+### Ablation
+
+A script applies one mutation at a time and runs the touched suites (worker: `send`,
+`send-extras`, `authz`, `mailbox`; web: a rebuild, then `compose.test.ts` and `markdown.test.ts`),
+then restores the file.
+
+Worker, 64 hunks: email syntax, key format, file-name control characters and decoding, "Re:" and
+"Fwd:" once, References with the Message-ID, the CRLF check, the signed URL's expiry, its id
+binding, its parameter format and the blob route's check, uploads off without the key, the
+25 MiB limit, delete only unsent and its R2 delete, octet-stream and attachment disposition on
+download, drafts (already sent, conflict, key match), the from address (enabled, sending on),
+recipient count, none, syntax, subject CRLF, unknown source, In-Reply-To, the source's thread key,
+no thread headers on forward, unknown upload, the 30 MiB total, a sent upload not reusable, the
+quoted display name, a repeat returning the message, 409 for a fresh `sending` row, retry of a
+failed row, `Idempotency-Key`, the FTS row, status `sent`, quota from headers, draft deleted on
+send, status `failed`, HTTP 429 for quota, the quota error names, 4xx as rejected, the error-name
+filter, uploads linked to the message, the copy stored before the call, the webhook's signature,
+replay guard, forward-only rank and 404 without the secret, the four cron conditions and its R2
+delete, the cron job registration, the CSRF exemption of the webhook, Inbox inbound only, the Sent
+filter, the quota's UTC day and sending off without the key. First pass: 58 red, 5 survivors and
+one mutation that did not apply. The five got tests (`0dc8ea9`): the Sent filter, "FW:" kept, a
+sent upload attached again, a malformed error name, the quota's UTC day; with the blob-route
+mutation fixed, all six are red. 64 of 64 red.
+
+Web, 33 hunks (compose and Markdown against a rebuild and the compose and Markdown suites; the
+prefill against `quote.test.ts`): raw HTML as text, images as alt text, the link scheme check
+(twice), the tag allowlist, inline styles, task marks, the double-click guard, one key per
+session, the HTML part, the source kind, the upload ids, the 2 s debounce, the 25 MB check,
+Ctrl+Enter, Send blocked by the quota and without a Resend key, the preview through the reader's
+sanitizer, chips refusing non-addresses, the `c`, `a` and `f` shortcuts, the "To:" line in
+Sent, the reply button, and in `quote.ts` "Re:" and "Fwd:" once, own addresses left out of reply
+all and Cc, a reply to one's own message, a forward without recipients and the `> ` quote. First
+pass (26 applied, one mutation that did not apply): 19 red, 7 survivors. Fixed (`1894fae`): the
+prefill got unit tests (all 7 `quote.ts` hunks red); the not-set-up test no longer leans on the
+used-up quota (red); the preview test asserts the reader's link attributes (red); the link scheme
+was checked by a DOMPurify hook and by `ALLOWED_URI_REGEXP`, each enough on its own, so the hook's
+check was removed (the allowlist alone, ablated, is red). Two survivors kept: the tag allowlist
+(raw HTML is already escaped and DOMPurify's defaults drop the dangerous tags; it stays so an
+option change cannot widen the output) and the double-click guard in `useCompose` (the Send
+button's loading state already blocks the second click; the guard covers a second Ctrl+Enter
+before that state renders). The test counts the script printed for some red hunks are not
+reliable (it read the wrong line of Bun's summary); only red or survived is recorded.
+
+Not ablated (no test reaches them): pushing nothing for a `changed` Hub event and refreshing
+listed messages on it (the Hub tests cover only new mail), `notifyWhenHidden` only for new mail,
+the stale-row path when the stored copy is missing, the Drafts list refresh after compose closes,
+upload progress, Discard deleting the draft and its uploads, the forward's re-uploaded
+attachments, the reply-from address choice, and the Settings quota section.
+
+### Review fixes (review of `c1a3ebf`, rulings 4–8)
+
+Commits, oldest first: `a0cba04` test upstreams unresolvable, `0fa489d` stored URL expiry,
+`d4bf860` idempotency conflicts, `14e098e` `delivery_failed`, `de49981` new key after a
+rejection, `564b9eb` webhook race, `b15083a` webhook body cap, `1894adc` vendor chunk,
+`34af786` shorter compose tests, `07060b0` `bun run test:send`, `2590830` no quota write on a
+conflict, `96c31e0` and `579ae1b` tests found missing by ablation, `86cefed` the review tests in
+one file (`worker/test/send-resend.spec.ts`).
+
+- **Ruling 4, URLs.** `SentCopy.attachmentsExpireAt` is set in `prepare` (now + 24 h);
+  `deliver` signs from it. Test: a send with an attachment fails with 500, the retry runs with
+  `Date.now` ten minutes later, and the two request bodies are byte-identical; `exp` is 24 h
+  ahead. The origin still comes from the request, so a retry through another hostname (for
+  example `workers.dev` instead of the custom domain) would change the body.
+- **Ruling 4, 409.** `errorCode` maps 409 `concurrent_idempotent_requests` and
+  `invalid_idempotent_request` (names checked in resend.com/docs/api-reference/errors,
+  2026-11-16) to `send_in_progress`; `deliver` then leaves the row `sending`, writes nothing and
+  answers 409 `send_in_progress`. Chosen because the first request's success only updates a row
+  still `sending`: any other state written by the conflicting attempt could land first and
+  overwrite that success, and leaving the row alone needs no new state. After the 60-second
+  stale limit a repeat may claim the row again, and Resend answers it with the first result.
+  Test (both names): the first request waits inside the Resend stub, the row is made stale, a
+  repeat gets the 409, the row stays `sending`, the first request finishes and the row is
+  `sent` with its `resend_id`.
+- **Ruling 5.** Own status `delivery_failed` (smaller than an error code: no special case in
+  `claimRetry`, `DONE` or `SentStatus`'s Retry path; the status column has no CHECK, so no
+  migration). The webhook maps `email.failed` to it; it ranks with the final states; a repeat
+  returns the message; `claimRetry` takes only `failed`. The reader shows an error banner
+  without Retry: en "Resend reported that this message could not be delivered. To send it
+  again, forward it or write a new message.", zh-CN and ja-JP likewise; Sent shows the
+  "Delivery failed" badge. Tests: worker (webhook, then a repeat returns the message without a
+  Resend call) and browser (seeded message opened by URL: badge, banner, no "Send again").
+- **Ruling 6.** Worker: a draft save answers `already_sent` only for status other than
+  `sending` and `failed`; the draft upsert takes a new key only when the old key's message
+  failed with `send_rejected`; a rejection clears `message_id` on its uploads, and a send no
+  longer clears an upload's `draft_id`, so the draft lists the attachments again. Browser: on
+  `send_rejected` `useCompose` takes a new key and saves the draft at once; compose shows no
+  Retry for a rejection. Found while fixing: without the upload hand-back the corrected message
+  failed with `unknown_upload`. Tests: worker (after a 500 the draft saves, the key cannot move
+  and the upload cannot be deleted; while `sending` the draft saves; after a 422 the draft
+  moves to a new key, lists the attachment, and the corrected send goes out under the new key
+  with the attachment and deletes the draft) and browser (failure retried under the same key,
+  then a rejection without Retry, the draft saved under a new key, the corrected message sent
+  under it).
+- **Ruling 7.** A code-splitting group in `web/vite.config.ts` puts every `node_modules` module
+  that the HTML entry reaches by static imports into one `vendor` chunk; app code and lazy
+  chunks keep the automatic split. A first try that grouped every first-paint module also
+  folded the entry into one 261 kB chunk (near the 270 kB entry limit); the vendor-only rule
+  was kept. Without the rule (measured at `b15083a`): 322.9 kB.
+- **Ruling 8.** `test:send` in `web/package.json` and the root; `test:browser` ignores
+  `compose.test.ts` and `markdown.test.ts`; `.github/workflows/send.yml` (nightly 03:57, by
+  hand, pull requests on `web/src/compose/**`, `SentStatus.tsx`, `sentCopy.ts`,
+  `ReaderToolbar.tsx`, `SendStatusLabel.tsx`, the two suites, `stub-send.ts` and the workflow).
+  To fit 14 s with the build, the compose suite builds its 25 MB file inside the page instead of
+  sending it over CDP (3.5 s to 2.3 s for that test), seeds the delivery-failure message, and
+  runs the failure and rejection in one session.
+- **Low, test count.** 315 at `c1a3ebf`, 324 now; REQUIREMENTS and this section corrected.
+- **Hypothesis A, webhook race: reachable, fixed.** A test that posts `email.delivered` from
+  inside the stubbed Resend call (before `resend_id` is stored) got 200 and the svix-id was
+  recorded, so Resend would never deliver it again. Now an event whose email id no message
+  carries answers 409 and is not recorded; Resend's retry with the same svix-id lands after the
+  id is stored. An id that is not ours is retried on Resend's schedule until Resend gives up.
+- **Hypothesis B, webhook CPU: fixed.** `standardwebhooks` verify measured in Bun (30 runs per
+  size): 4 KB 0.04 ms median, 256 KB 0.88 ms, 1 MB 3.02 ms, 4 MB 12.15 ms. Resend publishes no
+  size; its email events carry ids, addresses, subject and timestamps. A body over 256 KB now
+  answers 413 before verification; test: a signed 256 KB+ body gets 413, `verify` is never
+  called, the status is unchanged, a normal event still passes.
+- **Hypothesis C, real traffic from tests: one gap, fixed.** Every Resend call in the tests goes
+  through `stubResend`, and `apply-migrations.ts` rejects any other fetch in `beforeEach`; but
+  the bindings named the real `https://api.resend.com` and DoH URL, so a request after a mock
+  was restored would have gone out. The test bindings now name `.invalid` hosts. Also found:
+  wrangler loads `worker/.dev.vars` (the owner's real key) into the test environment; the test
+  binding wins, and a test asserts the Worker sees the fake key (compared as a boolean so a
+  failure cannot print the key). The file itself was not read.
+
+Ablation of the review fixes (one mutation at a time, the touched suites rerun, the file restored
+from a copy): worker 20 hunks, all red against the final test files: the two `.invalid`
+bindings, signing from the stored expiry, the 24 h TTL, the expiry in the copy, the 409 mapping,
+leaving the row `sending`, `email.failed` to `delivery_failed`, `delivery_failed` in `DONE`,
+`already_sent` only at `sent` or later and not for `sending`, the key rotation clause, rotation
+only after `send_rejected`, the draft taking the new key, the upload hand-back, the hand-back
+only on a rejection, an upload keeping its draft id, not recording an unmatched event, its 409,
+the body cap. Web 5 hunks against a rebuild and `compose.test.ts`: the new key, the immediate
+draft save, no Retry for a rejection and the reader banner are red; the `delivery_failed` badge
+variant survives (the label is the same as plain text and Astryx Badge exposes no attribute to
+assert; the other attention statuses have the same untested shape). First pass: 21 of 25 red;
+the four survivors were test gaps, fixed in `96c31e0` and `579ae1b`. The vendor chunk rule is
+proved by measurement, not a test.
+
+Numbers after the review fixes (2026-11-16, dev workstation, Ryzen 9 9950X3D):
+
+- `bun run check`: green at every commit; 3 runs at `86cefed` 9.64, 10.01, 9.05 s wall, CPU load
+  1–3%, and 3 more 9.17, 9.10, 9.59 s; worker suite (vitest Duration) 7.82–8.83 s over those
+  runs, 324 tests. One run reached the 10 s limit. One gate run during the vendor-chunk work
+  failed in the worker suite with a probe file in `web/`; four reruns passed and the failure did
+  not repeat.
+- `bun run test:browser`: 52 tests; 3 runs 21.90, 21.45, 21.71 s wall including the build, CPU
+  load 1–10% (limit 26 s).
+- `bun run test:send`: 9 tests; 3 runs 12.53, 13.20, 12.37 s wall including the build, CPU load
+  0–3% (limit 14 s).
+- `bun run test:pwa`: 11 tests green; 11.76 s wall (one run; limit 15 s).
+- Bundle (vite build, gzip -6, the same script as before; 3 builds identical): entry 16.5 →
+  3.4 kB; first paint 322.9 → 311.8 kB (319.0 before M5), 7 assets instead of 31; total 736.7 →
+  715.5 kB; compose chunk 51.4 kB, the only chunk with marked.
+
+### Second fix round (re-review of `c1a3ebf..06e2c7b`, "FIX FIRST")
+
+Commits: `f5300a4` a rejected send is final, `ced05f7` the stored origin, `b464062` re-signing an
+expired URL, `70fa3df` Retry for a send stuck at `sending`, `c7500d7` the `Content-Length` cap,
+`a6c3287` the `send.yml` paths, and the docs commit after them. New worker tests are in
+`worker/test/send-resend.spec.ts`; the browser test for the reader states is in
+`web/test/compose.test.ts` ("offers Retry in the reader only where it may still send").
+
+- **[High] Reader Retry of a `send_rejected` row.** `claimRetry` takes a `failed` row only when
+  its error is not `send_rejected`; a repeat under that key answers 422 `send_rejected` without
+  a Resend call. The reader shows the rejection without Retry and lists no attachments for it
+  (they went back to the draft). Tests: worker (after the rotation, a Retry with the old key
+  answers 422 and Resend's call count stays 1; the corrected send then goes out once) and
+  browser (rejected row: banner, no "Send again", no attachment name).
+- **Ruling 9 (Q4).** On a retry whose stored `exp` has passed, the route signs a fresh one and
+  writes it back to the R2 sent copy. Test: a retry 25 h later carries `exp` = that time + 24 h,
+  the R2 copy holds it, and the next retry 10 minutes on sends a byte-identical body.
+- **Ruling 10 (Q5).** `claimRetry` takes a `sending` row only between 60 s and 24 h after its
+  last attempt (`SENDING_RETRY_MAX_MS`); older answers 409 without a call. The reader offers
+  Retry for a `sending` row in that window ("Not finished sending") and, past 24 h, a warning
+  "Status unknown" telling the owner to check the Resend dashboard, without Retry; copy in en,
+  zh-CN and ja-JP. Tests: worker (25 h old refused with no call, 23 h old sent) and browser
+  (10 s: no Retry; 25 h: the unknown banner, no Retry; 5 minutes: Retry sends
+  `{ idempotencyKey }`).
+- **Ruling 11 (Q6).** The rejected row stays in Sent as a final record (the High fix).
+- **Ruling 12.** REQUIREMENTS "Frontend entry chunk" now measures the entry chunk plus the JS
+  that `index.html` preloads statically: 263.0 kB (5 files) against 270 kB. No script in the
+  repository reads that row; the measuring script is the session's bundle script plus a sum of
+  the preloaded JS.
+- **Hypothesis 1, another hostname.** The origin is stored in the sent copy with the expiry and
+  every attempt signs from it. Test: a send fails, the retry comes through
+  `https://mail.other.test`, and the two bodies are byte-identical.
+- **Low, webhook.** A `Content-Length` over 256 KB answers 413 before the body is read; the
+  length read is still checked for a chunked body. Test: a declared-length request gets 413 and
+  `Request.prototype.arrayBuffer` is never called; a stream body without a length gets 413 and
+  the signature is never checked.
+- **Low, `send.yml`.** Paths added: `web/vite.config.ts`, `web/package.json`,
+  `web/src/locales/*/compose.json`, `web/src/reader/MailFrame.tsx`,
+  `web/src/reader/sanitize.ts`.
+
+Ablation of the second round (same method): 13 hunks, all red. Worker: `claimRetry` refusing
+`send_rejected`, the 422 answer, signing with the stored origin, re-signing an expired URL,
+writing it back, the 24 h bound for `sending`, the `Content-Length` cap, the read-length cap.
+Web, against a rebuild and `compose.test.ts`: no Retry for a rejection in the reader, no
+downloads for it, Retry for a stalled send, the unknown state after 24 h, no Retry under 60 s.
+Not ablated: the Banner colour (warning for a stalled or unknown send, error for a failure),
+which no test can tell apart.
+
+Numbers after the second round (2026-11-16, dev workstation, Ryzen 9 9950X3D):
+
+- `bun run check`: 9.20, 9.18, 9.46 s wall, CPU load 0–7%; worker suite (vitest Duration)
+  7.98, 7.99, 8.22 s; 327 worker tests.
+- `bun run test:browser`: 25.14, 21.66, 20.73 s wall including the build, CPU load 1–4%
+  (limit 26 s). The first run of the series was slow (23.57 s of test time against 19–20 s),
+  as in the reviewer's single run of 25.2 s; the margin under 26 s is small.
+- `bun run test:send`: 13.13, 12.89, 12.67 s wall including the build, CPU load 0–3% (limit
+  14 s).
+- `bun run test:pwa`: 12.25 s wall, one run (limit 15 s).
+- Bundle (3 builds identical): entry plus statically preloaded JS 263.0 kB; first paint
+  311.8 kB; total 715.9 kB; compose chunk 51.4 kB.
+
+### Third fix round (third review of `m5-sending`, rulings 13 and 14)
+
+Commits: `6dd5cb2` the retry window from the first attempt (Worker, migration 0010, design doc),
+`a4053a1` "Send as a new message" in the reader and compose, and the docs commit after them.
+
+Rulings of 2026-11-16 on the third review:
+
+13. **Retry window from the first attempt** (replaces the window part of ruling 10 and narrows
+    ruling 9). Every message stores the time of its first attempt; the window is that time plus
+    24 h minus a safety margin. Inside it, a Retry of a non-final row (stale `sending`, or
+    `failed` other than `send_rejected`) sends the same body under the same key and is never
+    re-signed. Past it, a row whose outcome is unknown (`sending`, or `failed` after a network
+    error, a timeout or a 5xx) is refused with 409, left unchanged, and nothing is called; the
+    reader shows "Status unknown, check Resend" with "Send as a new message", which opens compose
+    prefilled from the sent copy under a new key with a warning that the earlier message may
+    already have been delivered. Re-signing after `exp` only when every attempt on the key got a
+    definite "not accepted" (429). Copy in zh-CN, en and ja-JP.
+14. **Browser tier limit** 26 s → 30 s (owner approval 2026-11-16).
+
+- **[Medium] The sliding window.** New columns (migration `0010_send_window.sql`):
+  `first_attempt_at`, set at insert, before the first Resend request; `maybe_accepted`, set by an
+  attempt whose outcome is unknown and never cleared. The stored `attachmentsExpireAt` was not
+  used: ruling 9 moved it on every re-sign, it lives in R2 where the claim cannot read it
+  atomically, and the flag needs D1 anyway. Margin: **5 minutes** (`RETRY_WINDOW_MARGIN_MS`), so
+  the window is 23 h 55 min (`RETRY_WINDOW_MS`). The route decides from the row it read:
+  - past the window and unknown (status `sending`, or `maybe_accepted = 1`), not a rejection:
+    409 `send_status_unknown` with the message id, no write, no call;
+  - past the window, `failed`, `maybe_accepted = 0` (every attempt a 429, or a local failure
+    before any call): claimed as a fresh first attempt; `first_attempt_at` moves to now and the
+    attachment URLs are re-signed and written back. Moving it is safe because Resend accepted
+    none of the earlier requests; if Resend kept the key anyway, a different body under it gets
+    409 `invalid_idempotent_request`, which leaves the row `sending`;
+  - inside the window: the claim of rulings 4 and 10, same stored body, never re-signed.
+  `maybe_accepted` is set by `send_failed` (5xx, network error, timeout: the SDK reports no
+  status) and by taking over a `sending` row (an attempt that never answered); a 429 leaves it
+  alone; a 4xx is final as before. The fresh claim also requires `maybe_accepted = 0` in SQL,
+  against a concurrent attempt that ended unknown between the read and the claim. The message
+  detail returns `firstAttemptAt` and `maybeAccepted` for the reader.
+  Migration: outbound rows from before it that are unfinished get `first_attempt_at = 0` and
+  `maybe_accepted = 1` (unknown, past the window: only "send as new"); finished ones get
+  `received_at`. Production holds no outbound rows (not deployed).
+- **Reviewer's note on ruling 9.** Re-signing now happens only past the window and only for a
+  row with `maybe_accepted = 0`; a `failed` row from a network error, a timeout or a 5xx is
+  refused instead.
+- **"Send as a new message".** Compose kind `again` (URL `kind=again&src=<id>`): from address,
+  To, Cc, Bcc, subject and Markdown text from the sent copy; no reply source and no thread
+  headers; a new idempotency key (a new compose session); a warning Banner. Attachments are
+  **copied**: the browser downloads each through `GET /api/uploads/:id` and uploads it again for
+  the new draft, as a forward of a sent message already does. Re-referencing would need a join
+  table and would let one upload belong to two messages; copying keeps `uploads.message_id`
+  single, so the old message keeps its uploads (never deletable, never attachable again) and the
+  new message owns its copies. The old row stays as a record. Worker side the new send is an
+  ordinary send; no server change was needed.
+- **[Low] 409 `send_in_progress` in the reader.** The status is left alone (a toast explains);
+  409 `send_status_unknown` switches the banner to the unknown state with "Send as a new
+  message", whatever the browser's clock says.
+- **[Low] REQUIREMENTS "Full end-to-end run, wall time"** now carries the same numbers as the
+  scheduled tier row.
+- **Ruling 14.** REQUIREMENTS lines 37 (tier) and 54 (end-to-end) say 30 s with "owner approval
+  2026-11-16". No CI or test timeout encoded 26 s: the workflows use `timeout-minutes: 10` and
+  bun a 20 s per-test timeout.
+- **Hypothesis 3** (a rejection on a retry past 24 h released the uploads of mail that may have
+  gone out): no longer reachable. A retry past the window is sent only for a row with
+  `maybe_accepted = 0`, so no earlier attempt can have been accepted, and a 422 on it releases
+  uploads of a message that never went out. A row that may have gone out is refused before any
+  call and keeps its uploads. Tests: the reviewer's scenario asserts the upload still answers
+  409 to a delete after the refusal; "a rejection past the window" shows a 5xx-then-422 row stays
+  final without a call; the ownership test shows the old upload keeps its message.
+
+Tests. Worker, new file `worker/test/send-window.spec.ts` (the two superseded window tests left
+`send-resend.spec.ts`):
+
+- the reviewer's scenario: accepted at T0 with the answer lost, a Retry at T0 + 23 h 50 min
+  (byte-identical body) also lost, a Retry at T0 + 24 h 30 min answers 409
+  `send_status_unknown`, two calls in total, the row unchanged, the upload not deletable;
+- a retry one minute before the window ends sends a byte-identical body;
+- a network failure, then a Retry two minutes before Resend's 24 h end (inside the margin):
+  refused, no call, row unchanged; the message detail carries both fields;
+- a 5xx then a 422, past the window: a repeat answers 422 `send_rejected` without a call;
+- 429, 429 inside the window (same body), then past the stored `exp`: re-signed
+  (`exp` = now + 24 h, written back to R2), sent, `first_attempt_at` moved;
+- 429 then a network error, a network error then 429, and an attempt that never answered then
+  429: each refused past the window;
+- "send as new": the old row stuck past the window, its attachment downloaded and uploaded again,
+  sent under a new key: a new row, Resend called with the new key, the old row unchanged;
+- ownership: the old upload cannot be attached to the new send (400 `unknown_upload`) nor
+  deleted (409), the copy belongs to the new message, the old one is still downloadable.
+
+Browser (`compose.test.ts`, "offers Retry in the reader only where it may still send"): a
+`sending` row claimed 2 minutes ago but first attempted 25 h ago and a `failed` row with
+`maybeAccepted` past the window show "Status unknown, check Resend" with "Send as a new message"
+and no Retry; a rejected row with `maybeAccepted` past the window stays "refused"; a stalled
+row's Retry answered 409 `send_in_progress` keeps its banner, the next Retry sends; a failed row
+inside the window whose Retry answers 409 `send_status_unknown` turns to the unknown state;
+"Send as a new message" opens compose with the warning, To, Bcc, subject, text and the copied
+attachment, and the request carries a new UUID key, no `sourceId`/`sourceKind` and the new
+upload id.
+
+Migration 0010: applied to a scratch D1 migrated to 0009 with outbound `sent`, `sending` and
+`failed` rows and an inbound row: inbound untouched, `sent` got its `received_at`, the
+unfinished ones `0` and `1`. Applied to the local D1 with `bun run db:migrate:local`; a second
+run reported nothing to apply. A second manual run of the file fails on `ALTER TABLE ... ADD`,
+as for 0006 and 0009; wrangler's migration table prevents it.
+
+Ablation of the third round (one mutation at a time, the touched suites rerun, the file restored;
+script in the session scratchpad, `ablate.ts`). Worker 13 hunks against the four send suites and
+`mailbox.spec.ts`, all red: `first_attempt_at` set at insert, the route's window from
+`first_attempt_at`, `maybe_accepted` on taking over a `sending` row, on `send_failed`, the 409
+refusal, `maybe_accepted` in it, the rejection exempt from it, the fresh claim past the window,
+the fresh claim moving `first_attempt_at`, no re-sign inside the window, re-sign past it, the
+5-minute margin, the two detail fields. Web 13 hunks against a rebuild and `compose.test.ts`,
+all red: the reader's window from `firstAttemptAt`, a failed row with `maybeAccepted` unknown, a
+rejection not shown as unknown, the "Send as a new message" button, the unknown state on 409
+`send_status_unknown`, the status kept on 409 `send_in_progress`, the Reader wiring, the route
+kind `again`, no reply source for `again`, the prefill from the sent copy, the copied
+attachments, the Bcc, the warning. First pass: the in-window claim's SQL window clause survived
+(the route refuses before the claim); the clause was removed as redundant and the route's check
+ablated instead (red). Not ablated: the fresh claim's `maybe_accepted = 0` in SQL (only a race
+between the read and the claim reaches it), the from-address choice for `again` (the stand-in
+has one address), the `send_status_unknown` entry in `web/src/errors.ts` (the reader does not
+toast that code; compose would show it, see Deferred), and the migration's backfill (proved on
+the scratch D1 above, not by a test).
+
+Numbers after the third round: below, "Numbers after the third round".
+
+Numbers after the third round (2026-11-16, dev workstation, Ryzen 9 9950X3D; one Bun script ran
+the 9 runs in a row, `time.ts` in the session scratchpad, CPU load read before each run):
+
+- `bun run check`: 9.86, 9.49, 9.34 s wall, CPU load 1–5% (limit 10 s); worker suite (vitest
+  Duration) 8.55, 8.26, 8.09 s (limit 9 s); 335 worker tests (327 before). Green before each
+  commit, run on that commit's exact tree.
+- `bun run test:browser`: 21.67, 22.53, 21.77 s wall including the build (bun test 20.05–20.86 s),
+  52 tests, CPU load 0–3% (limit 30 s by ruling 14).
+- `bun run test:send`: 14.67, 13.96, 14.63 s wall including the build (bun test 12.37–13.05 s),
+  9 tests, CPU load 0–1%: **over the 14 s limit in two of three runs** (open question 7). The
+  reader test grew by the unknown state, the two 409 answers and the send-as-new flow.
+- Bundle (`vite build`, gzip level 6, `bundle.ts` in the session scratchpad: entry plus the JS
+  `index.html` references; first paint = `index.html` plus every JS and CSS file it references;
+  total = every JS and CSS file under `assets`). The script run on the base `de4b1c5` gave 263.1,
+  311.8, 715.9 and compose 51.4 kB (the recorded entry figure was 263.0 kB). Head, 3 builds
+  identical: entry plus preloaded JS 263.1 kB, first paint 311.8 kB (7 assets), total 716.7 kB,
+  compose chunk 51.5 kB.
+
+### Owner rulings 15 to 17 (2026-11-16)
+
+15. **`bun run test:send` limit** 14 s → 18 s (owner approval 2026-11-16; open question 7).
+16. **`bun run check` limit** 10 s → 12 s (owner approval 2026-11-16). The gate runs before each
+    commit and in CI ("Merge gate" row).
+17. **"Slowest test package" limit** 9 s → 10.8 s (9.0 s plus 20%; owner approval 2026-11-16;
+    open question 8).
+
+REQUIREMENTS carries both in the "Commands" rows. No script enforces either limit:
+`scripts/check.ts` prints `check passed in N s` and exits on the steps' results only, and no hook
+or workflow encodes 10 s or 14 s (the workflows use `timeout-minutes: 10`, bun a 20 s per-test
+timeout). The comment in `.github/workflows/browser.yml` that named the 10 s gate says 12 s.
+
+### Fourth fix round (mechanical, no behaviour change)
+
+Commits: `158845e` the upload-signature tamper, `3e9f59c` `send/retry.ts`, `bf04143`
+`sent-status.test.ts`, `c5ffb7e` rulings 15 and 16, and the docs commit after them.
+
+- **[Low] Flaky blob test** (`send-extras.spec.ts`, "opens the blob only with a valid, unexpired
+  signature"). The test changed the last base64url character of the 43-character HMAC from `A`
+  to `B`; that character carries 4 data bits and 2 padding bits, and `A` and `B` differ only in
+  the padding, so a signature ending in `A` (1 run in 16) still verified. It now changes the
+  first character. Checked with a Bun one-liner: a 32-byte value whose base64url ends in `A`
+  decodes to the same bytes with `B` in its place. No other signature-tamper test in
+  `worker/test` edits a trailing character (the webhook test signs with another secret; the
+  session test uses a made-up cookie). The single test ran 20 times in a row after the fix and
+  20 times on the final head, 0 failures each time.
+- **`send.ts` 320 → 203 lines.** The retry window constants, `DONE`, `Existing`, `claimRetry`,
+  the failed-row update and the existing-row branch moved unchanged to `send/retry.ts`
+  (139 lines). `retryExisting` returns the answer or the stored copy; the route passes the copy
+  to `deliver`, so `retry.ts` does not import `send.ts`. Three worker specs import the
+  constants from `retry.ts`; the tests are otherwise unchanged and the 335 pass. The reader's
+  comment naming the Worker's retry limits points to the new file.
+- **`compose.test.ts` 348 → 231 lines.** "Offers Retry in the reader only where it may still
+  send" moved unchanged to `web/test/sent-status.test.ts` (148 lines) with the same stub app
+  setup. `bun run test:send` runs the three files after one build (9 tests in 3 files);
+  `test:browser` ignores the new file (still 52 tests in 6 files); `send.yml` lists it in its
+  path filter.
+- **p90 file length.** Script `p90.ts` in the session scratchpad: every git-tracked .ts, .tsx
+  and .py file except `.d.ts`, line count = newlines, sorted, nearest rank (the
+  ceil(0.9 × n)-th). Head: **239 lines**, the 165th of 183 files. The same script gives 271 at
+  `66d8f34` over 181 files; the review's 263 is the 162nd of those 181 (floor rank). The
+  recorded 314 dated from 15 files. REQUIREMENTS now says 239.
+
+Files above 239 lines at head, each with its reason (M5 growth against main `5cb6755` in
+brackets):
+
+| File | Lines | Reason, or split |
+| --- | --- | --- |
+| `web/test/reader.test.ts` | 451 | deferred since M4b: the rendering-security corpus could move to its own file |
+| `worker/test/mailbox.spec.ts` | 435 (+3) | one suite for the mailbox routes over one seeded store; split by route group when it next grows |
+| `worker/test/inbound.spec.ts` | 379 | inbound pipeline scenarios on one fixture set; unchanged in M5 |
+| `worker/src/db/schema.ts` | 350 (+114) | the Drizzle schema, one table per block; M5 added `drafts`, `uploads`, `webhook_events`, `send_quota` and the message columns; one file keeps the migrations' source in one place |
+| `scripts/test_check_requirements.py` | 346 | the requirements check's tests; unchanged in M5 |
+| `web/test/pwa.test.ts` | 341 | the PWA suite with one persistent Chromium profile; unchanged in M5 |
+| `worker/test/consumer.spec.ts` | 316 | queue consumer scenarios; unchanged in M5 |
+| `scripts/check-requirements.py` | 314 | the merge gate's requirements check; unchanged in M5 |
+| `worker/test/push.spec.ts` | 308 | Web Push scenarios; unchanged in M5 |
+| `worker/src/mail/routes.ts` | 301 (+4) | the mailbox routes; M5 added the Sent folder filter and the sent-message fields |
+| `worker/test/send.spec.ts` | 298 (new) | the M5 worker suite is already split by topic into four files (send, resend, window, extras) |
+| `web/src/pages/MailboxPage.tsx` | 292 (+36) | the folder page wiring list, reader and compose panel; M5 added Sent, Drafts and the compose panel |
+| `web/src/compose/useCompose.ts` | 289 (new) | the compose state hook (fields, autosave, attachments, send); the prefill already moved to `compose/start.ts` |
+| `worker/test/send-window.spec.ts` | 284 (new) | see `send.spec.ts` |
+| `worker/test/send-resend.spec.ts` | 279 (new) | see `send.spec.ts` |
+| `web/src/pages/SecurityPage.tsx` | 274 | split once from 325 lines; unchanged in M5 |
+| `worker/test/send-extras.spec.ts` | 271 (new) | see `send.spec.ts` |
+| `web/src/compose/ComposeView.tsx` | 263 (new) | the compose screen; the hook and the prefill are already separate |
+
+Numbers after the fourth round (2026-11-16, dev workstation, Ryzen 9 9950X3D; `time.ts` in the
+session scratchpad ran the 11 runs in a row on `bf04143` with only STATE and a workflow comment
+changed, CPU load read before each run):
+
+- `bun run check`: 9.51, 9.40, 10.19, 9.83, 9.77 s wall, all green, CPU load 1–5% (limit 12 s
+  by ruling 16); worker suite (vitest Duration) 8.25, 8.21, 9.03, 8.64, 8.60 s, 335 tests:
+  **one run over the 9 s "Slowest test package" limit then** (open question 8, settled by ruling 17: 10.8 s). Green before each
+  commit of this round (9.4–10.4 s).
+- `bun run test:send`: 13.96, 13.86, 14.45 s wall including the build (bun test 12.34–12.91 s),
+  9 tests in 3 files, CPU load 1–10% (limit 18 s by ruling 15).
+- `bun run test:browser`: 25.07, 21.81, 20.60 s wall including the build (bun test
+  19.05–23.57 s), 52 tests in 6 files, CPU load 1–3% (limit 30 s); the first run of the series
+  was slow, as in the second round.
+- Bundle not re-measured: the round changed no file under `web/src` except a comment.
+
+### Deviations from the design (decisions taken, open to the owner)
+
+1. **`uploads.message_id`.** The design's `uploads` has only `draft_id`; the cron could not tell
+   an attachment of a sent message from a stale one. `message_id` is set when the message is
+   inserted; the cron keeps such an upload while the message exists.
+2. **Draft attachments** are linked by `uploads.draft_id` only; the draft row keeps no list of
+   upload ids, so there is one source of truth.
+3. **The sent copy is written before the Resend call** (the design writes it after the 200), so a
+   retry sends exactly the stored request again, signed attachment URLs included (ruling 4); a
+   retry ignores a changed request body and a Retry from the reader sends `{ idempotencyKey }`
+   alone. After a final rejection (`send_rejected`) the compose session takes a new key and the
+   corrected message is a new send with its own row (ruling 6); the rejected row stays in Sent as
+   "Not sent" and hands its attachments back to the draft.
+4. **`received_at` of an outbound row** is the time of its last send attempt; the 60-second
+   staleness check reads it. The retry window reads `first_attempt_at` instead (ruling 13,
+   migration 0010), with `maybe_accepted` beside it.
+5. **`GET /api/uploads/:id`** (session): the owner's download of a sent message's attachment; it
+   also lets a forward of a sent message carry its attachments. Not in the design's route list.
+6. **Hub event `changed`.** A send or a status change notifies open pages without Web Push; the
+   design's "as for new mail" would have pushed a new-mail notification for the owner's own mail.
+7. **The webhook is exempt from the CSRF guard** (`signedWebhookRoute`): Resend's request has no
+   matching `Origin`; the Svix signature authenticates it.
+8. **Status in Sent:** only states that need attention (delayed, bounced, complained, failed,
+   suppressed) get a badge; sending, sent and delivered are plain text (Astryx Badge guidance).
+   `suppressed` joins the status set (the webhook design lists it).
+9. **Markdown details:** images become their alt text (no remote image in sent mail), task list
+   boxes ☑/☐, raw HTML shown as text.
+10. **Quota in Settings** is a section on Settings > Domains, shown once a domain can send.
+11. **Compose has a Close control** (the draft is kept), beside its heading in the panel and in
+    the page's title row at phone width.
+12. **Forward** uploads the source's attachments as soon as compose opens; the owner removes the
+    ones not wanted.
+13. **`RESEND_API_URL`** is a var (no hardcoded URL) and is passed to the SDK, so no
+    `process.env.RESEND_BASE_URL` can redirect the call.
+14. **Inbox lists inbound mail only**, and the unread Inbox count ignores outbound rows (they are
+    stored read).
+
+### Open questions for the owner
+
+1. Settled by ruling 7 (vendor chunk rule, first paint 311.8 kB). **First paint grew 3.9 kB** (319.0 → 322.9 kB, limit 370) although marked is not in it. The
+   compose chunk shares Astryx modules (Selector, Item, Stack) with the first paint, and the
+   bundler re-split those shared modules into four more preloaded chunks; a probe build with the
+   compose chunk replaced by an empty component measured 319.1 kB. Options: accept it, or add a
+   manual chunk rule to the Vite config to keep the old split (more config to maintain).
+2. Settled by ruling 8 (`bun run test:send`). **Browser tier 31–34 s against 26 s.** Proposed: split the sending suites into
+   `bun run test:send` (compose and Markdown, about 11 s, limit 14 s) with its own workflow like
+   the PWA suite, which brings `test:browser` back to about 21 s; or raise the limit to 42 s
+   (35 s plus 20%).
+3. Answered by the real Resend test (SES replaces a custom Message-ID; deferred). **Threading of replies to new outbound mail.** Resend sets the Message-ID and returns none, so
+   a reply to a message started in MelodyMail threads by its In-Reply-To, which no stored row
+   carries; it starts a new thread. Setting our own `Message-ID` header through Resend's `headers`
+   is untested against the real API. Try it during the manual test?
+4. Settled by ruling 9. **A Retry more than 24 hours after the first attempt** signs with the stored, expired `exp`
+   (ruling 4), so Resend cannot fetch the attachments. Resend's idempotency key has expired by
+   then too, so a fresh `exp` would not conflict. Keep the ruling as it is, or re-sign when the
+   stored expiry has passed?
+5. Settled by ruling 10. **A message stuck at `sending`** (a 409 idempotency conflict, or a Worker that died
+   mid-send) shows "Sending" in the reader with no action; only a repeat from the same compose
+   session claims it after 60 s. Offer Retry in the reader for a `sending` row older than 60 s?
+6. Settled by ruling 11. **The rejected row after a correction** stays in Sent as "Not sent" with Retry, and its
+   attachments now belong to the draft: Discard deletes them, and the rejected row's copy then
+   names attachments that are gone. Remove the rejected row once the corrected message is sent,
+   or keep it as a record?
+
+7. Settled by ruling 15 (limit 18 s). **`bun run test:send` is over its 14 s limit** in two of three runs after the third round
+   (13.96–14.67 s wall, CPU load 0–1%). Options: raise it to 18 s (14.7 s plus 20%, the method
+   of "Commands"), or move the reader send states into their own suite with its own build.
+8. Settled by ruling 17 (limit 10.8 s). **The worker suite reached 9.03 s** (vitest Duration) in one of five gate runs after the
+   fourth round, against the 9 s "Slowest test package" limit (8.21–8.64 s in the other four,
+   CPU load 1–5%). The round added no test; the third round measured 8.09–8.55 s. Options: raise
+   the limit to 10.8 s (9.0 s plus 20%), or split the slowest worker specs across vitest pools.
+
+### Deferred
+
+- Compose still offers "Send again" when its own send answers 409 `send_status_unknown` (a draft
+  reopened from Drafts more than a day after a lost send); the retry only gets the same 409, and
+  the message tells the owner to check Resend or send it as a new message. Option: hide Retry
+  for that code in compose and offer the reader's "Send as a new message". Source: third fix
+  round.
+- "Send as a new message" sends without the old message's thread headers (`In-Reply-To`,
+  `References`): the sent copy keeps them, but compose kind `again` sends no reply source.
+  Option: let the send carry the stored headers. Source: third fix round.
+- `web/test/reader.test.ts` (451 lines) is still over the pass bar (M4b deferral).
+- An address book for recipient suggestions (the Tokenizer takes a search source).
+- Pushing flag changes and delivery statuses to other tabs beyond the `changed` event's list
+  refresh (only the open list refetches its first page).
+- Webhook events for an unknown email id answer 409 so that Resend retries them (hypothesis A).
+  An id that is not ours is then retried on Resend's schedule until Resend gives up. Option:
+  answer 200 for such an event once it is older than a few minutes (its `svix-timestamp`),
+  when the send it could have overtaken has long finished. Source: re-review of `06e2c7b`.
+- The `delivery_failed` badge variant in Sent was not ablated: the label reads the same as
+  plain text and Astryx Badge exposes no attribute a test could assert. Source: ablation of the
+  first review round.
+
+### Not verified
+
+- Real delivery through Resend was checked once by hand without attachments ("Real Resend test"); the webhook from Resend (it cannot reach localhost), Resend
+  fetching a signed attachment URL from localhost, the quota headers and quota error names of the
+  real API (taken from the design's Resend facts), production CPU of a send.
+- Running sending under `wrangler dev`: the routes ran in workerd through the vitest pool; the
+  manual Resend test is for the owner and the coordinator.
+- Firefox and Safari; only Chromium was driven.
+- WCAG contrast of the new screens was not measured.
+- The browser tier and the new suites have not run in CI (nothing was pushed); `send.yml` has
+  never run.
+- Resend's idempotency window boundary: that Resend keeps a key 24 hours from the first stored
+  request (the 5-minute margin covers skew) and how it treats a key whose first request got a
+  429 come from Resend's documentation, not a real answer.
+- The "Send as a new message" screens were not screenshotted at the three widths, two themes and
+  three locales; only the browser test drove them (Chromium, 1280 px default, en).
+- Resend's behaviour behind the review fixes: the 409 names come from Resend's error reference,
+  not a real answer; that `email.*` can overtake the send's answer is shown only by the stubbed
+  test; the size of real webhook payloads is not published.
+
+### Screenshots
+
+252 PNG files in the session scratchpad, folder `shots-m5` (outside the repository): compose new,
+filled (chips, Cc/Bcc, Markdown with a table, an uploaded attachment and one refused over 25 MB),
+preview, quota warning, quota used up, sending not set up, reply, send failed with Retry, Sent
+with each status, a failed sent message with Retry, a delivered sent message, Drafts with drafts
+and empty, Settings > Domains with the quota, each at 390, 1280 and 1920 px, light and dark,
+en, zh-CN and ja-JP. `scrollWidth` equalled the viewport width in all 252. Taken with Playwright
+against `web/dist` and the in-memory API stand-in. Found and fixed from them: the "Cc and Bcc"
+button was cut off beside the To field (now under it), and the status badge in a Sent row shrank
+to an ellipsis (it keeps its width now; the recipients are cut instead).

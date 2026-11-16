@@ -16,7 +16,9 @@
     "inbox": "收件箱",
     "starred": "已加星标",
     "archive": "存档",
-    "trash": "已删除"
+    "trash": "已删除",
+    "sent": "已发送",
+    "drafts": "草稿"
   },
   "mail": {
     "search": "搜索邮件",
@@ -73,18 +75,57 @@
       "inbox": "还没有邮件",
       "starred": "没有加星标的邮件",
       "archive": "没有存档的邮件",
-      "trash": "“已删除”为空"
+      "trash": "“已删除”为空",
+      "sent": "还没有已发送的邮件",
+      "drafts": "没有草稿"
     },
     "done": {
       "archived": "已存档（{{count}}）",
       "trashed": "已移到“已删除”（{{count}}）",
       "restored": "已还原（{{count}}）",
       "deleted": "已永久删除（{{count}}）"
-    }
+    },
+    "compose": "写邮件",
+    "composePanel": "写邮件窗格",
+    "composeTitle": {
+      "new": "新邮件",
+      "reply": "回复",
+      "replyAll": "全部回复",
+      "forward": "转发"
+    },
+    "reply": "回复",
+    "replyAll": "全部回复",
+    "forward": "转发",
+    "bcc": "密送",
+    "toLine": "收件人：{{to}}",
+    "noRecipients": "没有收件人",
+    "noDraftOpen": "选择一封草稿继续编辑",
+    "draftsFailed": "无法加载草稿。",
+    "retrySend": "重新发送",
+    "retried": "邮件已发送",
+    "sendStatus": {
+      "sending": "正在发送",
+      "sent": "已发送",
+      "delayed": "延迟",
+      "delivered": "已送达",
+      "bounced": "已退信",
+      "complained": "被标记为垃圾邮件",
+      "failed": "未发送",
+      "suppressed": "已拦截",
+      "delivery_failed": "投递失败"
+    },
+    "deliveryFailedHelp": "Resend 报告这封邮件未能送达。如需再次发送，请转发这封邮件或写一封新邮件。",
+    "sendStalled": "未完成发送",
+    "sendStalledHelp": "这封邮件已开始发送，但没有完成。请重新发送，邮件仍只会发出一次。",
+    "sendUnknown": "状态未知，请在 Resend 中查看",
+    "sendUnknownHelp": "无法确定这封邮件是否已发出，也无法再安全地重新发送。请在 Resend 仪表板中查看它的状态。如果没有送达，请作为新邮件发送。",
+    "sendAsNew": "作为新邮件发送",
+    "closeCompose": "关闭"
   },
   "settings": {
     "language": "语言",
-    "theme": "主题"
+    "theme": "主题",
+    "quotaTitle": "发信额度"
   },
   "language": {
     "zh-CN": "简体中文",
@@ -214,7 +255,28 @@
     "not_in_trash": "只能永久删除“已删除”中的邮件。请先将其移到“已删除”。",
     "not_subscribed": "此设备尚未订阅。请先开启通知。",
     "push_failed": "无法发送通知。请稍后重试。",
-    "invalid_subscription": "无法保存此浏览器的订阅。请重试。"
+    "invalid_subscription": "无法保存此浏览器的订阅。请重试。",
+    "send_not_configured": "尚未设置发信。步骤见 README 的“Sending”一节。",
+    "attachments_not_configured": "附件已关闭：Worker 没有 UPLOAD_URL_KEY。",
+    "sending_disabled": "此地址所在域名已关闭发信。请在“设置 > 域名”中开启。",
+    "address_disabled": "此地址已停用。请选择其他地址。",
+    "unknown_address": "此地址已不存在。请选择其他地址。",
+    "no_recipients": "请至少添加一位收件人。",
+    "too_many_recipients": "一封邮件最多发给 50 位收件人。",
+    "invalid_recipient": "有一位收件人不是电子邮件地址。",
+    "invalid_subject": "主题过长或包含换行。",
+    "unknown_upload": "缺少一个附件。请移除后重新添加。",
+    "attachments_too_large": "附件总大小超过 30 MB。",
+    "file_too_large": "文件超过 25 MB。",
+    "unknown_source": "要回复的邮件已不存在。",
+    "send_in_progress": "这封邮件正在发送。请稍候，然后查看“已发送”。",
+    "send_status_unknown": "无法确定这封邮件是否已发出。请在 Resend 仪表板中查看它的状态，或作为新邮件发送。",
+    "daily_quota_exceeded": "今日发信额度已用完。请在 UTC 00:00 之后重试。",
+    "monthly_quota_exceeded": "本月发信额度已用完。",
+    "send_rejected": "邮件服务拒绝了这封邮件。请检查收件人和发件地址。",
+    "send_failed": "无法连接邮件服务。请稍后重新发送。",
+    "already_sent": "这封草稿已在另一个窗口中发送。",
+    "draft_conflict": "这封草稿已在另一个窗口中更改。请重新打开。"
   },
   "common": {
     "cancel": "取消"
@@ -365,5 +427,11 @@
         "description": "在 iPhone 和 iPad 上，只有从主屏幕打开的应用才能收到通知。请在 Safari 中轻点“共享”，然后轻点“添加到主屏幕”。"
       }
     }
+  },
+  "quota": {
+    "line": "今日 {{daily}} / {{dailyLimit}} · 本月 {{monthly}} / {{monthlyLimit}}",
+    "warning": "接近上限",
+    "dailyUsed": "今日发信额度已用完，将在 UTC 00:00 重置。",
+    "monthlyUsed": "本月发信额度已用完。"
   }
 }

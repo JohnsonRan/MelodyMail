@@ -9,6 +9,10 @@ await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 const TABLES = [
   "messages_fts",
   "messages",
+  "drafts",
+  "uploads",
+  "webhook_events",
+  "send_quota",
   "address_forwards",
   "addresses",
   "forward_targets",

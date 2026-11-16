@@ -7,6 +7,9 @@ import { fail } from "./http";
 // Handlers registered through publicRoute. Every other route needs a session
 // (worker/AGENTS.md #authz); the route-walking test in test/authz.spec.ts enforces it.
 const publicHandlers = new WeakSet<object>();
+// Public handlers that another origin calls (a server-to-server webhook), so the CSRF guard does
+// not apply; they authenticate the request by its signature instead.
+const crossOriginHandlers = new WeakSet<object>();
 
 export function publicRoute(
   app: Hono<AppEnv>,
@@ -19,15 +22,25 @@ export function publicRoute(
   app.on(method, [path], ...handlers);
 }
 
+/** A public POST from another server, verified by its own signature (the Resend webhook). */
+export function signedWebhookRoute(app: Hono<AppEnv>, path: string, handler: Handler<AppEnv>) {
+  crossOriginHandlers.add(handler);
+  publicRoute(app, "POST", path, handler);
+}
+
+function endpointOf(c: Parameters<MiddlewareHandler<AppEnv>>[0]) {
+  return matchedRoutes(c)
+    .filter((r) => r.method !== "ALL")
+    .at(-1);
+}
+
 export function isPublicHandler(handler: object): boolean {
   return publicHandlers.has(handler);
 }
 
 /** Default deny: a matched route without the public marker answers 401 without a session. */
 export const requireAuthorization: MiddlewareHandler<AppEnv> = async (c, next) => {
-  const endpoint = matchedRoutes(c)
-    .filter((r) => r.method !== "ALL")
-    .at(-1);
+  const endpoint = endpointOf(c);
   if (!endpoint || isPublicHandler(endpoint.handler)) return next();
   const session = await readSession(c);
   if (!session) return fail(c, 401, "unauthorized");
@@ -43,6 +56,8 @@ export const requireAuthorization: MiddlewareHandler<AppEnv> = async (c, next) =
  */
 export const requireSameOrigin: MiddlewareHandler<AppEnv> = async (c, next) => {
   const method = c.req.method;
+  const endpoint = endpointOf(c);
+  if (endpoint && crossOriginHandlers.has(endpoint.handler)) return next();
   if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
     if (c.req.header("origin") !== new URL(c.req.url).origin) return fail(c, 403, "bad_origin");
   }

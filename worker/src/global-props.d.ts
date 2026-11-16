@@ -27,6 +27,17 @@ declare namespace Cloudflare {
     VAPID_PRIVATE_KEY?: string;
     /** The app's own https:// origin, sent to push services as the VAPID subject. */
     VAPID_SUBJECT?: string;
+    /** Worker secret: the Resend API key; sending is off while it is unset. */
+    RESEND_API_KEY?: string;
+    /** Worker secret: the Resend webhook signing secret (whsec_...); the webhook answers 404 without it. */
+    RESEND_WEBHOOK_SECRET?: string;
+    /** Worker secret: the HMAC key of the signed attachment URLs; attachments are off without it. */
+    UPLOAD_URL_KEY?: string;
+    /** The Resend API origin. */
+    RESEND_API_URL: string;
+    /** Plan limits shown with the quota (Resend Free: 100 per UTC day, 3,000 per month). */
+    RESEND_DAILY_LIMIT: string;
+    RESEND_MONTHLY_LIMIT: string;
   }
 }
 

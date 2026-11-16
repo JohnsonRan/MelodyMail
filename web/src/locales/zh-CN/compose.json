@@ -1,0 +1,64 @@
+{
+  "title": {
+    "new": "新邮件",
+    "reply": "回复",
+    "replyAll": "全部回复",
+    "forward": "转发",
+    "again": "作为新邮件发送"
+  },
+  "again": {
+    "title": "之前的邮件可能已经送达",
+    "description": "这封邮件将作为新邮件发送。如果之前的邮件已经发出，收件人会收到两封。"
+  },
+  "loadFailed": "无法打开写邮件。请关闭后重试。",
+  "notConfigured": "尚未设置发信",
+  "notConfiguredHelp": "请为 Worker 添加 Resend API 密钥。步骤见 README 的“Sending”一节。",
+  "noAddresses": "还没有可以发信的地址。请在“设置 > 域名”中为域名开启发信。",
+  "from": "发件人",
+  "to": "收件人",
+  "cc": "抄送",
+  "bcc": "密送",
+  "addCopies": "抄送和密送",
+  "recipientPlaceholder": "输入地址后按 Enter",
+  "invalidAddress": "不是电子邮件地址：{{value}}",
+  "subject": "主题",
+  "bodyMode": "正文视图",
+  "write": "编辑",
+  "preview": "预览",
+  "body": "正文",
+  "bodyHelp": "支持 Markdown：**粗体**、*斜体*、列表、表格、`代码` 和链接。HTML 会显示为文本。",
+  "attach": "添加附件",
+  "attachLimits": "每个文件最大 25 MB，每封邮件最大 30 MB。",
+  "attachmentsOff": "附件已关闭：Worker 没有 UPLOAD_URL_KEY（见 README 的“Sending”一节）。",
+  "uploading": "正在上传 {{name}}",
+  "removeAttachment": "移除 {{name}}",
+  "uploadError": {
+    "file_too_large": "超过 25 MB，未添加。",
+    "attachments_too_large": "附件总大小将超过 30 MB，未添加。",
+    "attachments_not_configured": "附件已关闭，未添加。",
+    "network": "上传失败：没有网络连接。请移除后重新添加。",
+    "internal": "上传失败。请移除后重新添加。"
+  },
+  "send": "发送",
+  "sendShortcut": "发送（Ctrl+Enter）",
+  "saveDraft": "保存草稿",
+  "saveState": {
+    "saving": "正在保存…",
+    "saved": "草稿已保存",
+    "error": "草稿未保存"
+  },
+  "discard": "舍弃",
+  "discardTitle": "要舍弃这封草稿吗？",
+  "discardDescription": "草稿及其附件将被删除，且无法恢复。",
+  "sendFailed": "邮件未发送",
+  "retry": "重新发送",
+  "blocked": {
+    "notConfigured": "尚未设置发信。",
+    "noFrom": "请选择发件地址。",
+    "noRecipients": "请至少添加一位收件人。",
+    "uploading": "请等待附件上传完成。"
+  },
+  "sentToast": "邮件已发送",
+  "quoteHeader": "{{sender}} 于 {{date}} 写道：",
+  "close": "关闭（保留草稿）"
+}

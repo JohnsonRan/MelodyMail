@@ -2,9 +2,19 @@ import { api } from "../api";
 
 // Shapes and calls of the mailbox API (docs/M4-mailbox.md, "API").
 
-export type Folder = "inbox" | "starred" | "archive" | "trash";
+export type Folder = "inbox" | "starred" | "sent" | "archive" | "trash";
 
-export const FOLDERS: Folder[] = ["inbox", "starred", "archive", "trash"];
+/** Delivery statuses of a sent message (docs/M5-sending.md, "Webhook"). */
+export type SendStatus =
+  | "sending"
+  | "sent"
+  | "delayed"
+  | "delivered"
+  | "bounced"
+  | "complained"
+  | "failed"
+  | "suppressed"
+  | "delivery_failed";
 
 export type MessageItem = {
   id: string;
@@ -21,13 +31,23 @@ export type MessageItem = {
   archived: boolean;
   trashed: boolean;
   hasAttachments: boolean;
-  status: "stored" | "parsed" | "parse_failed";
+  status: "stored" | "parsed" | "parse_failed" | SendStatus;
   threadKey: string | null;
+  direction: "in" | "out";
+  to: string | null;
+  /** A failed send's short code. */
+  error: string | null;
 };
 
 export type MessageDetail = MessageItem & {
-  to: string | null;
   cc: string | null;
+  bcc: string | null;
+  /** Outbound only: the key a Retry sends again under. */
+  idempotencyKey: string | null;
+  /** Outbound only: when the first attempt that Resend may have accepted was made. */
+  firstAttemptAt: number | null;
+  /** Outbound only: 1 when an attempt's outcome is unknown, so Resend may have sent it. */
+  maybeAccepted: number;
   envelopeFrom: string;
   envelopeTo: string;
   forwardFailed: number;
@@ -36,7 +56,7 @@ export type MessageDetail = MessageItem & {
 export type MessagePage = { messages: MessageItem[]; nextCursor: string | null };
 
 export type Counts = {
-  folders: Record<Folder, number>;
+  folders: Partial<Record<Folder, number>>;
   addresses: Record<string, number>;
 };
 

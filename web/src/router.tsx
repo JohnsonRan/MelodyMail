@@ -9,7 +9,9 @@ import { RootLayout } from "./App";
 import { routeAuthState } from "./api";
 import type { AstryxMessages, Locale } from "./i18n";
 
-type MailSearch = { m?: string; q?: string };
+type MailSearch = { m?: string; q?: string; compose?: string; src?: string; kind?: string };
+
+const SEARCH_KEYS = ["m", "q", "compose", "src", "kind"] as const;
 
 // Each page and the signed-in shell are their own chunks, so the first paint loads only what
 // the page it shows needs; the sign-in pages do not download the app shell.
@@ -35,15 +37,17 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
     createRoute({
       getParentRoute: () => shellRoute,
       path,
-      validateSearch: (search: Record<string, unknown>): MailSearch => ({
-        ...(typeof search.m === "string" ? { m: search.m } : {}),
-        ...(typeof search.q === "string" ? { q: search.q } : {}),
-      }),
+      validateSearch: (search: Record<string, unknown>): MailSearch =>
+        Object.fromEntries(
+          SEARCH_KEYS.flatMap((k) => (typeof search[k] === "string" ? [[k, search[k]]] : [])),
+        ),
       component: lazyRouteComponent(() => import("./pages/MailboxPages"), page),
     });
   const mailboxRoutes = [
     mailbox("/", "InboxPage"),
     mailbox("/starred", "StarredPage"),
+    mailbox("/sent", "SentPage"),
+    mailbox("/drafts", "DraftsPage"),
     mailbox("/archive", "ArchivePage"),
     mailbox("/trash", "TrashPage"),
     mailbox("/address/$id", "AddressPage"),

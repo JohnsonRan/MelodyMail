@@ -156,6 +156,9 @@ The browser security suite needs Chromium for Playwright once:
 bun run --cwd web test:browser
 ```
 
+The compose and Markdown suites run apart with `bun run test:send`, the PWA suite with
+`bun run test:pwa`.
+
 ## Install and offline
 
 MelodyMail is an installable web app. In Chrome or Edge, choose Install in the address bar; on
@@ -197,3 +200,40 @@ bun run wrangler d1 execute melodymail --remote --command "DELETE FROM push_subs
 
 Signing a device out, or revoking its session, also ends its notifications until that device
 signs in again.
+
+## Sending
+
+MelodyMail sends mail through [Resend](https://resend.com). You write in Markdown; the browser
+renders it, and the mail carries both the Markdown source (plain text) and the HTML. Sending stays
+off until the Worker has a Resend API key; compose then says sending is not set up.
+
+Apply migration 0009 after deploying this version (`bun run --cwd worker db:migrate:remote`).
+Then set up Resend:
+
+1. In Resend, add and verify each domain you send from (Domains > Add domain, then add the DNS
+   records it shows in Cloudflare DNS). Leave open and click tracking off in the domain's settings:
+   tracking rewrites links and adds a pixel.
+2. Create an API key with "Sending access" only, restricted to those domains if you like.
+3. Add a webhook (Webhooks > Add endpoint) for `https://<your origin>/api/webhooks/resend` with the
+   events `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`,
+   `email.complained`, `email.failed` and `email.suppressed`. Copy its signing secret.
+4. Store the secrets from `worker/`:
+
+   ```sh
+   bun run wrangler secret put RESEND_API_KEY
+   bun run wrangler secret put RESEND_WEBHOOK_SECRET   # whsec_...
+   bun run upload-key                                  # prints UPLOAD_URL_KEY
+   bun run wrangler secret put UPLOAD_URL_KEY
+   ```
+
+5. Turn on sending for the domain in Settings > Domains.
+
+Each secret switches on one part: without `UPLOAD_URL_KEY` compose sends without attachments, and
+without `RESEND_WEBHOOK_SECRET` sent mail stays at "Sent" instead of showing delivery. Resend
+fetches attachments from a signed URL on your origin that is valid for 24 hours; it cannot reach
+`wrangler dev` on localhost, so attachments work only on a deployed Worker. For `wrangler dev`,
+put the values in `worker/.dev.vars`.
+
+The quota shown in compose and Settings is the count Resend last reported, against the limits in
+`wrangler.jsonc` (`RESEND_DAILY_LIMIT` 100, `RESEND_MONTHLY_LIMIT` 3000, the Free plan). Change the
+vars there for another plan.

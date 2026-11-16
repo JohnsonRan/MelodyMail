@@ -1,5 +1,6 @@
 import type { Env } from "../env";
 import { errorText, log } from "../http";
+import { removeOldWebhookEvents, removeStaleUploads } from "../send/cleanup";
 import { notifyHub } from "./hub";
 import { type ParsedHeaders, parseSlice, SLICE_BYTES, threadKey } from "./parse";
 
@@ -146,6 +147,8 @@ export async function requeueStored(env: Env, now: number): Promise<number> {
 export async function handleScheduled(controller: ScheduledController, env: Env): Promise<void> {
   const jobs: [string, () => Promise<unknown>][] = [
     ["requeue_stored", () => requeueStored(env, controller.scheduledTime)],
+    ["remove_stale_uploads", () => removeStaleUploads(env, controller.scheduledTime)],
+    ["remove_old_webhook_events", () => removeOldWebhookEvents(env, controller.scheduledTime)],
   ];
   let failed = 0;
   for (const [job, run] of jobs) {

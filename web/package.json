@@ -12,6 +12,7 @@
     "@tanstack/react-router": "^1.170.46",
     "dompurify": "^3.4.18",
     "i18next": "^27.1.2",
+    "marked": "18.2.0",
     "postal-mime": "^4.2.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
@@ -40,7 +41,8 @@
     "build": "bun --bun vite build",
     "astryx": "bun --bun node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs",
     "icons": "bun --bun pwa-assets-generator",
-    "test:browser": "bun --bun vite build && bun test --timeout 20000 --path-ignore-patterns='**/pwa.test.ts' ./test",
-    "test:pwa": "bun --bun vite build && bun test --timeout 20000 ./test/pwa.test.ts"
+    "test:browser": "bun --bun vite build && bun test --timeout 20000 --path-ignore-patterns='**/pwa.test.ts' --path-ignore-patterns='**/compose.test.ts' --path-ignore-patterns='**/markdown.test.ts' --path-ignore-patterns='**/sent-status.test.ts' ./test",
+    "test:pwa": "bun --bun vite build && bun test --timeout 20000 ./test/pwa.test.ts",
+    "test:send": "bun --bun vite build && bun test --timeout 20000 ./test/compose.test.ts ./test/sent-status.test.ts ./test/markdown.test.ts"
   }
 }

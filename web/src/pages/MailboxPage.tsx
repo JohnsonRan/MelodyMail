@@ -5,12 +5,13 @@ import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { Icon } from "@astryxdesign/core/Icon";
 import { LayoutPanel } from "@astryxdesign/core/Layout";
 import { useToast } from "@astryxdesign/core/Toast";
-import { ArrowPathIcon, EnvelopeOpenIcon } from "@heroicons/react/24/outline";
+import { ArrowPathIcon, EnvelopeOpenIcon, PencilSquareIcon } from "@heroicons/react/24/outline";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { lazy, Suspense, useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../api";
 import { PageFrame } from "../components/PageFrame";
+import { ComposeSlot, useComposeRoute } from "../compose/route";
 import { errorMessage } from "../errors";
 import { ACTION_FLAGS, type BulkAction, belongs } from "../mailbox/actions";
 import {
@@ -55,6 +56,7 @@ export function MailboxPage({ query, title }: { query: ListQuery; title: string 
     structuralSharing: true,
   });
   const sideBySide = useMediaQuery(SIDE_BY_SIDE);
+  const compose = useComposeRoute();
   const { refreshCounts } = useMailbox();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [cursor, setCursor] = useState(0);
@@ -182,6 +184,10 @@ export function MailboxPage({ query, title }: { query: ListQuery; title: string 
     },
     back: () => go(null),
     search: () => document.querySelector<HTMLInputElement>('input[type="search"]')?.focus(),
+    compose: () => compose.open(),
+    reply: () => openId && compose.open({ id: openId, kind: "reply" }),
+    replyAll: () => openId && compose.open({ id: openId, kind: "replyAll" }),
+    forward: () => openId && compose.open({ id: openId, kind: "forward" }),
   });
 
   const reader = openId && (
@@ -195,11 +201,33 @@ export function MailboxPage({ query, title }: { query: ListQuery; title: string 
         onBack={() => go(null)}
         onAction={onReaderAction}
         onOpened={onOpened}
+        onCompose={(kind, message) => compose.open({ id: message.id, kind })}
         busy={busy}
       />
     </Suspense>
   );
 
+  const composer = compose.composeId && (
+    <ComposeSlot
+      draftId={compose.composeId}
+      source={compose.source}
+      onClose={compose.close}
+      isPanel={sideBySide}
+    />
+  );
+
+  if (!sideBySide && composer) {
+    return (
+      <PageFrame
+        title={t(`mail.composeTitle.${compose.source?.kind ?? "new"}`)}
+        actions={
+          <Button label={t("mail.closeCompose")} variant="secondary" onClick={compose.close} />
+        }
+      >
+        {composer}
+      </PageFrame>
+    );
+  }
   if (!sideBySide && openId) {
     return <PageFrame title={title}>{reader}</PageFrame>;
   }
@@ -208,15 +236,23 @@ export function MailboxPage({ query, title }: { query: ListQuery; title: string 
     <PageFrame
       title={title}
       actions={
-        <Button
-          label={t("mail.refresh")}
-          icon={<Icon icon={ArrowPathIcon} size="sm" />}
-          variant="ghost"
-          onClick={() => {
-            void reload();
-            void refreshCounts();
-          }}
-        />
+        <>
+          <Button
+            label={t("mail.refresh")}
+            icon={<Icon icon={ArrowPathIcon} size="sm" />}
+            variant="ghost"
+            onClick={() => {
+              void reload();
+              void refreshCounts();
+            }}
+          />
+          <Button
+            label={t("mail.compose")}
+            icon={<Icon icon={PencilSquareIcon} size="sm" />}
+            variant="primary"
+            onClick={() => compose.open()}
+          />
+        </>
       }
       toolbar={
         <BulkBar
@@ -232,7 +268,7 @@ export function MailboxPage({ query, title }: { query: ListQuery; title: string 
       end={
         sideBySide && (
           <LayoutPanel width="58%" hasDivider padding={0} label={t("mail.reader")}>
-            {reader || (
+            {composer || reader || (
               <Center height="100%">
                 <EmptyState
                   icon={<Icon icon={EnvelopeOpenIcon} size="lg" color="secondary" />}

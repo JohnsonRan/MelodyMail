@@ -14,6 +14,7 @@ import { api } from "../api";
 import { DataTable, TableSkeleton, Value } from "../components/DataTable";
 import { FormDialog } from "../components/FormDialog";
 import { PageFrame } from "../components/PageFrame";
+import { SendingQuota } from "../components/SendingQuota";
 import { withReauth } from "../passkeys";
 import { type Domain, useSettingsPage } from "../settings";
 
@@ -157,6 +158,8 @@ export function DomainsPage() {
           hasAutoFocus
         />
       </FormDialog>
+
+      {data?.some((d) => d.sendEnabled) && <SendingQuota />}
 
       <AlertDialog
         isOpen={removing !== null}

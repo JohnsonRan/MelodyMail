@@ -6,7 +6,9 @@
     "@mmmike/web-push": "1.5.0",
     "@simplewebauthn/server": "^14.1.0",
     "hono": "^4.13.18",
-    "postal-mime": "^4.2.1"
+    "postal-mime": "^4.2.1",
+    "resend": "6.38.1",
+    "standardwebhooks": "1.1.1"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.8.2",
@@ -27,6 +29,7 @@
     "bench:auth": "bun bench/auth.ts",
     "bench:parse": "bun bench/parse.ts",
     "vapid": "bun scripts/vapid.ts",
+    "upload-key": "bun scripts/upload-key.ts",
     "wrangler": "wrangler"
   }
 }

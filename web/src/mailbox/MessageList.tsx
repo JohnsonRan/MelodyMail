@@ -16,12 +16,15 @@ import { type Dispatch, type SetStateAction, useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next";
 import { type MessageItem, senderName } from "./api";
 import { formatListDate } from "./format";
+import { SendStatusLabel } from "./SendStatusLabel";
 
 type Row = MessageItem & Record<string, unknown>;
 
 // Wide enough for a short date or a time in each locale ("11月16日", "Nov 16, 2025"), so the
 // message column takes the rest of the row.
 const DATE_COLUMN = 112;
+
+const NO_SHRINK = { flexShrink: 0 };
 
 const OPEN_CELL_STYLE = { backgroundColor: "var(--color-accent-muted)" };
 
@@ -122,9 +125,17 @@ export function MessageList({
             <HStack gap={1} vAlign="center">
               <StackItem size="fill">
                 <Text maxLines={1} weight={item.read ? "normal" : "semibold"}>
-                  {senderName(item.from)}
+                  {item.direction === "out"
+                    ? t("mail.toLine", { to: item.to ?? "" })
+                    : senderName(item.from)}
                 </Text>
               </StackItem>
+              {item.direction === "out" && (
+                // The status keeps its width; the recipients are cut instead.
+                <StackItem style={NO_SHRINK}>
+                  <SendStatusLabel status={item.status} />
+                </StackItem>
+              )}
               {item.hasAttachments && (
                 <Icon
                   icon={PaperClipIcon}
@@ -141,7 +152,9 @@ export function MessageList({
               {item.subject || t("mail.noSubject")}
             </Text>
             <Text maxLines={1} type="supporting" color="secondary">
-              {item.status === "parsed" && item.snippet ? item.snippet : t("mail.noPreview")}
+              {(item.status === "parsed" || item.direction === "out") && item.snippet
+                ? item.snippet
+                : t("mail.noPreview")}
             </Text>
           </VStack>
         ),

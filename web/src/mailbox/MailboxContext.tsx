@@ -23,7 +23,8 @@ const SESSION_ENDED = 4001;
 const PING_MS = 50_000;
 const BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000, 60_000];
 
-type MailEvent = { type: "message"; id: string };
+/** "message": new inbound mail; "changed": a sent message or its delivery status. */
+type MailEvent = { type: "message" | "changed"; id: string };
 
 type MailboxState = {
   counts: Counts | null;
@@ -126,7 +127,7 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 
   useEventSocket((event) => {
     void refreshCounts();
-    void notifyWhenHidden(event.id);
+    if (event.type === "message") void notifyWhenHidden(event.id);
     for (const listener of listeners.current) listener(event);
   });
 
