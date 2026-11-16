@@ -2509,14 +2509,15 @@ Deviations from the addendum:
    drift and `webhook.ts` stays under the p90; its behaviour is unchanged (the existing widget
    tests pass unmodified, and its hunks were ablated again).
 
-Open questions for the owner:
+Review (fresh Opus reviewer, 2026-11-16): "PASS", no findings. It accepted the five ablation
+survivors. Its two hypotheses (Telegram accepting `answerCallbackQuery` as a webhook reply, and
+taps on an `InaccessibleMessage`) wait for the tunnel test.
 
-1. The merge gate took 11.3–17.2 s on the loaded host today, against its 12 s limit, with the
-   base at the same time 11.6–13.2 s. Re-measure on a quiet host, or decide on the limit?
-2. The gate's concurrent `build` and worker `test` race on `web/dist` (one run of about 20
-   failed with `ENOENT`). Fix it in `scripts/check.ts` (run `build` before `test`, or point the
-   worker tests at a stable assets directory)? Not changed here: it is outside this task and
-   would change the gate's timing.
+Owner rulings (2026-11-16):
+
+1. The merge gate limit goes from 12 s to 15 s, as headroom for host load (REQUIREMENTS.md).
+2. The `build`/`test` race on `web/dist` in `scripts/check.ts` is fixed in its own change after
+   M5b merges, with a timing baseline taken first.
 
 Not verified: a real tap on the plain message's buttons and the real `answerCallbackQuery` in a
 webhook response (the real-bot tunnel test again, ruling 1); how each client draws the 2 × 2
