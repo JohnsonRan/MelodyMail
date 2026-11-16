@@ -16,7 +16,15 @@ export const SENDING_STALE_MS = 60_000;
 const SNIPPET_MAX = 200;
 
 /** Delivered, or on its way: a repeat returns the message and calls nobody. */
-const DONE = new Set(["sent", "delayed", "delivered", "bounced", "complained", "suppressed"]);
+const DONE = new Set([
+  "sent",
+  "delayed",
+  "delivered",
+  "bounced",
+  "complained",
+  "suppressed",
+  "delivery_failed",
+]);
 
 const HTTP_STATUS: Record<SendError, 422 | 429 | 502> = {
   daily_quota_exceeded: 429,

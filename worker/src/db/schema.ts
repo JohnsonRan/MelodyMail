@@ -176,6 +176,7 @@ export const messages = sqliteTable(
         "complained",
         "failed",
         "suppressed",
+        "delivery_failed",
       ],
     }).notNull(),
     envelopeFrom: text("envelope_from").notNull(),

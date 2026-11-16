@@ -108,7 +108,10 @@ double click, a retry after a timeout and two tabs sending the same draft all se
 - `INSERT INTO webhook_events (svix_id) ... ON CONFLICT DO NOTHING`; a duplicate answers 200 and
   does nothing.
 - Map the event to the message by `data.email_id` = `resend_id` and move the status forward only
-  (`sent` < `delayed` < `delivered`; `bounced`, `complained`, `failed`, `suppressed` are final).
+  (`sent` < `delayed` < `delivered`; `bounced`, `complained`, `delivery_failed`, `suppressed` are
+  final). `email.failed` maps to `delivery_failed`, not to `failed`: `failed` is a local send
+  failure the owner may retry, while Resend's report is final, so `claimRetry` never takes it
+  (owner ruling 2026-11-16).
   Unknown ids and other event types answer 200 and are ignored.
 - Log the event type and message id only.
 
@@ -121,7 +124,9 @@ double click, a retry after a timeout and two tabs sending the same draft all se
   text of the source ("On <date>, <sender> wrote:"); forward lists the source's attachments,
   re-uploaded from the browser's parsed copy when kept.
 - **Sent** and **Drafts** in the side navigation (hidden in M4). Sent rows show the delivery
-  status as a badge; the reader shows the status and a Retry for `failed`.
+  status as a badge; the reader shows the status and a Retry for `failed`. For
+  `delivery_failed` it explains that Resend reported a delivery failure and that the owner
+  forwards the message or writes a new one to send it again; there is no Retry.
 - **Quota**: "Today 12 / 100 · This month 340 / 3,000" in the compose panel and Settings;
   a warning at 80%; the Send button explains when the daily quota is used up.
 - All copy in zh-CN, en and ja-JP; `web/AGENTS.md` layout rules; keyboard: `c` compose, `r`

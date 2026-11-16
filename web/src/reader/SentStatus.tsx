@@ -9,7 +9,10 @@ import { errorMessage } from "../errors";
 import type { MessageItem } from "../mailbox/api";
 import { SendStatusLabel } from "../mailbox/SendStatusLabel";
 
-/** The status line of an open sent message, with Retry for a failed send. */
+/**
+ * The status line of an open sent message, with Retry for a failed send. A delivery failure that
+ * Resend reported is final and offers no Retry; the owner forwards the message or writes anew.
+ */
 export function SentStatus({
   message,
   onRetried,
@@ -20,6 +23,15 @@ export function SentStatus({
   const { t } = useTranslation();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  if (message.status === "delivery_failed") {
+    return (
+      <Banner
+        status="error"
+        title={t("mail.sendStatus.delivery_failed")}
+        description={t("mail.deliveryFailedHelp")}
+      />
+    );
+  }
   if (message.status !== "failed") {
     return <SendStatusLabel status={message.status} />;
   }

@@ -12,6 +12,7 @@ const ATTENTION: Partial<Record<string, "warning" | "error">> = {
   complained: "error",
   failed: "error",
   suppressed: "error",
+  delivery_failed: "error",
 };
 
 export function SendStatusLabel({ status }: { status: MessageItem["status"] }) {

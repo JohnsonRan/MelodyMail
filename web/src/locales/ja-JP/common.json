@@ -111,8 +111,10 @@
       "bounced": "不達",
       "complained": "迷惑メール報告",
       "failed": "未送信",
-      "suppressed": "抑止"
+      "suppressed": "抑止",
+      "delivery_failed": "配信失敗"
     },
+    "deliveryFailedHelp": "Resend から、このメッセージを配信できなかったという報告がありました。もう一度送信するには、転送するか新しいメッセージを作成してください。",
     "closeCompose": "閉じる"
   },
   "settings": {

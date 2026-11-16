@@ -13,7 +13,8 @@ export type SendStatus =
   | "bounced"
   | "complained"
   | "failed"
-  | "suppressed";
+  | "suppressed"
+  | "delivery_failed";
 
 export type MessageItem = {
   id: string;

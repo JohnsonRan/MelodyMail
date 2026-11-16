@@ -111,8 +111,10 @@
       "bounced": "Bounced",
       "complained": "Marked as spam",
       "failed": "Not sent",
-      "suppressed": "Suppressed"
+      "suppressed": "Suppressed",
+      "delivery_failed": "Delivery failed"
     },
+    "deliveryFailedHelp": "Resend reported that this message could not be delivered. To send it again, forward it or write a new message.",
     "closeCompose": "Close"
   },
   "settings": {

@@ -15,7 +15,9 @@ const STATUS_BY_EVENT: Record<string, string> = {
   "email.delivered": "delivered",
   "email.bounced": "bounced",
   "email.complained": "complained",
-  "email.failed": "failed",
+  // Not "failed": that is a local send failure, which the owner may retry. Resend's own report
+  // is final; claimRetry takes only "failed" rows.
+  "email.failed": "delivery_failed",
   "email.suppressed": "suppressed",
 };
 

@@ -156,6 +156,22 @@ describe("compose end to end", () => {
     expect(app.send.sends[1]?.idempotencyKey).toBe(app.send.sends[0]?.idempotencyKey);
   });
 
+  test("explains a delivery failure that Resend reported, without Retry", async () => {
+    const s = await open();
+    await s.page.keyboard.press("c");
+    await addRecipient(s, "To", "friend@example.org");
+    await compose(s).getByLabel("Subject").fill("Undelivered note");
+    await compose(s).getByRole("button", { name: "Send", exact: true }).click();
+    await compose(s).waitFor({ state: "detached" });
+    const sent = app.store.get("sent-1");
+    if (sent) sent.item.status = "delivery_failed";
+    await s.page.getByRole("link", { name: "Sent" }).click();
+    await s.page.locator('[data-message-row="sent-1"]').getByText("Delivery failed").waitFor();
+    await s.page.locator('[data-message-row="sent-1"]').click();
+    await s.page.getByText("Resend reported that this message could not be delivered.").waitFor();
+    expect(await s.page.getByRole("button", { name: "Send again" }).count()).toBe(0);
+  });
+
   test("warns near the quota, blocks when it is used up or sending is not set up", async () => {
     app.send.quota.daily.used = 85;
     const s = await open("/?compose=draft-quota-1");
