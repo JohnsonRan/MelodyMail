@@ -3364,3 +3364,44 @@ on the 60th address match, and the parser saw about 300 addresses in a 2,000-cha
 - Accepted (already in the design, "Matching rules"): with RFC-form groups the cut can keep fewer
   than 50 addresses, because a group's commas and its `;` all count. What is read is always a
   prefix of what would be read without the cut.
+
+### Fifth review of `7c1fe84` (coordinator's decision)
+
+The scanner still disagreed with postal-mime on a domain literal inside an angle-addr:
+`<a@[(]>,` followed by 2,000 characters of short addresses kept the whole value and the parser
+read about 300 addresses (the backstop slice kept the rule result right; the harm was CPU over the
+2 ms budget). Decision (coordinator, within owner ruling 1): stop mirroring the tokenizer.
+
+- `866cb6e`: `cutAddressList` cuts before the 50th raw `,` or `;`, counting every one, inside
+  quoted strings, comments, angle brackets and domain literals too. The tokenizer starts a new
+  address only at one of these two characters, so the cut can never come later than its 50th
+  address (stated in the code comment and the design). The scanner state and its quoting tests
+  are gone; a raw-count test replaces them. The `.slice(0, 50)` backstop stays.
+- **Accepted:** a display name or group holding `,` or `;` makes a header keep fewer than 50
+  addresses, always a prefix of them. This replaces the narrower "RFC-form groups" note above.
+- Red before (`7c1fe84`), green after:
+  - the seeded fuzz in `rules.spec.ts` with the added tokens `@[`, `@ [`, `@ [`, `@\r[`,
+    `@(c)[`, `@"q"[`, `<a@[`: red before (6 addresses where at most 5 were allowed), green after
+    (44 ms);
+  - the reviewer's fuzz (`scratchpad/r5/fuzz2.ts`, 4 seeds of 250,000 values, cut at 1 to 6,
+    extra tokens including control characters and IPv6 literals) against the new cut: 0 failures
+    for every seed;
+  - bench input `<a@[(]>,` short addresses: p95 1.89 ms no match, 2.02 ms all match, exit 1
+    before (load 51%); 0.63–1.29 ms after.
+  - The integration test (no address past the 50th behind `g:<;` and `<a@[(]>,`) passes before and
+    after: the backstop holds the rule result either way.
+- Bench after `866cb6e`, 16 inputs, 3 runs of 200, CPU load 60%, 65%, 78% (the lowest available
+  this round), exit 0 each run:
+
+  | Input | p95 | Budget |
+  | --- | --- | --- |
+  | 100 addresses in From, To and Cc, no match / all match | 1.29–1.55 / 0.97–1.28 ms | 2 ms |
+  | the same with the 20 capped names, no match / all match | 1.46–1.49 / 1.38–1.42 ms | 2 ms |
+  | short addresses | 0.76–0.86 / 0.66–0.79 ms | 2 ms |
+  | address groups | 0.76–1.14 / 0.61–0.68 ms | 2 ms |
+  | `g:<;` short addresses | 0.85–1.17 / 0.77–0.86 ms | 2 ms |
+  | `<a@[(]>,` short addresses | 0.85–1.29 / 0.63–0.71 ms | 2 ms |
+  | plain headers | 0.27–0.32 ms | 1 ms |
+  | 20 capped header names | 0.55–0.79 ms | 1 ms |
+
+- Gate at `866cb6e`: 15.1 s at CPU load 65% (15 s limit; the host was loaded by other work).
