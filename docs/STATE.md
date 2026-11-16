@@ -2730,10 +2730,11 @@ Timed with the scratchpad's `time-gate.ts` and `time-cmd.ts`, CPU load read befo
 
 ### Open questions for the owner
 
-1. **Browser tier at 29.7 s on a quiet host, 29.9–30.9 s under load (limit 30 s).** M5b owner
-   ruling 1 says to move the two Telegram suites into `bun run test:telegram` with its own
-   workflow when a run goes over 30 s; the brief for this build said to ask first, so nothing was
-   moved. Recommendation: move the Telegram suites as ruled.
+1. **Browser tier at 29.7 s on a quiet host, 29.9–30.9 s under load (limit 30 s).** Settled by
+   M5b owner ruling 1: the two Telegram suites moved into `bun run test:telegram` with
+   `.github/workflows/telegram.yml` (nightly, by hand, and on pull requests touching the Telegram
+   frontend, the card or its tests). Browser tier now 25.4–26.1 s (55 tests), Telegram tier
+   6.5–7.0 s (12 tests), CPU load 0–10%. Its limit, 10 s, is proposed and awaits the owner.
 2. **Stale foreground after a crash.** A page that dies without closing its socket keeps its last
    report until the runtime closes the socket; the page sends `"bg"` on blur, so the window is
    short. Accepted in the plan; listed for the owner's check.

@@ -1,0 +1,45 @@
+name: telegram
+
+# The Telegram suites (Playwright driven by bun test): Settings > Notifications > Telegram and the
+# widget card with a stand-in widget API. Split from the browser suite by M5b owner ruling 1
+# (2026-11-16) once the browser tier went over its 30 s limit: it runs every night on main, by
+# hand, and on pull requests that touch the Telegram frontend, the card or these tests.
+on:
+  pull_request:
+    paths:
+      - "web/src/components/TelegramSection.tsx"
+      - "web/src/pages/NotificationsPage.tsx"
+      - "web/src/errors.ts"
+      - "web/src/locales/**"
+      - "worker/src/telegram/card.html"
+      - "worker/src/telegram/card.ts"
+      - "web/test/telegram.test.ts"
+      - "web/test/telegram-card.test.ts"
+      - "web/test/stub-telegram.ts"
+      - "web/vite.config.ts"
+      - "web/package.json"
+      - ".github/workflows/telegram.yml"
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telegram-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  telegram:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bunx --bun playwright install --with-deps chromium-headless-shell
+        working-directory: web
+      - run: bun run test:telegram
