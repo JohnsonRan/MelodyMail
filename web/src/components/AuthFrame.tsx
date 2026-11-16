@@ -1,12 +1,11 @@
 import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
-import { Icon } from "@astryxdesign/core/Icon";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Heading, Text } from "@astryxdesign/core/Text";
-import { EnvelopeIcon } from "@heroicons/react/24/outline";
 import type { CSSProperties, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { PreferenceSelectors } from "../preferences";
+import { AppLogo } from "./AppLogo";
 import { SystemBanners } from "./SystemBanners";
 
 // From the Astryx login-card template: the page paints its own body background, and the column
@@ -33,7 +32,7 @@ export function AuthFrame({
       <VStack gap={4} hAlign="center" style={columnStyle}>
         <SystemBanners container="card" />
         <VStack gap={2} hAlign="center">
-          <Icon icon={EnvelopeIcon} size="lg" />
+          <AppLogo size="lg" />
           <Text type="body" weight="bold" size="lg">
             {t("app.name")}
           </Text>
