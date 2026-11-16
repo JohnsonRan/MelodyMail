@@ -499,6 +499,11 @@ addresses as an account-level list, verified once and shared by every address.
 
 ### Deferred
 
+- Threading replies to mail started in MelodyMail: SES replaces any custom Message-ID (real
+  Resend test), so a reply arrives as a new thread. A fix would need the delivered Message-ID
+  (not returned by Resend) or matching on subject and participants. Source: real Resend test.
+- The quota display may read one low if Resend's quota headers count before the request.
+  Source: real Resend test; confirm against Resend's dashboard after the first deploy.
 - `SecurityPage` still draws its own `Layout` and loading code; move it onto `PageFrame` and
   `useSettingsPage` when it is next touched (source: M2, consistency).
 - Resend domain verification state (`domains` column) waits for M5, which owns its shape.
@@ -931,6 +936,28 @@ Not ablated (no test reaches them): the download-progress state over 5 MiB, the 
 `fetchRaw`, the socket backoff and the redirect to sign-in after close code 4001 or a refused
 reconnect, infinite scroll, permanent delete from the reader UI (the route itself is covered by
 the worker suite), expanding older thread messages, and revoking the object URL.
+
+### Real Resend test (2026-11-16, owner and coordinator, local `wrangler dev`)
+
+The owner put their own `RESEND_API_KEY` in `worker/.dev.vars` (never read by an agent) and sent
+from a new address on their verified domain, without attachments.
+
+- Three messages, to `delivered@resend.dev`, `bounced@resend.dev` and the owner's own mailbox
+  (Send clicked twice quickly on the third). Local D1 afterwards: three outbound rows, all `sent`,
+  each with a `resend_id`, `maybe_accepted = 0`; the double click made one row and one email.
+- The owner's mailbox received the message; the owner reported it rendered correctly.
+- Quota after the third send: `daily_used = 2`, `monthly_used = 3`. The owner's panel showed
+  "Today 2". The headers most likely carry the count **before** the request (an earlier send this
+  month explains the monthly 3). Not confirmed against Resend's dashboard; recorded as a deferred
+  item, the display may read one low.
+- **Message-ID:** Resend sends through Amazon SES, and the delivered Message-ID is SES's own
+  (`<…-000000@ap-northeast-1.amazonses.com>`), unrelated to the Resend id. A probe that set a
+  custom `Message-ID` header (a temporary local edit, reverted, never committed) was **not kept**:
+  the delivered header was SES's again. So replies to a message started in MelodyMail cannot be
+  threaded by our own Message-ID (open question 3 answered: known limitation, deferred).
+- Not exercised: the webhook (cannot reach localhost), attachments (Resend cannot fetch from
+  localhost), bounce status (`bounced@resend.dev` shows `sent` locally; the bounce is visible only
+  in Resend's dashboard).
 
 ### Deviations from the design (decisions taken, open to the owner)
 
@@ -2019,7 +2046,7 @@ changed, CPU load read before each run):
    `bun run test:send` (compose and Markdown, about 11 s, limit 14 s) with its own workflow like
    the PWA suite, which brings `test:browser` back to about 21 s; or raise the limit to 42 s
    (35 s plus 20%).
-3. **Threading of replies to new outbound mail.** Resend sets the Message-ID and returns none, so
+3. Answered by the real Resend test (SES replaces a custom Message-ID; deferred). **Threading of replies to new outbound mail.** Resend sets the Message-ID and returns none, so
    a reply to a message started in MelodyMail threads by its In-Reply-To, which no stored row
    carries; it starts a new thread. Setting our own `Message-ID` header through Resend's `headers`
    is untested against the real API. Try it during the manual test?
@@ -2067,7 +2094,7 @@ changed, CPU load read before each run):
 
 ### Not verified
 
-- Real delivery through Resend, the webhook from Resend (it cannot reach localhost), Resend
+- Real delivery through Resend was checked once by hand without attachments ("Real Resend test"); the webhook from Resend (it cannot reach localhost), Resend
   fetching a signed attachment URL from localhost, the quota headers and quota error names of the
   real API (taken from the design's Resend facts), production CPU of a send.
 - Running sending under `wrangler dev`: the routes ran in workerd through the vitest pool; the
