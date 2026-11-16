@@ -2991,7 +2991,7 @@ selection assertions folded into the first and the dark-reading tests of `test/m
 base 28 s (29%), 27 s (28%), 30 s (28%); new 28 s (28%), 28 s (53%), 27 s (47%). Before the fold, a
 separate test measured 30 to 32 s.
 
-## M6: rules, API keys, REST API v1 (phase A done 2026-11-17, phase B below, not merged)
+## M6: rules, API keys, REST API v1 (done 2026-11-17, PR #10, merge `f144d82`)
 
 Design: `docs/M6-rules-api.md` with its owner rulings of 2026-11-16. Risk class High. Phase A is
 rules; phase B (API keys, REST API v1, the OpenAPI document) is a separate run. Branch
@@ -3633,3 +3633,13 @@ Not verified (added, the reviewer's hypotheses):
   deploy.
 - `API_LIMITER` is keyed by the full client IP; an IPv6 client can rotate addresses within its
   /64 and multiply its allowance.
+
+## After M6 (owner rulings 2026-11-17)
+
+- M6 merged as PR #10 (`f144d82`) on the owner's go. CI: merge-gate 55 s, browser 43 s, send 38 s,
+  settings 34 s (first run of `settings.yml`).
+- Limits raised by the owner: merge gate 15 s → 18 s, slowest test package 13 s → 16 s. The
+  worker suite ran 12.6–13.1 s at 10–15% load (9–10 s at 3%); 83% of it is vitest transform.
+- Next: M7 (operations, backups, deployment docs, three-language README, first deploy; needs the
+  owner's `wrangler login` and an explicit go for every production step).
+
