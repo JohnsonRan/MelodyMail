@@ -409,6 +409,8 @@ describe("POST /api/rules/test", () => {
     await addAddress("shop");
     const target = await addTarget(client, "a@out.test");
     const draft = {
+      // The editor tests a rule before it has a name.
+      name: "",
       match: "any" as const,
       conditions: [
         { field: "subject", op: "contains", value: "构建" },

@@ -55,12 +55,12 @@ function flag(value: unknown, fallback: boolean): boolean | null {
 }
 
 /**
- * A rule body. `forTest` accepts a rule that is still being written: no name and no action yet
- * (POST /api/rules/test only evaluates it).
+ * A rule body. `forTest` accepts a rule that is still being written: its name is not read and it
+ * may have no action yet (POST /api/rules/test only evaluates it).
  */
 export function parseRule(body: Record<string, unknown>, forTest = false): Parsed<RuleInput> {
   let name = "";
-  if (!forTest || body.name !== undefined) {
+  if (!forTest) {
     if (typeof body.name !== "string") return err("invalid_rule_name");
     name = body.name.trim();
     if (name.length === 0 || name.length > NAME_MAX || CONTROL.test(name)) {
