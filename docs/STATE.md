@@ -3493,6 +3493,7 @@ deployed. No screenshots (the owner checks the page on local `wrangler dev`).
 | --- | --- | --- |
 | `bun run check` at `b634e70` | 10.0, 10.3, 10.0 s (445 worker tests; worker suite 9.00–9.41 s) | 3%, 4%, 3% |
 | `bun run check` at `af76039` (base) | 9.9 s (420 tests; worker suite 8.96 s) | 8% |
+| `bun run check` at `8d150dc` (docs only since `b634e70`), later in the session | 12.9, 12.1, 12.8 s (worker suite 11.1–11.7 s) | 6%, 3%, 2% (sampled at the start; the host varied) |
 | `bun run test:settings` with the API keys suite | 10.01, 10.35, 9.89 s (17 tests) | 8%, 3%, 3% |
 | The same before reduced motion in the new suite | 12.0, 13.25, 11.24 s (one run over 13 s) | 1–2% |
 | The three earlier suites alone (`bun test` part) | 8.08, 7.46 s | 7%, 4% |
