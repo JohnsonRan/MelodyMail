@@ -29,6 +29,8 @@ describe("sending", () => {
       .bind(body.idempotencyKey)
       .run();
 
+    // Inbound mail stays out of Sent.
+    await seedMessage({ id: "inbound-1" });
     const res = await send(client, body);
     const data = (await res.json()) as { message: { id: string; status: string } };
     expect(res.status).toBe(200);
@@ -71,7 +73,7 @@ describe("sending", () => {
     const ids = async (path: string) =>
       ((await client.json("GET", path)).messages as { id: string }[]).map((m) => m.id);
     expect(await ids("/api/messages?folder=sent")).toEqual([id]);
-    expect(await ids("/api/messages")).toEqual([]);
+    expect(await ids("/api/messages")).toEqual(["inbound-1"]);
     expect(await ids("/api/search?q=friend")).toEqual([id]);
     expect(await client.json("GET", "/api/send/quota")).toMatchObject({
       daily: { used: 12, limit: 100 },
@@ -210,6 +212,11 @@ describe("sending", () => {
     );
     expect(calls[2]?.body.subject).toBe("Fwd: Plans");
     expect(calls[2]?.body.headers).toBeUndefined();
+    await send(
+      client,
+      sendBody(from, { subject: "FW: Plans", sourceId: "source-1", sourceKind: "forward" }),
+    );
+    expect(calls[3]?.body.subject).toBe("FW: Plans");
   });
 
   it("attaches uploads as signed URLs that verify", async () => {
@@ -227,8 +234,10 @@ describe("sending", () => {
     const blob = await exports.default.fetch(url.href);
     expect(blob.status).toBe(200);
     expect(await blob.text()).toBe("attachment bytes");
-    // Sent attachments stay with the message.
+    // Sent attachments stay with the message and cannot be attached to another one.
     expect((await client.request("DELETE", `/api/uploads/${file.id}`)).status).toBe(409);
+    const again = await send(client, sendBody(from, { uploadIds: [file.id] }));
+    expect(await again.json()).toEqual({ error: "unknown_upload" });
   });
 
   it.each([

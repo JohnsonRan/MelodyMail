@@ -1,6 +1,6 @@
 import { env, exports } from "cloudflare:workers";
 import { Webhook } from "standardwebhooks";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { handleScheduled } from "../src/mail/consumer";
 import { UPLOAD_STALE_MS, WEBHOOK_KEEP_MS } from "../src/send/cleanup";
 import { signUpload } from "../src/send/signed-url";
@@ -8,6 +8,7 @@ import { ORIGIN } from "./helpers";
 import { fetchWith } from "./mailbox-helpers";
 import {
   messageRow,
+  resendError,
   resendOk,
   sendBody,
   sender,
@@ -191,6 +192,34 @@ describe("Resend webhook", () => {
       RESEND_WEBHOOK_SECRET: undefined,
     });
     expect(off.status).toBe(404);
+  });
+});
+
+describe("quota and logs", () => {
+  it("logs only a well-formed Resend error name", async () => {
+    const client = await signedIn();
+    const from = await sender();
+    const logged = vi.spyOn(console, "warn");
+    stubResend(() => resendError(500, "Internal Error: SECRET"));
+    await client.request("POST", "/api/messages/send", sendBody(from));
+    const line = logged.mock.calls.map((c) => String(c[0])).find((l) => l.includes("send_failed"));
+    expect(JSON.parse(line ?? "{}")).toMatchObject({ status: 500, name: null });
+  });
+
+  it("reads the quota as 0 once Resend's UTC day has passed", async () => {
+    const client = await signedIn();
+    const now = Date.now();
+    const yesterday = now - 86_400_000;
+    await env.DB.prepare(
+      "INSERT INTO send_quota (id, daily_used, monthly_used, seen_at) VALUES (1, 40, 900, ?)",
+    )
+      .bind(yesterday)
+      .run();
+    const sameMonth = new Date(yesterday).getUTCMonth() === new Date(now).getUTCMonth();
+    expect(await client.json("GET", "/api/send/quota")).toMatchObject({
+      daily: { used: 0 },
+      monthly: { used: sameMonth ? 900 : 0 },
+    });
   });
 });
 
