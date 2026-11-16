@@ -24,6 +24,12 @@ import { inForeground, useMailNotice } from "./notice";
 const SESSION_ENDED = 4001;
 const PING_MS = 50_000;
 const BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000, 60_000];
+/** How often the page re-checks its foreground state. Focus inside the reader's frame hides the
+ * top window's blur when the owner then leaves the browser, so events alone can miss it. */
+const CHECK_MS = 1_000;
+/** How often a foreground page repeats "fg"; the Hub forgets a report after 75 s
+ * (worker/src/mail/hub.ts, FOREGROUND_TTL_MS). */
+const REFRESH_MS = 30_000;
 
 /** "message": new inbound mail; "changed": a sent message or its delivery status. `quiet`: a page
  * is in the foreground, so no page notifies by itself. */
@@ -58,12 +64,17 @@ function useEventSocket(onEvent: (event: MailEvent) => void) {
     let attempt = 0;
     let stopped = false;
     let reported: "fg" | "bg" | null = null;
+    let reportedAt = 0;
 
+    /** Sends the state when it changed, and "fg" again when the last one is REFRESH_MS old. */
     const report = () => {
+      if (socket?.readyState !== WebSocket.OPEN) return;
       const state = inForeground() ? "fg" : "bg";
-      if (socket?.readyState !== WebSocket.OPEN || state === reported) return;
+      const stale = state === "fg" && Date.now() - reportedAt >= REFRESH_MS;
+      if (state === reported && !stale) return;
       socket.send(state);
       reported = state;
+      reportedAt = Date.now();
     };
 
     const signIn = () => {
@@ -108,11 +119,13 @@ function useEventSocket(onEvent: (event: MailEvent) => void) {
     };
 
     connect();
+    const check = setInterval(report, CHECK_MS);
     document.addEventListener("visibilitychange", report);
     window.addEventListener("focus", report);
     window.addEventListener("blur", report);
     return () => {
       stopped = true;
+      clearInterval(check);
       document.removeEventListener("visibilitychange", report);
       window.removeEventListener("focus", report);
       window.removeEventListener("blur", report);

@@ -28,9 +28,12 @@ afterAll(async () => {
 
 type Focus = { visible: boolean; focused: boolean };
 
-async function open(): Promise<Page> {
-  session = await openSession(app.origin);
+/** Opens the inbox. With `clock`, the page runs on Playwright's clock in a context of its own,
+ * so its 1 s re-check and 30 s refresh fire only when a test moves the clock. */
+async function open(clock = false): Promise<Page> {
+  session = await openSession(app.origin, "/", clock);
   const { page } = session;
+  if (clock) await page.clock.install();
   await page.addInitScript(() => {
     const state = { visible: true, focused: true };
     (window as unknown as { focusState: Focus }).focusState = state;
@@ -70,7 +73,8 @@ const notices = (page: Page) => page.locator(".astryx-toast");
 
 describe("foreground reports", () => {
   test("follow visibility and focus, once per change, and start again on a new socket", async () => {
-    const page = await open();
+    const page = await open(true);
+    await page.clock.pauseAt(Date.now() + 500);
     await switchTo(page, { visible: false, focused: true }, "visibilitychange");
     await switchTo(page, { visible: true, focused: true }, "visibilitychange");
     await switchTo(page, { visible: true, focused: false }, "blur");
@@ -83,7 +87,37 @@ describe("foreground reports", () => {
     await waitForReports(reports);
     // A reconnect opens a socket the Hub knows nothing about; the page reports on it again.
     for (const ws of app.sockets) ws.close();
+    await page.waitForTimeout(100);
+    await page.clock.runFor(1_000);
     await waitForReports([...reports, "fg"]);
+  });
+
+  test("notice the focus leaving from inside the reader frame without any top-level event", async () => {
+    const page = await open();
+    await page.locator(`[data-message-row="hostile"]`).click();
+    const frame = page.locator("iframe").first();
+    await frame.waitFor();
+    // The owner clicks into the HTML message, then switches to another app: only the frame's window
+    // blurs, so the top document sees no blur and no visibilitychange.
+    await page.frameLocator("iframe").first().locator("body").click();
+    await page.evaluate(() => {
+      (window as unknown as { focusState: Focus }).focusState.focused = false;
+    });
+    await waitForReports(["fg", "bg"]);
+  });
+
+  test("repeat fg every 30 s while the page stays in the foreground, and only then", async () => {
+    const page = await open(true);
+    await page.clock.fastForward(29_000);
+    await page.waitForTimeout(100);
+    expect(app.reports).toEqual(["fg"]);
+    await page.clock.fastForward(1_500);
+    await waitForReports(["fg", "fg"]);
+    // A background page does not repeat itself.
+    await switchTo(page, { visible: true, focused: false }, "blur");
+    await page.clock.fastForward(31_000);
+    await page.waitForTimeout(100);
+    expect(app.reports).toEqual(["fg", "fg", "bg"]);
   });
 });
 
