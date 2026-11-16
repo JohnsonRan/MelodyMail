@@ -23,6 +23,7 @@
     "dev": "bun run --filter '*' dev",
     "deploy": "bun run --filter @melodymail/worker deploy",
     "test:browser": "bun run --cwd web test:browser",
+    "test:pwa": "bun run --cwd web test:pwa",
     "vapid": "bun run --cwd worker vapid"
   }
 }
