@@ -27,8 +27,8 @@ to the page. No login, secret or stored-data change. Owner requests of 2026-11-1
 - The Hub stores the state on the socket with `serializeAttachment`, so it survives hibernation.
   `webSocketMessage` accepts only `"fg"` and `"bg"` and ignores anything else. A socket that never
   reported counts as background.
-- A message wakes the Hub; that happens only on tab or window switches, which is cheap on
-  Workers Free. Confirm against the Durable Objects hibernation docs before building.
+- A message wakes the Hub: on a state change and on the 30 s `"fg"` refresh (see "Owner ruling:
+  a switch, default off" for the refresh, the 1 s re-check and the cost).
 
 ### Hub.notify for new mail
 
@@ -37,8 +37,8 @@ to the page. No login, secret or stored-data change. Owner requests of 2026-11-1
 - Otherwise: unchanged (push to sessions without a page, Telegram card or message, and hidden
   pages notify themselves through `notifyWhenHidden`).
 - A page that crashed without closing its socket is cleaned up by the runtime when the socket
-  closes; until then its last reported state holds. Accepted: the page sends `"bg"` on `blur`,
-  so the stale window is short.
+  closes; until then its last reported state holds, at most 75 s (see the ruling section below;
+  `blur` alone is not enough, since focus inside the reader frame sends none).
 
 ### The notice
 

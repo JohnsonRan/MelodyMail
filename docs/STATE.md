@@ -2843,8 +2843,10 @@ The section keeps the page's two-column layout and stacks at 390 px.
 Deferred (owner decides after release):
 
 - The Hub's quiet decision can race a blur by milliseconds: mail that arrives as the owner
-  leaves the page may be held back once. Source: M5c review (hypothesis). Waits: the window is
-  one round trip; the setting is off by default.
+  leaves the page may be held back once. Source: M5c reviews. Waits: the window is up to 1 s
+  (the local re-check, when focus leaves from inside the reader frame) plus a round trip; with
+  the switch on, mail in it gets no notice, no push and no Telegram; the switch is off by
+  default.
 - A focused, visible, unattended desktop holds back remote notifications for as long as it stays
   so, by the owner's rule (the walk-away case). Source: M5c review. Waits: an idle timeout would
   change the rule; the owner decides.
