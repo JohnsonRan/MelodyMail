@@ -3578,3 +3578,58 @@ instead of names, the panel closing without the confirmation, the key not shown)
 - The page in Firefox and Safari, dark mode contrast, and screenshots; local `wrangler dev` was
   not started.
 - An independent review by a different model family.
+
+#### Review of `4dba83c` ("FIX FIRST": one Medium, three Lows, one pass-bar item)
+
+The review found authentication separation, the key checks and secret handling sound under every
+probe. Fixes:
+
+- Medium, `c405097`: "Download the OpenAPI document" never downloaded. Astryx links render
+  through `RouterLink` (a TanStack Router link), whose click handler cancels the navigation and
+  ignores `download`; the router showed Not Found and made no request. `RouterLink` now renders
+  a plain anchor for a link with `download` or an href under `/api/`; no other link in the app
+  points under `/api/` (raw and attachment downloads use `fetch`). The browser test clicks the
+  link and waits for the download (URL and file name). Red without the fix: the download event
+  never fires (0 of 2 pass, the suite's browser closes on the timeout).
+- Low, `ae2f5c1`: the OpenAPI route test flattened security scopes, so a document requiring
+  `mail:read` and `mail:send` together for `/addresses` passed. It now compares one scope list
+  per requirement object, one object per scope of the route. Planted `[{"apiKey": ["mail:read",
+  "mail:send"]}]`: red (1 of 8 failed).
+- Low, `e31893f`: `PATCH /api/v1/messages` and `/api/v1/messages/:id` now send one Hub
+  `changed` event after a successful change, so open pages refresh; the session routes are
+  unchanged. One event per request, also for 100 ids (pages refresh whole lists on any
+  `changed`). Red without it: the single and the bulk notify each removed alone, 1 of 8 failed
+  each.
+- Pass bar, `16ab2c4`: `worker/test/api-keys.spec.ts` (313 lines) is split into management
+  (172 lines) and `api-key-auth.spec.ts` (151 lines), tests unchanged.
+- Pass bar, recorded: `worker/src/mail/routes.ts` grew from 304 to 316 lines (p90 242, over it
+  before phase B too). The 12 lines are the named handler functions that the session routes and
+  `/api/v1/` share (`71d69e5`); splitting the mailbox API across files to stay under p90 would
+  separate the queries from the cursor and flag helpers they use.
+
+Timings (dev workstation, the host carrying other work):
+
+| Item | Result | CPU load at start |
+| --- | --- | --- |
+| `bun run check` before `c405097` | 14.6 s (worker suite 13.33 s) | 32% |
+| before `ae2f5c1` | 13.8 s (worker suite 12.63 s) | 26% |
+| before `e31893f` | 13.5 s (worker suite 12.38 s) | 12% |
+| before `16ab2c4` | 13.8 s (worker suite 12.63 s, 445 tests) | 12% |
+| `bun run test:settings` | 10.81, 10.68, 11.31 s (17 tests) | 14%, 37%, 20% |
+
+The first gate run had the worker suite at 13.33 s, over the 13 s "Slowest test package" limit,
+at 32% load; at 12% it ran 12.4–12.6 s, and at 3–4% earlier in the session 9.0–9.4 s.
+
+Deferred (added):
+
+- A state-changing request to an `/api/v1/` path that matches no route (for example a trailing
+  slash) answers 403 `bad_origin` instead of 404: the CSRF guard runs before routing finds no
+  handler. Source: review of phase B (Low). It reveals nothing and changes nothing.
+
+Not verified (added, the reviewer's hypotheses):
+
+- Whether Workers Logs record the `Authorization` header of a request: the Worker never logs it,
+  but the platform's request logging was not checked. Check with `wrangler tail` at the first
+  deploy.
+- `API_LIMITER` is keyed by the full client IP; an IPv6 client can rotate addresses within its
+  /64 and multiply its allowance.
