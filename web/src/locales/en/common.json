@@ -276,7 +276,11 @@
     "send_rejected": "The mail service refused this message. Check the recipients and the From address.",
     "send_failed": "The mail service could not be reached. Send again in a moment.",
     "already_sent": "This draft was already sent from another window.",
-    "draft_conflict": "This draft was changed in another window. Reopen it."
+    "draft_conflict": "This draft was changed in another window. Reopen it.",
+    "telegram_not_configured": "Telegram isn't set up on this server. The README, section \"Notifications\", shows how.",
+    "telegram_needs_https": "Telegram can reach MelodyMail only on its deployed https:// address. Open this page there.",
+    "telegram_not_connected": "Telegram isn't connected. Connect it first.",
+    "telegram_failed": "Telegram didn't accept the request. Try again in a few minutes."
   },
   "common": {
     "cancel": "Cancel"
@@ -426,6 +430,39 @@
         "title": "Add MelodyMail to your Home Screen first",
         "description": "On iPhone and iPad, only the app opened from the Home Screen can get notifications. In Safari, tap Share, then Add to Home Screen."
       }
+    },
+    "telegram": {
+      "sectionTitle": "Telegram",
+      "description": "Get a card in Telegram for each new mail with the sender, the subject and the address it arrived at, never the message text. Telegram can read these fields: bot messages aren't end-to-end encrypted.",
+      "notSetUpTitle": "Telegram isn't set up on this server",
+      "notSetUpDescription": "Add a bot token to the Worker first. The \"Notifications\" section of the README shows how.",
+      "httpsTitle": "Telegram needs the deployed address",
+      "httpsDescription": "Telegram can reach MelodyMail only on its deployed https:// address. Open this page there to connect.",
+      "connect": "Connect Telegram",
+      "openTelegram": "Open Telegram",
+      "orSend": "Then press Start in the chat with the bot, or send it this command:",
+      "copy": "Copy command",
+      "copied": "Command copied",
+      "expires": "The code expires at {{time}}.",
+      "codeHidden": "A code is waiting, but it is shown only once. Create a new code to connect.",
+      "newCode": "Create a new code",
+      "cancel": "Cancel",
+      "expired": "The code expired. Connect again to get a new one.",
+      "connected": "Telegram connected.",
+      "connectedTo": "Connected to {{label}} since {{date}}.",
+      "lastErrorTitle": "The last card couldn't be sent",
+      "lastErrorDescription": "{{reason}} Send a test card to check.",
+      "reason": {
+        "blocked": "The bot is blocked in Telegram.",
+        "rate_limited": "Telegram asked MelodyMail to send more slowly.",
+        "failed": "Telegram didn't accept it."
+      },
+      "sendTest": "Send test card",
+      "testSent": "Test card sent. It appears in Telegram in a few seconds.",
+      "disconnect": "Disconnect",
+      "disconnectTitle": "Disconnect Telegram?",
+      "disconnectDescription": "MelodyMail stops sending cards, and the buttons on the cards already in the chat stop working.",
+      "disconnected": "Telegram disconnected."
     }
   },
   "quota": {

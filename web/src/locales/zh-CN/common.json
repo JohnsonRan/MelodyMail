@@ -276,7 +276,11 @@
     "send_rejected": "邮件服务拒绝了这封邮件。请检查收件人和发件地址。",
     "send_failed": "无法连接邮件服务。请稍后重新发送。",
     "already_sent": "这封草稿已在另一个窗口中发送。",
-    "draft_conflict": "这封草稿已在另一个窗口中更改。请重新打开。"
+    "draft_conflict": "这封草稿已在另一个窗口中更改。请重新打开。",
+    "telegram_not_configured": "此服务器尚未设置 Telegram。README 的“Notifications”一节介绍了设置方法。",
+    "telegram_needs_https": "Telegram 只能通过 MelodyMail 部署后的 https:// 地址访问它。请在该地址打开此页面。",
+    "telegram_not_connected": "尚未连接 Telegram。请先连接。",
+    "telegram_failed": "Telegram 未接受此请求。请过几分钟后重试。"
   },
   "common": {
     "cancel": "取消"
@@ -426,6 +430,39 @@
         "title": "请先将 MelodyMail 添加到主屏幕",
         "description": "在 iPhone 和 iPad 上，只有从主屏幕打开的应用才能收到通知。请在 Safari 中轻点“共享”，然后轻点“添加到主屏幕”。"
       }
+    },
+    "telegram": {
+      "sectionTitle": "Telegram",
+      "description": "每收到一封新邮件，就在 Telegram 中收到一张卡片，显示发件人、主题和收件地址，绝不包含邮件正文。Telegram 能读取这些内容：机器人消息不是端到端加密的。",
+      "notSetUpTitle": "此服务器尚未设置 Telegram",
+      "notSetUpDescription": "请先为 Worker 添加机器人令牌。README 的“Notifications”一节介绍了设置方法。",
+      "httpsTitle": "Telegram 需要部署后的地址",
+      "httpsDescription": "Telegram 只能通过 MelodyMail 部署后的 https:// 地址访问它。请在该地址打开此页面进行连接。",
+      "connect": "连接 Telegram",
+      "openTelegram": "打开 Telegram",
+      "orSend": "然后在与机器人的聊天中点击“开始”，或向它发送以下命令：",
+      "copy": "复制命令",
+      "copied": "已复制命令",
+      "expires": "此代码将于 {{time}} 过期。",
+      "codeHidden": "有一个代码正在等待使用，但它只显示一次。请创建新代码以进行连接。",
+      "newCode": "创建新代码",
+      "cancel": "取消",
+      "expired": "代码已过期。请重新连接以获取新代码。",
+      "connected": "已连接 Telegram。",
+      "connectedTo": "自 {{date}} 起已连接到 {{label}}。",
+      "lastErrorTitle": "上一张卡片未能发送",
+      "lastErrorDescription": "{{reason}}请发送测试卡片进行检查。",
+      "reason": {
+        "blocked": "机器人在 Telegram 中已被屏蔽。",
+        "rate_limited": "Telegram 要求 MelodyMail 放慢发送速度。",
+        "failed": "Telegram 未接受此卡片。"
+      },
+      "sendTest": "发送测试卡片",
+      "testSent": "测试卡片已发送，几秒钟后会出现在 Telegram 中。",
+      "disconnect": "断开连接",
+      "disconnectTitle": "要断开与 Telegram 的连接吗？",
+      "disconnectDescription": "MelodyMail 将停止发送卡片，聊天中已有卡片上的按钮也将失效。",
+      "disconnected": "已断开与 Telegram 的连接。"
     }
   },
   "quota": {

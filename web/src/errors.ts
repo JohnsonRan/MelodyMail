@@ -51,6 +51,10 @@ const KNOWN = new Set([
   "send_failed",
   "already_sent",
   "draft_conflict",
+  "telegram_not_configured",
+  "telegram_needs_https",
+  "telegram_not_connected",
+  "telegram_failed",
   "network",
 ]);
 
