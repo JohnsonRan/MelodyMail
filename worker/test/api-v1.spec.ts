@@ -28,7 +28,9 @@ async function openPage(): Promise<string[]> {
   ws.accept();
   sockets.push(ws);
   const events: string[] = [];
-  ws.addEventListener("message", (e) => events.push(String(e.data)));
+  ws.addEventListener("message", (e) => {
+    events.push(String(e.data));
+  });
   return events;
 }
 
@@ -207,7 +209,7 @@ describe("OpenAPI document", () => {
         // Any one of a route's scopes is enough: one requirement object per scope.
         .map((r) => [
           `${r.method} ${r.path}`,
-          [...(apiScopes(r.handler) ?? [])].sort().map((s) => [s]),
+          [...(apiScopes(r.handler) ?? [])].sort((a, b) => a.localeCompare(b)).map((s) => [s]),
         ]),
     );
     const documented = documentedOperations();

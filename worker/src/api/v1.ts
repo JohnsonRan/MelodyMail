@@ -83,9 +83,9 @@ async function patchOne(c: Context<AppEnv, "/:id">) {
 
 async function patchMany(c: Ctx) {
   const res = await patchMessages(c);
-  const first = (await readJson(c))?.ids;
-  if (res.ok && Array.isArray(first) && typeof first[0] === "string") {
-    await notifyHub(c.env, { type: "changed", id: first[0] });
+  const ids = (await readJson(c))?.ids;
+  if (res.ok && Array.isArray(ids) && typeof ids[0] === "string") {
+    await notifyHub(c.env, { type: "changed", id: ids[0] });
   }
   return res;
 }

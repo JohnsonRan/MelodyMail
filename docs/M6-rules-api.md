@@ -378,6 +378,9 @@ only in the sandboxed frame (M4), like any other mail. The owner's web app keeps
 routes; `/api/v1/` has no frontend caller, so `REQUIREMENTS.md` "Exceptions" gains one row with
 the reason (CLI and automation, API key).
 
+Flag changes through `PATCH /api/v1/messages` and `PATCH /api/v1/messages/{id}` send one Hub
+`changed` event per request after a successful change, so open pages refresh (M6 phase B review).
+
 ### Errors and pagination
 
 - One shape: `{ "error": "<code>" }`, as every other route. A validation failure answers 400
