@@ -2990,3 +2990,161 @@ just before each run. Base is main at ae10a10 (58 tests), new is this branch (59
 selection assertions folded into the first and the dark-reading tests of `test/mailbox.test.ts`):
 base 28 s (29%), 27 s (28%), 30 s (28%); new 28 s (28%), 28 s (53%), 27 s (47%). Before the fold, a
 separate test measured 30 to 32 s.
+
+## M6: rules, API keys, REST API v1 (phase A done 2026-11-17, not merged)
+
+Design: `docs/M6-rules-api.md` with its owner rulings of 2026-11-16. Risk class High. Phase A is
+rules; phase B (API keys, REST API v1, the OpenAPI document) is a separate run. Branch
+`m6-rules-api`, from main at `4c30208`. Not pushed, not deployed.
+
+### Migration split
+
+0013 (`0013_rules.sql`) holds only `rules` and `rule_forwards`. `api_keys` arrives in phase B as
+migration 0014. The design's "migration (0013)" covered both; nothing in phase A depends on
+`api_keys`.
+
+### Done (phase A)
+
+- `12cc1da` migration 0013 and the drizzle schema; `IF NOT EXISTS`, as 0011 and 0012.
+- `f7ea011` evaluation in `email()` (`worker/src/rules/evaluate.ts`, `worker/src/mail/inbound.ts`):
+  one rule query after the address lookup; fields `from`, `to` (To and Cc), `recipient`, `tag`,
+  `subject`, `header`; operators contains, not_contains, equals, starts_with, ends_with; lowercase,
+  white space collapsed, each header value cut to 2,000 characters and unfolded, encoded words
+  decoded and addresses split with postal-mime; accumulate, stop, Trash wins; flags in the
+  INSERT; rule targets after the defaults, deduplicated, at most 10, audit `mail_forward_capped`;
+  the loop guard, forward-only and the storage fallback use the same list. The consumer sends
+  `changed` for read, archived or trashed mail and `message` otherwise. `bench:rules`.
+- `5a3ea33` session routes (`worker/src/rules/routes.ts`, `validate.ts`): `GET|POST /api/rules`,
+  `PUT|DELETE /api/rules/:id`, `PUT /api/rules/order`, `POST /api/rules/test`; the forward-target
+  delete counts rule users (409 `target_in_use`; `detach=1` disables rules left without action);
+  `GET /api/forward-targets` adds `ruleCount`; all six routes are in the authz route walk.
+- `20dc28e` the test route ignores the rule name (the editor tests unnamed rules).
+- `df9143a` Settings > Rules (`web/src/pages/RulesPage.tsx`, `web/src/rules/`), the side
+  navigation entry, a lazy `rules` namespace in zh-CN, en and ja-JP, and Settings > Forwarding
+  naming the rules a removal touches. Browser suite `web/test/rules.test.ts` with
+  `web/test/stub-rules.ts`.
+- `ca6a179` tests for ablation survivors; the redundant duplicate check in reorder is removed.
+- README section "Rules" and this section (the docs commit).
+
+### Proof (worker suite, real D1, R2 and Queues in workerd)
+
+- `test/rules.spec.ts` (22 tests): every field with every operator, with negatives that only a
+  wrong operator passes; case and white space; encoded words (UTF-8, ISO-2022-JP, a Q-encoded
+  display name); folded and repeated headers; missing From; tag present and absent; the
+  2,000-character cut; all and any; accumulation with target order and dedupe; stop matched and
+  not matched; Trash over archive; two header names in one rule. Routes: create, list, replace,
+  delete, 404s, audit rows with rule ids only; every validation code; the 50-rule cap with no
+  stray link; reorder with missing, extra, repeated and unknown ids; creating, editing and
+  deleting rules changes no stored row; forward-target 409 and detach disabling only the rule
+  left without action; the test route against what `email()` stored and forwarded for the same
+  raw message, per-condition results, nothing written (rows and audit count unchanged), 409
+  `no_raw` for an outbound row and for a missing object, 404, `unknown_target`.
+- `test/inbound.spec.ts` (8 new): flags in the INSERT, a target that is both default and rule
+  target forwarded once, a disabled rule ignored; rules changing between two messages; a
+  recipient condition on a tagged recipient; the loop header with rule targets; forward-only
+  with rule targets stores nothing; forward-only with every forward failing stores with the
+  flags; the storage fallback forwards to rule targets; 13 distinct targets cut to 10 with the
+  audit row; a rejected recipient prepares no rule query; an unreadable rules table logs
+  `rules_load_failed` and stores without flags.
+- `test/consumer.spec.ts` (2 new): `changed` for read, archived, trashed; `message` for starred
+  and unflagged mail; `email()` with a Trash rule followed by the consumer gives `changed`.
+- Migration: `bun run db:migrate:local` applied 0013 on the local database holding 22 messages
+  and 3 addresses; a second run reported "No migrations to apply"; running `0013_rules.sql` again
+  with `wrangler d1 execute --local --file` succeeded.
+
+### Browser suite
+
+`bun test --timeout 20000 ./test/rules.test.ts` in `web/` after `bun --bun vite build`: 3 tests,
+2.6 s alone. Create through the dialog (field, operator, value, a forward target, Archive);
+"Test rule" shows the match and the actions while the stand-in still holds no rule; saving shows
+the summary line. Move down, the on switch and Delete with its confirmation by keyboard alone. At
+390 px in zh-CN the table stacks with no sideways scroll, and the summary is not selectable (list
+text, `web/src/selection.ts`).
+
+### Numbers (2026-11-17, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
+
+| Item | Result | CPU load |
+| --- | --- | --- |
+| `bun run check` at `ca6a179` | 15.2, 14.5, 14.7 s (413 worker tests; worker suite 13.0–13.8 s) | 76%, 70%, 48% |
+| `bun run check` at `4c30208` (base) | 13.5 s (383 tests; worker suite 12.2 s) | 51% |
+| `bun run test:browser` with the Rules suite | 37.6, 31.0, 33.0 s (61 tests) | 50%, 53%, 33% |
+| The same tier without it | 28.4, 28.3 s (58 tests) | 45%, 76% |
+| `bun run bench:rules`, worst p95 | 0.64–0.80 ms (limit 1 ms); plain headers 0.22–0.30 ms | 54–70% |
+| The bench with a planted slow input (40 times the rules) | p95 9.46 ms, exit 1 | about 50% |
+| First paint (vite build, gzip -6) | 315.7 kB (315.6 kB without the change; limit 370) | |
+| Total JS + CSS | 738.8 kB (730.2 kB without; limit 770) | |
+
+The host carried other work during the whole session (33–81% load; free memory about 5.5 GB,
+and low enough once for the memory guard to stop background jobs). The merge gate went over
+15 s in one of three runs. The worker suite (13.0–13.8 s) is over the 10.8 s "Slowest test
+package" limit, as the base (12.2 s) already was at this load. The new rule spec costs nothing
+measurable: 12.83 and 12.22 s with it, 12.71 and 12.32 s without, at 41–76% load.
+
+### Ablation
+
+`m6-ablate.ts` (session scratchpad, not committed) applied one mutation at a time to the worker
+and ran the rule, inbound, consumer, authz and forward-target specs. 61 of 67 planned hunks ran
+before the host's low-memory guard stopped the run; the guard asks not to restart it unasked.
+
+- 61 run: 52 red; 9 survived. 5 survivors got tests in `ca6a179` and are red now: starts_with
+  and ends_with replaced by `includes`, the per-name header cache key, the recipient without its
+  tag, and the `changes() = 1` guard on a refused rule's links.
+- Survivors kept, with reasons:
+  - unfolding in `headerValue`: the white-space collapse already turns CRLF plus space into one
+    space, and workerd's `Headers` refuses CR and LF, so no input tells them apart; kept because
+    the design asks for it and the address parser should see an unfolded value;
+  - a missing tag as an empty list instead of `[""]`: a condition value is never empty, so both
+    answer the same for every operator;
+  - skipping evaluation when no rule is enabled: an optimisation with the same result;
+  - reorder's count check and its `changes` comparison: each is redundant with the other plus the
+    set check; kept as the statement's own guard.
+- Removed instead of kept: the JS duplicate check in reorder (the SQL refuses a repeated id).
+- Not run: the five forward-target delete hunks (rule users in the DELETE, the detach disable,
+  its "no action left" and "no other target" conditions, `ruleCount`). The forward-target test
+  in `rules.spec.ts` asserts the 409, the disabled rule, the two rules that stay on and
+  `ruleCount`, but no ablation proves each condition.
+- Web (`m6-ablate-web.ts`, a rebuild per mutation, the Rules browser suite): 3 of 7 ran, all red
+  (reorder by one, the switch sending `enabled`, the summary's actions). Not run: the body keeping
+  `targetIds`, the test sending the draft, the operator change, the test result listing actions.
+
+### Deviations from the design (decisions taken, open to the owner)
+
+1. Trash wins over archive by writing `archived = 0` when a rule trashes, so restoring from Trash
+   returns the message to the Inbox, not to Archive.
+2. "Stop processing more rules" counts as an action: a stop-only rule is valid (Outlook allows
+   it), and detach leaves a rule with stop enabled.
+3. A failed rule read in `email()` is logged at error (`rules_load_failed`), and the message is
+   stored and forwarded as if no rule matched instead of throwing (which would bounce it).
+4. The test route reads the raw header block (UTF-8) into a case-insensitive lookup that joins
+   repeats with ", " as `Headers.get` does, instead of a `Headers` object, which refuses values
+   outside Latin-1.
+5. Validation is by hand (`worker/src/rules/validate.ts`), not zod: owner ruling 2 adds no schema
+   library to the Worker, and the existing routes validate by hand.
+6. The test dialog lists the 20 newest Inbox messages (`GET /api/messages?folder=inbox&limit=20`,
+   an indexed query), not the 20 newest inbound messages of any folder, which needs a new route
+   and a scan.
+7. The Rules browser suite is outside `bun run test:browser` (open question 1).
+
+### Open questions for the owner
+
+1. **Where the Rules browser suite runs.** With it, `bun run test:browser` took 31–38 s at
+   33–53% load, over its 30 s limit; without it 28.4 s. It is excluded from that tier and runs
+   with `bun test ./test/rules.test.ts`, so CI does not run it yet. No limit was raised.
+   Recommended: add it to `bun run test:telegram` (6.0 s base, 10 s limit, about 3 s more),
+   whose workflow already runs on pull requests that touch `web/`; or to `test:send` (14.3 s
+   base, 18 s limit).
+2. **Merge gate under load.** 14.5–15.2 s at 48–76% load, base 13.5 s at 51%. Recommended:
+   re-measure on an idle host before deciding anything.
+3. **Finish the ablation** the memory guard stopped (five forward-target hunks, four web hunks).
+   Recommended: rerun both scripts for those names on an idle host before review.
+
+### Not verified
+
+- Real Email Routing delivery with rule targets; `forward()` to a verified destination; whether
+  `forward()` counts as a subrequest; whether `message.headers` unfolds; production `cpuTime` of
+  `email()` with 50 rules.
+- How workerd's `message.headers` presents raw 8-bit header bytes; the tests use ASCII and
+  encoded words.
+- The Rules page in Firefox and Safari, dark-mode contrast, and screenshots (the owner checks on
+  local `wrangler dev`; it was not started in this session).
+- An independent review by a different model family.

@@ -128,6 +128,44 @@ bun run wrangler queues create melodymail-inbound
    (recorded in the audit log); an address without targets refuses it, and the sender gets a
    bounce.
 
+## Rules
+
+Apply migration 0013 right after deploying this version: `email()` reads the `rules` table for
+every accepted message, and until it exists it logs `rules_load_failed` and handles mail as if
+no rule matched.
+
+```sh
+bun run --cwd worker db:migrate:remote
+```
+
+Settings > Rules holds up to 50 rules. Each rule has 1 to 10 conditions and at least one action.
+
+- **Conditions** read the envelope and the headers, never the body: From (each address and its
+  display name; the envelope sender when there is no `From` header), To or Cc, the recipient
+  address without its `+tag`, the sub-address tag, the subject, or any named header such as
+  `List-Id`. Operators: contains, doesn't contain, is, starts with, ends with. Case does not
+  matter and runs of white space count as one space. To match a domain, use "ends with"
+  `@example.com`: `example.com` alone also matches `notexample.com`. There are no regular
+  expressions.
+- **Actions**: forward to up to 5 addresses from Settings > Forwarding, mark as read, star,
+  archive, move to Trash, and stop processing more rules.
+- **Order**: rules run top to bottom; every matching rule adds its actions, and a matching rule
+  with "Stop processing more rules" ends the run. Trash wins over archive. Move up and Move
+  down change the order.
+- **Forwarding**: a message goes to the address's own forwarding addresses first, then to the
+  rule targets, each once and at most 10 in all; over 10, the audit log records
+  `mail_forward_capped`. A message that already carries `X-MelodyMail-Forwarded` is not
+  forwarded by a rule either. A forward-only address forwards to the rule targets as well.
+- **New mail only**: a rule applies to mail that arrives after it is saved. Creating, editing,
+  reordering or deleting a rule never changes stored mail.
+- **Notifications**: mail that a rule marks as read, archives or moves to Trash sends no push
+  and no Telegram card; open pages still refresh. Starred mail notifies as usual.
+- **Test**: in the rule dialog, "Test rule" checks the rule against one of the 20 newest Inbox
+  messages and shows which conditions match and what would happen. A test changes nothing.
+
+Removing a forwarding address that a rule uses asks for confirmation. A rule left without any
+action is then turned off.
+
 ## Mailbox
 
 Apply migration 0007 after deploying this version (`bun run --cwd worker db:migrate:remote`).
