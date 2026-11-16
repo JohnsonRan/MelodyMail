@@ -19,7 +19,9 @@ export function belongs(item: MessageItem, query: ListQuery): boolean {
   if ("search" in query) return !item.trashed;
   switch (query.folder) {
     case "inbox":
-      return !item.trashed && !item.archived;
+      return item.direction === "in" && !item.trashed && !item.archived;
+    case "sent":
+      return item.direction === "out" && !item.trashed;
     case "starred":
       return item.starred && !item.trashed;
     case "archive":

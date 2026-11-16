@@ -9,6 +9,9 @@ export type MailPart = {
   /** Content-ID without angle brackets, lowercased; null when the part has none. */
   contentId: string | null;
   content: ArrayBuffer;
+  /** A sent message's attachment: its bytes stay on the server until it is downloaded. */
+  uploadId?: string;
+  size?: number;
 };
 
 /** A message as the browser parser returns it (docs/M4-mailbox.md, "Reading mail"). */

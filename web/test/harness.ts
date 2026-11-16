@@ -1,4 +1,5 @@
 import PostalMime from "postal-mime";
+import { emailHtml, renderMarkdown } from "../src/compose/markdown";
 import { downloadPart } from "../src/reader/download";
 import { fromPostal } from "../src/reader/fromPostal";
 import { frameSrcdoc, SANDBOX, sanitizeMailHtml } from "../src/reader/sanitize";
@@ -31,6 +32,8 @@ declare global {
     /** Messages a frame posted to this page: proof that sender script ran. */
     posted: string[];
     renderMail(input: RenderInput): Promise<RenderResult>;
+    /** The compose Markdown renderer: the sanitized body and the sent document. */
+    renderMarkdown(source: string): { body: string; doc: string };
     downloadPart(index: number): void;
   }
 }
@@ -80,6 +83,8 @@ window.renderMail = async (input) => {
     })),
   };
 };
+
+window.renderMarkdown = (source) => ({ body: renderMarkdown(source), doc: emailHtml(source) });
 
 window.downloadPart = (index) => {
   const part = lastParts[index];

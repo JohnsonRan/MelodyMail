@@ -6,16 +6,26 @@ import {
   ArchiveBoxIcon,
   ArrowLeftIcon,
   ArrowUturnLeftIcon,
+  ArrowUturnRightIcon,
   EnvelopeIcon,
   InboxArrowDownIcon,
   MoonIcon,
   PhotoIcon,
+  ArrowUturnLeftIcon as ReplyIcon,
   StarIcon as StarOutline,
   TrashIcon,
+  UsersIcon,
 } from "@heroicons/react/24/outline";
 import { StarIcon } from "@heroicons/react/24/solid";
 import { useTranslation } from "react-i18next";
+import type { SourceKind } from "../compose/api";
 import type { MessageDetail } from "../mailbox/api";
+
+const COMPOSE_ACTIONS: { kind: SourceKind; icon: typeof ReplyIcon }[] = [
+  { kind: "reply", icon: ReplyIcon },
+  { kind: "replyAll", icon: UsersIcon },
+  { kind: "forward", icon: ArrowUturnRightIcon },
+];
 
 export type ReaderAction =
   | "archive"
@@ -40,6 +50,7 @@ export function ReaderToolbar({
   onDelete,
   darkReading,
   onDarkReading,
+  onCompose,
 }: {
   current: MessageDetail | undefined;
   inTrash: boolean;
@@ -54,6 +65,7 @@ export function ReaderToolbar({
   /** Whether dark reading is on; null hides the toggle (light theme, or no HTML body). */
   darkReading: boolean | null;
   onDarkReading: (on: boolean) => void;
+  onCompose: (kind: SourceKind) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -70,6 +82,17 @@ export function ReaderToolbar({
               onClick={onBack}
             />
           )}
+          {current &&
+            COMPOSE_ACTIONS.map(({ kind, icon }) => (
+              <IconButton
+                key={kind}
+                label={t(`mail.${kind}`)}
+                tooltip={t(`mail.${kind}`)}
+                icon={<Icon icon={icon} />}
+                variant="ghost"
+                onClick={() => onCompose(kind)}
+              />
+            ))}
           {current && !inTrash && (
             <IconButton
               label={current.archived ? t("mail.moveToInbox") : t("mail.archive")}

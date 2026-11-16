@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-// Gmail-style shortcuts (docs/M4-mailbox.md, "Keyboard"). They are off while focus is in a text
+// Gmail-style shortcuts (docs/M4-mailbox.md, "Keyboard"; docs/M5-sending.md: c, r, a, f). They are off while focus is in a text
 // field, and with Ctrl, Alt or Meta held, so typing and browser shortcuts are untouched.
 
 export type ShortcutHandlers = {
@@ -12,6 +12,10 @@ export type ShortcutHandlers = {
   star: () => void;
   back: () => void;
   search: () => void;
+  compose: () => void;
+  reply: () => void;
+  replyAll: () => void;
+  forward: () => void;
 };
 
 function inTextField(target: EventTarget | null): boolean {
@@ -45,6 +49,10 @@ export function useMailShortcuts(handlers: ShortcutHandlers): void {
         s: "star",
         u: "back",
         "/": "search",
+        c: "compose",
+        r: "reply",
+        a: "replyAll",
+        f: "forward",
       };
       const name = map[event.key];
       if (!name) return;

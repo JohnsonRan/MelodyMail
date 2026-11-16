@@ -17,11 +17,12 @@ import { MailFrame } from "./MailFrame";
 import { PlainText } from "./PlainText";
 import { fetchRaw, PROGRESS_FROM, parseMail } from "./parseMail";
 import { sanitizeMailHtml } from "./sanitize";
+import { fetchSentCopy } from "./sentCopy";
 import type { MailAddress, MailPart, ParsedMail } from "./types";
 
 type Load =
   | { state: "loading"; progress: number | null }
-  | { state: "ready"; mail: ParsedMail; raw: ArrayBuffer }
+  | { state: "ready"; mail: ParsedMail & { bcc?: MailAddress[] }; raw: ArrayBuffer | null }
   | { state: "failed"; raw: ArrayBuffer | null };
 
 const addressList = (list: MailAddress[]) =>
@@ -37,6 +38,11 @@ function useParsedMail(message: MessageDetail): Load {
     (async () => {
       let raw: ArrayBuffer | null = null;
       try {
+        if (message.direction === "out") {
+          const mail = await fetchSentCopy(message.id);
+          if (live) setLoad({ state: "ready", mail, raw: null });
+          return;
+        }
         raw = await fetchRaw(
           message.id,
           big ? (p) => live && setLoad({ state: "loading", progress: p }) : undefined,
@@ -51,17 +57,24 @@ function useParsedMail(message: MessageDetail): Load {
     return () => {
       live = false;
     };
-  }, [message.id, message.size]);
+  }, [message.id, message.size, message.direction]);
   return load;
 }
 
-function Header({ message, mail }: { message: MessageDetail; mail: ParsedMail | null }) {
+function Header({
+  message,
+  mail,
+}: {
+  message: MessageDetail;
+  mail: (ParsedMail & { bcc?: MailAddress[] }) | null;
+}) {
   const { t, i18n } = useTranslation();
   const to = mail?.to.length ? addressList(mail.to) : (message.to ?? message.envelopeTo);
   const cc = mail?.cc.length ? addressList(mail.cc) : message.cc;
   const rows: [string, string][] = [
     [t("mail.to"), to],
     ...(cc ? ([[t("mail.cc"), cc]] as [string, string][]) : []),
+    ...(mail?.bcc?.length ? ([[t("mail.bcc"), addressList(mail.bcc)]] as [string, string][]) : []),
     [t("mail.date"), formatFullDate(message.receivedAt, i18n.language)],
   ];
   return (
@@ -103,13 +116,13 @@ function Attachments({ parts }: { parts: MailPart[] }) {
           itemKey={i}
           startContent={<Icon icon={PaperClipIcon} size="sm" color="secondary" />}
           label={part.filename ?? t("mail.unnamedAttachment")}
-          description={formatSize(part.content.byteLength, i18n.language)}
+          description={formatSize(part.size ?? part.content.byteLength, i18n.language)}
           endContent={
             <Button
               label={t("mail.download")}
               variant="ghost"
               size="sm"
-              onClick={() => downloadPart(part, t("mail.unnamedAttachment"))}
+              onClick={() => void downloadPart(part, t("mail.unnamedAttachment")).catch(() => {})}
             />
           }
         />
@@ -178,7 +191,7 @@ export function MessageView({
                 variant="secondary"
                 size="sm"
                 onClick={() =>
-                  downloadPart(
+                  void downloadPart(
                     {
                       filename: "message.eml",
                       mimeType: "message/rfc822",

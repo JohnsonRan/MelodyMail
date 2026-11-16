@@ -1,0 +1,59 @@
+{
+  "title": {
+    "new": "New message",
+    "reply": "Reply",
+    "replyAll": "Reply all",
+    "forward": "Forward"
+  },
+  "loadFailed": "Compose could not be opened. Close it and try again.",
+  "notConfigured": "Sending is not set up",
+  "notConfiguredHelp": "Add a Resend API key to the Worker. The README, section \"Sending\", lists the steps.",
+  "noAddresses": "No address can send yet. Turn on sending for a domain in Settings > Domains.",
+  "from": "From",
+  "to": "To",
+  "cc": "Cc",
+  "bcc": "Bcc",
+  "addCopies": "Cc and Bcc",
+  "recipientPlaceholder": "Type an address and press Enter",
+  "invalidAddress": "Not an email address: {{value}}",
+  "subject": "Subject",
+  "bodyMode": "Message view",
+  "write": "Write",
+  "preview": "Preview",
+  "body": "Message",
+  "bodyHelp": "Markdown: **bold**, *italic*, lists, tables, `code` and links. HTML is shown as text.",
+  "attach": "Attach files",
+  "attachLimits": "Up to 25 MB per file and 30 MB per message.",
+  "attachmentsOff": "Attachments are off: the Worker has no UPLOAD_URL_KEY (README, \"Sending\").",
+  "uploading": "Uploading {{name}}",
+  "removeAttachment": "Remove {{name}}",
+  "uploadError": {
+    "file_too_large": "Larger than 25 MB; not attached.",
+    "attachments_too_large": "The attachments would pass 30 MB; not attached.",
+    "attachments_not_configured": "Attachments are off; not attached.",
+    "network": "Upload failed: no connection. Remove it and attach it again.",
+    "internal": "Upload failed. Remove it and attach it again."
+  },
+  "send": "Send",
+  "sendShortcut": "Send (Ctrl+Enter)",
+  "saveDraft": "Save draft",
+  "saveState": {
+    "saving": "Saving…",
+    "saved": "Draft saved",
+    "error": "Draft not saved"
+  },
+  "discard": "Discard",
+  "discardTitle": "Discard this draft?",
+  "discardDescription": "The draft and its attachments are deleted. This cannot be undone.",
+  "sendFailed": "The message was not sent",
+  "retry": "Send again",
+  "blocked": {
+    "notConfigured": "Sending is not set up.",
+    "noFrom": "Choose an address to send from.",
+    "noRecipients": "Add at least one recipient.",
+    "uploading": "Wait until the attachments are uploaded."
+  },
+  "sentToast": "Message sent",
+  "quoteHeader": "On {{date}}, {{sender}} wrote:",
+  "close": "Close; the draft is kept"
+}

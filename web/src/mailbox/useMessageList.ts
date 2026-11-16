@@ -80,7 +80,8 @@ export function useMessageList(
     return () => observer.disconnect();
   }, [list.next, loadMore]);
 
-  // New mail: the first page is fetched again and its new messages go on top.
+  // New mail or a changed sent message: the first page is fetched again, its new messages go on
+  // top and the ones already shown take their new status.
   useEffect(
     () =>
       onMail(() => {
@@ -89,8 +90,10 @@ export function useMessageList(
             setList((prev) => {
               if (prev.status !== "ready") return prev;
               const known = new Set(prev.items.map((m) => m.id));
+              const byId = new Map(page.messages.map((m) => [m.id, m]));
               const fresh = page.messages.filter((m) => !known.has(m.id));
-              return fresh.length > 0 ? { ...prev, items: [...fresh, ...prev.items] } : prev;
+              const updated = prev.items.map((m) => byId.get(m.id) ?? m);
+              return { ...prev, items: [...fresh, ...updated] };
             }),
           )
           .catch(() => {});
