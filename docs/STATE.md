@@ -1888,6 +1888,17 @@ the 9 runs in a row, `time.ts` in the session scratchpad, CPU load read before e
   identical: entry plus preloaded JS 263.1 kB, first paint 311.8 kB (7 assets), total 716.7 kB,
   compose chunk 51.5 kB.
 
+### Owner rulings 15 and 16 (2026-11-16)
+
+15. **`bun run test:send` limit** 14 s → 18 s (owner approval 2026-11-16; open question 7).
+16. **`bun run check` limit** 10 s → 12 s (owner approval 2026-11-16). The gate runs before each
+    commit and in CI ("Merge gate" row).
+
+REQUIREMENTS carries both in the "Commands" rows. No script enforces either limit:
+`scripts/check.ts` prints `check passed in N s` and exits on the steps' results only, and no hook
+or workflow encodes 10 s or 14 s (the workflows use `timeout-minutes: 10`, bun a 20 s per-test
+timeout). The comment in `.github/workflows/browser.yml` that named the 10 s gate says 12 s.
+
 ### Deviations from the design (decisions taken, open to the owner)
 
 1. **`uploads.message_id`.** The design's `uploads` has only `draft_id`; the cron could not tell
@@ -1952,7 +1963,7 @@ the 9 runs in a row, `time.ts` in the session scratchpad, CPU load read before e
    names attachments that are gone. Remove the rejected row once the corrected message is sent,
    or keep it as a record?
 
-7. **`bun run test:send` is over its 14 s limit** in two of three runs after the third round
+7. Settled by ruling 15 (limit 18 s). **`bun run test:send` is over its 14 s limit** in two of three runs after the third round
    (13.96–14.67 s wall, CPU load 0–1%). Options: raise it to 18 s (14.7 s plus 20%, the method
    of "Commands"), or move the reader send states into their own suite with its own build.
 
