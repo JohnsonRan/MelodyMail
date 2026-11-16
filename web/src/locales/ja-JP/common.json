@@ -404,6 +404,8 @@
   },
   "notification": {
     "newMail": "新着メール",
+    "notice": "{{from}} からの新着メール：{{subject}}",
+    "open": "開く",
     "testBody": "このデバイスで通知を受け取れます。"
   },
   "notifications": {

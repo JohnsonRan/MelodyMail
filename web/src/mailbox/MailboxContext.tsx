@@ -14,17 +14,20 @@ import { notifyWhenHidden } from "../pwa/notifyHidden";
 import { resyncSubscription } from "../pwa/push";
 import type { Address } from "../settings";
 import { type Counts, getCounts } from "./api";
+import { inForeground, useMailNotice } from "./notice";
 
 // Mailbox state shared by the shell and the mailbox pages: unread counts, the address list and
-// the real-time event socket (docs/M4-mailbox.md, "Real-time push").
+// the real-time event socket (docs/M4-mailbox.md, "Real-time push"). The socket also reports "fg"
+// or "bg" so that the Hub stays quiet while a page is in the foreground (docs/M5c-foreground.md).
 
 /** Close code the Hub sends when the session ended (worker/src/mail/hub.ts). */
 const SESSION_ENDED = 4001;
 const PING_MS = 50_000;
 const BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000, 60_000];
 
-/** "message": new inbound mail; "changed": a sent message or its delivery status. */
-type MailEvent = { type: "message" | "changed"; id: string };
+/** "message": new inbound mail; "changed": a sent message or its delivery status. `quiet`: a page
+ * is in the foreground, so no page notifies by itself. */
+type MailEvent = { type: "message" | "changed"; id: string; quiet?: boolean };
 
 type MailboxState = {
   counts: Counts | null;
@@ -54,6 +57,14 @@ function useEventSocket(onEvent: (event: MailEvent) => void) {
     let retry: ReturnType<typeof setTimeout> | undefined;
     let attempt = 0;
     let stopped = false;
+    let reported: "fg" | "bg" | null = null;
+
+    const report = () => {
+      const state = inForeground() ? "fg" : "bg";
+      if (socket?.readyState !== WebSocket.OPEN || state === reported) return;
+      socket.send(state);
+      reported = state;
+    };
 
     const signIn = () => {
       stopped = true;
@@ -70,6 +81,8 @@ function useEventSocket(onEvent: (event: MailEvent) => void) {
         opened = true;
         attempt = 0;
         ping = setInterval(() => ws.send("ping"), PING_MS);
+        reported = null;
+        report();
       };
       ws.onmessage = (message) => {
         if (message.data === "pong") return;
@@ -95,8 +108,14 @@ function useEventSocket(onEvent: (event: MailEvent) => void) {
     };
 
     connect();
+    document.addEventListener("visibilitychange", report);
+    window.addEventListener("focus", report);
+    window.addEventListener("blur", report);
     return () => {
       stopped = true;
+      document.removeEventListener("visibilitychange", report);
+      window.removeEventListener("focus", report);
+      window.removeEventListener("blur", report);
       clearInterval(ping);
       clearTimeout(retry);
       socket?.close();
@@ -125,9 +144,13 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
       .catch(() => setAddresses([]));
   }, [refreshCounts]);
 
+  const showNotice = useMailNotice();
   useEventSocket((event) => {
     void refreshCounts();
-    if (event.type === "message") void notifyWhenHidden(event.id);
+    if (event.type === "message") {
+      if (inForeground()) void showNotice(event.id);
+      else if (!event.quiet) void notifyWhenHidden(event.id);
+    }
     for (const listener of listeners.current) listener(event);
   });
 

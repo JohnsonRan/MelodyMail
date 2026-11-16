@@ -124,6 +124,8 @@ export class StubApp {
   /** null answers GET /api/push/key with 404, as a Worker without VAPID keys does. */
   pushKey: string | null = null;
   sockets = new Set<ServerWebSocket<undefined>>();
+  /** What pages sent over the socket besides "ping": their "fg" and "bg" reports. */
+  reports: string[] = [];
   /** Replaces a static file's body, for example a new sw.js. */
   overrides = new Map<string, string>();
   readonly server: Server<undefined>;
@@ -150,6 +152,7 @@ export class StubApp {
         },
         message: (ws, data) => {
           if (data === "ping") ws.send("pong");
+          else this.reports.push(String(data));
         },
       },
     });
@@ -165,6 +168,7 @@ export class StubApp {
     this.telegram = new TelegramStub();
     this.patches = [];
     this.push = [];
+    this.reports = [];
     this.pushKey = null;
     this.overrides.clear();
   }

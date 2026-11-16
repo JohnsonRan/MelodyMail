@@ -404,6 +404,8 @@
   },
   "notification": {
     "newMail": "新邮件",
+    "notice": "来自 {{from}} 的新邮件：{{subject}}",
+    "open": "打开",
     "testBody": "此设备可以正常接收通知。"
   },
   "notifications": {

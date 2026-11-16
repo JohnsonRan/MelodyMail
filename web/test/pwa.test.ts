@@ -335,6 +335,14 @@ describe("notification from an open page", () => {
             ]
           : [],
       );
+      // While another page is in the foreground the Hub marks new mail quiet: nothing shows.
+      for (const ws of app.sockets) {
+        ws.send(JSON.stringify({ type: "message", id: "hostile", quiet: true }));
+      }
+      await p.waitForTimeout(300);
+      expect(await p.evaluate(() => (window as unknown as { shown: unknown[] }).shown)).toEqual(
+        shown,
+      );
       await p.close();
     }
   });

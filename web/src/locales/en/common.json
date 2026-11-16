@@ -404,6 +404,8 @@
   },
   "notification": {
     "newMail": "New mail",
+    "notice": "New mail from {{from}}: {{subject}}",
+    "open": "Open",
     "testBody": "Notifications work on this device."
   },
   "notifications": {
