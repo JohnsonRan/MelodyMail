@@ -327,3 +327,43 @@ put the values in `worker/.dev.vars`.
 The quota shown in compose and Settings is the count Resend last reported, against the limits in
 `wrangler.jsonc` (`RESEND_DAILY_LIMIT` 100, `RESEND_MONTHLY_LIMIT` 3000, the Free plan). Change the
 vars there for another plan.
+
+## REST API
+
+Scripts and other programs read, flag and send mail through `/api/v1/` with an API key. Apply
+migration 0014 after deploying this version (`bun run --cwd worker db:migrate:remote`).
+
+Create a key in Settings > API keys. Creating one asks for your passkey. The key is shown once;
+only its SHA-256 hash is stored. Each key has a name, an expiry (30, 90 or 365 days, or never)
+and one or more scopes:
+
+| Scope | Allows |
+| --- | --- |
+| `mail:read` | list, search and read messages and threads, download raw messages, list addresses |
+| `mail:write` | set read, starred, archived and trashed on one message or up to 100 |
+| `mail:send` | send without attachments, list addresses |
+
+Send the key as a Bearer token. The session cookie is never read on `/api/v1/`, and a key opens
+nothing else: not settings, rules, keys or sign-in.
+
+```sh
+curl -H "Authorization: Bearer mmk_xxxxxxxx_<secret>" \
+  "https://<your origin>/api/v1/messages?folder=inbox&limit=20"
+
+curl -X POST -H "Authorization: Bearer mmk_xxxxxxxx_<secret>" \
+  -H "Idempotency-Key: $(uuidgen)" -H "Content-Type: application/json" \
+  -d '{"from": 1, "to": ["friend@example.org"], "subject": "Hello", "text": "Hi"}' \
+  "https://<your origin>/api/v1/messages/send"
+```
+
+- Errors are `{ "error": "<code>" }`: `invalid_key` or `key_expired` (401), `insufficient_scope`
+  (403), `rate_limited` (429, over 120 requests a minute from one IP). A send body with a wrong
+  field adds `path`, for example `{ "error": "bad_request", "path": "to.1" }`.
+- Lists page with `nextCursor`; pass it back as `cursor` until it is `null`.
+- Sending needs an `Idempotency-Key` header, one per message: a repeat with the same key sends
+  nothing new and returns the first result.
+- Revoke a key in Settings > API keys; it stops working at once. A recovery revokes every key.
+
+The OpenAPI 3.1 document describes every operation: "Download the OpenAPI document" in Settings >
+API keys, or `GET /api/openapi.json` while signed in. It is kept in
+`worker/src/api/openapi.json`.

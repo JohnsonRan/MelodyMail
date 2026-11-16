@@ -2991,7 +2991,7 @@ selection assertions folded into the first and the dark-reading tests of `test/m
 base 28 s (29%), 27 s (28%), 30 s (28%); new 28 s (28%), 28 s (53%), 27 s (47%). Before the fold, a
 separate test measured 30 to 32 s.
 
-## M6: rules, API keys, REST API v1 (phase A done 2026-11-17, not merged)
+## M6: rules, API keys, REST API v1 (phase A done 2026-11-17, phase B below, not merged)
 
 Design: `docs/M6-rules-api.md` with its owner rulings of 2026-11-16. Risk class High. Phase A is
 rules; phase B (API keys, REST API v1, the OpenAPI document) is a separate run. Branch
@@ -3407,3 +3407,173 @@ read about 300 addresses (the backstop slice kept the rule result right; the har
   | 20 capped header names | 0.55–0.79 ms | 1 ms |
 
 - Gate at `866cb6e`: 15.1 s at CPU load 65% (15 s limit; the host was loaded by other work).
+
+### Phase B: API keys, REST API v1, the OpenAPI document (done 2026-11-17, not merged)
+
+Branch `m6-rules-api`, from `af76039` (phase A approved). Risk class High. Not pushed, not
+deployed. No screenshots (the owner checks the page on local `wrangler dev`).
+
+#### Done (phase B)
+
+- `48fa680` migration 0014 `api_keys` (`IF NOT EXISTS`), drizzle schema; `expires_at` nullable
+  for "never".
+- `71d69e5` refactor without behaviour change: the mailbox handlers become named functions and the
+  send flow `sendMessage()`, so `/api/v1/` calls the same code as the session routes.
+- `e9f82e7` API keys and the REST API (`worker/src/api/keys.ts`, `v1.ts`, `openapi.json`,
+  `worker/src/routing.ts`):
+  - route kind `apiRoute(scopes)`: Bearer key only, never the cookie; session routes never read a
+    key; the CSRF guard skips only `apiRoute` handlers;
+  - order per request: `API_LIMITER` (120 per 60 s per IP, 429 with `Retry-After: 60`), the
+    format regex, both before any D1 read; then the SHA-256 lookup, expiry (`key_expired`), scope
+    (403 `insufficient_scope`); 401 answers carry `WWW-Authenticate: Bearer`;
+  - last used written at most once an hour, guarded in JS (no write) and in the UPDATE (a race);
+  - `GET|POST /api/keys`, `DELETE /api/keys/:id`, `GET /api/openapi.json` (session); creation
+    behind `requireFreshAuth`, at most 20 keys (in the INSERT), audit `api_key_created`
+    (public id, scopes, expiry) and `api_key_revoked` (public id);
+  - recovery deletes every key in its batch, with `api_keys_revoked` and the count;
+  - 9 v1 routes: messages list, get, thread, raw, search, addresses, flags single and bulk, send
+    with a required `Idempotency-Key` header and the M5 idempotency;
+  - the hand-written OpenAPI 3.1 document, 9 operations.
+- `305dd36` Settings > API keys (`web/src/pages/ApiKeysPage.tsx`, `web/src/apiKeys/`): list,
+  create through `withReauth`, the key shown once in the recovery key panel, revoke with
+  confirmation, the OpenAPI link; side navigation entry after Rules; lazy `apiKeys` namespace in
+  zh-CN, en and ja-JP; `web/test/api-keys.test.ts` in `test:settings`.
+- `b634e70` tests for the three ablation survivors (below).
+- README "REST API", `REQUIREMENTS.md` (an "Exceptions" row for `/api/v1/*`, new baselines), this
+  section (the docs commit).
+
+#### Proof (worker suite, real D1, R2 and Queues in workerd; Resend stubbed)
+
+- `test/api-keys.spec.ts` (13): stale session 403 `reauth_required`, fresh 201; the key matches
+  the pattern, starts with its public id, its SHA-256 is stored, and neither the key nor its
+  secret is in any D1 table (all tables dumped); the list never holds it; scopes normalised;
+  expiry 30, 90 (default), 365 and never, and 7 bad bodies refused; the 20-key cap with one audit
+  row; revoke on a stale session, 404 answers, audit, the key then 401; 5 malformed keys answer
+  401 `invalid_key` with a D1 stand-in that fails on any use; a key in `?key=`, `?access_token=`
+  or a `Basic` header is not read; unknown, expired and never-expiring keys; last used once an
+  hour (same hour, 5 s before, 1 ms after); no D1 write inside the hour, and the UPDATE losing a
+  race; the limiter called with the client IP before D1 (stub limiter, failing D1); the real
+  binding answers 429 at the 121st request from one IP; a foreign `Origin` passes on v1 and a
+  session POST with it answers `bad_origin`; recovery deletes both keys with `api_keys_revoked`
+  "2"; the OpenAPI document served to a session.
+- `test/api-v1.spec.ts` (8): list (three folder and address filters), message, thread and search
+  equal the session routes' JSON; raw bytes and content type; 404 and 400; pagination with
+  `limit=2` until `nextCursor` is null; addresses with `canSend` for a send-only key; flags single
+  and bulk, too many ids, a bad flag; send needs `Idempotency-Key` (400
+  `idempotency_key_required`), 6 typed-field refusals with `path` (`to.1`, `uploadIds`), a
+  malformed key header, `unknown_address`, 503 without `RESEND_API_KEY`; repeated and concurrent
+  sends under one key make one Resend call, the key reaches Resend, `replyTo` threads the reply.
+  OpenAPI: routes and operations equal in both directions with their scopes; the checker flags an
+  undocumented field, a missing field, a wrong type, a null and an item error.
+- Every v1 response in these suites, the authz matrix and the redaction test goes through
+  `expectDocumented` (`test/openapi-check.ts`): the status must be documented and the JSON body
+  must pass the operation's schema.
+- `test/authz.spec.ts` (+2, extended): every route in exactly one kind; the `apiRoute` list with
+  scopes equals the expected table and covers every `/api/v1/` path; every session route answers
+  401 to a key with all scopes; every v1 route answers 401 to a valid session cookie (with and
+  without `Origin`), 403 to a key with the other scopes, and neither to each of its own scopes
+  without an `Origin` header.
+- `test/log-redaction.spec.ts` (+1): a key through all 9 v1 routes (a send that succeeds and one
+  that fails, so `send_ok` and `send_failed` are logged), a failing key and a key on a session
+  route; no log line holds the key, its secret, "Bearer" or "authorization"; no D1 table holds the
+  secret.
+- Browser (`test:settings`, `web/test/api-keys.test.ts`, 2): an empty name is refused in the form;
+  create with Send mail and Never runs re-authentication (the stand-in answers `reauth_required`,
+  a CDP virtual authenticator signs), the body is exact, the key is shown with `user-select` not
+  `none`, Done stays disabled until "I have copied the key", then the list shows the prefix, the
+  access names and "Never"; revoke by keyboard through the confirmation; at 390 px in zh-CN the
+  list stacks with no sideways scroll and shows "已过期" and the IPv6 last-used address.
+- Migration: `bun run db:migrate:local` applied 0014 on the local database with 22 messages; a
+  second run reported "No migrations to apply"; `wrangler d1 execute --local --file
+  migrations/0014_api_keys.sql` ran again without error.
+
+#### Numbers (2026-11-17, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
+
+| Item | Result | CPU load |
+| --- | --- | --- |
+| `bun run check` at `b634e70` | 10.0, 10.3, 10.0 s (445 worker tests; worker suite 9.00–9.41 s) | 3%, 4%, 3% |
+| `bun run check` at `af76039` (base) | 9.9 s (420 tests; worker suite 8.96 s) | 8% |
+| `bun run test:settings` with the API keys suite | 10.01, 10.35, 9.89 s (17 tests) | 8%, 3%, 3% |
+| The same before reduced motion in the new suite | 12.0, 13.25, 11.24 s (one run over 13 s) | 1–2% |
+| The three earlier suites alone (`bun test` part) | 8.08, 7.46 s | 7%, 4% |
+| `bun run test:browser` (unchanged tier) | 30.8, 26.3, 26.3 s (58 tests; the first run an outlier) | 9%, 2%, 7% |
+| First paint (vite build, gzip -6) | 315.9 kB (315.7 kB at the base; limit 370) | |
+| Total JS + CSS | 746.4 kB (739.1 kB at the base; limit 770) | |
+| Worker bundle (`wrangler deploy --dry-run`) | 1,364.55 KiB, 285.82 KiB gzip (1,328.04 and 278.90 at the base; most of the growth is the 30 kB OpenAPI document) | |
+
+#### Ablation
+
+`ablate.ts` (session scratchpad, not committed) applied one mutation at a time to the worker and
+ran the affected specs, sequentially, at CPU load 3%. 56 mutations, all red after `b634e70`:
+
+- keys: unknown or empty scope accepted, any expiry, default 365, empty or long label, no cap,
+  audit without `changes()`, no fresh auth, no revoke audit, limiter ignored, a D1 read before
+  the limiter, one limiter key for all IPs, no `Retry-After`, any auth scheme, a key read from
+  the query, no format check, expiry ignored, never-expiring keys refused, scope ignored, all
+  scopes required, last used never written, the key stored in clear, the key logged, no
+  `WWW-Authenticate`;
+- routing: v1 decided by the session, a session route taking a key, the CSRF guard on v1, the
+  CSRF guard off everywhere, the handler not wrapped (session routes become key routes);
+- recovery: keys kept, no audit row;
+- v1: unknown fields accepted, `from`, list and list-item types, `text`, optional strings,
+  `Idempotency-Key` optional or unchecked, a key changed per request, `replyTo` and `html`
+  dropped, `canSend` and `enabled` as integers, addresses closed to `mail:send`, no
+  `send_not_configured`;
+- OpenAPI: the document route missing; an undocumented response field (`domain` on an address);
+  an undocumented route (`GET /extra`); an operation missing from the document.
+
+First run: 53 of 56 red. Survivors, red since `b634e70`: the JS hourly check (each request
+wrote; harmless because of the SQL guard), the SQL guard (harmless because of the JS check), and
+`send_not_configured` on v1 (no test ran without `RESEND_API_KEY`).
+
+Web (`ablate-web.ts`, a rebuild per mutation, the API keys browser suite, load 1%): 10 of 10 red
+(never sent as 90 days, no re-auth wrapper, an empty name submitted, the key shown with spaces,
+revoke without confirmation, an expired key shown as a date, the last-used IP hidden, scope ids
+instead of names, the panel closing without the confirmation, the key not shown).
+
+#### Deviations from the design (decisions taken, open to the owner)
+
+1. `api_keys.expires_at` is nullable: NULL is "never" (owner ruling 3 came after the design's
+   "not null").
+2. `GET /api/v1/addresses` takes `mail:read` or `mail:send`. The routes table puts it under
+   `mail:read`; the scopes table lets `mail:send` "list the addresses that may send". A route
+   records a list of scopes, any one of which suffices, and the document lists both as
+   alternative security requirements.
+3. `path` on 400 `bad_request` comes only from the v1 send body and the `Idempotency-Key` header.
+   The reused M4 handlers (query parameters, flags) answer `bad_request` without `path`, and the
+   M5 codes (`invalid_recipient`, `unknown_address`) stay as they are.
+4. A request without `Authorization: Bearer` answers 401 `unauthorized` (also with only a session
+   cookie); `invalid_key` is for a value that is malformed or unknown.
+5. The v1 send body refuses unknown fields (`path` names the field), so `uploadIds` or a typo
+   fails; `text` is required.
+6. The checker supports the ruling's subset with OpenAPI 3.1's spelling of nullable (a type list
+   with `"null"`; 3.1 has no `nullable` keyword), plus local `$ref`, `allOf` and
+   `additionalProperties: false`, which every response object in the document sets, so an
+   undocumented field fails.
+7. The shown API key may break anywhere (`overflow-wrap: anywhere`) to fit 390 px; "values never
+   break" cannot hold for a 56-character token. It is an inline style, which `astryx doctor`
+   lists with its existing style warnings.
+8. The show-once panel reuses `RecoveryKeyPanel` with two optional props instead of a second
+   component.
+9. `api_keys_revoked` is written only when a recovery deleted at least one key.
+10. The new browser suite emulates reduced motion; without it the tier ran over 13 s once.
+11. No `wrangler check startup` profile: the design asked for it around a dependency, and ruling 2
+    removed the dependency. The bundle grew 36.5 KiB raw, 6.9 KiB gzip.
+
+#### Open questions for the owner
+
+1. **`path` on every validation error.** Today only the send body has it. Recommended: leave it;
+   adding it to the M4 handlers changes the session routes' answers too.
+2. **Raw download of a sent message.** `GET /api/v1/messages/{id}/raw` returns the stored JSON
+   copy for outbound mail, as M4 does, under `application/octet-stream`. Recommended: keep it; the
+   document says so, and a client tells them apart by `direction`.
+
+#### Not verified
+
+- The rate limit on Cloudflare (approximate, per location); only Miniflare's binding and a stub
+  were exercised.
+- Production behaviour, `cpuTime` of a v1 request, and a real Resend send through the API (every
+  Resend call is stubbed).
+- The page in Firefox and Safari, dark mode contrast, and screenshots; local `wrangler dev` was
+  not started.
+- An independent review by a different model family.
