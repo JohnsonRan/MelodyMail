@@ -13,6 +13,11 @@ import { idempotencyKey } from "./validate";
 
 /** A send still "sending" after this long is taken to have died and may be retried. */
 export const SENDING_STALE_MS = 60_000;
+/**
+ * Resend keeps an idempotency key this long. A row still "sending" after that is not retried:
+ * Resend would no longer dedupe it, and whether the first attempt went out is unknown.
+ */
+export const SENDING_RETRY_MAX_MS = 24 * 3600_000;
 const SNIPPET_MAX = 200;
 
 /** Delivered, or on its way: a repeat returns the message and calls nobody. */
@@ -113,9 +118,9 @@ async function claimRetry(c: Context<AppEnv>, row: Existing, now: number): Promi
   const { meta } = await c.env.DB.prepare(
     `UPDATE messages SET status = 'sending', error = NULL, received_at = ?
      WHERE id = ? AND ((status = 'failed' AND error IS NOT 'send_rejected')
-       OR (status = 'sending' AND received_at <= ?))`,
+       OR (status = 'sending' AND received_at <= ? AND received_at > ?))`,
   )
-    .bind(now, row.id, now - SENDING_STALE_MS)
+    .bind(now, row.id, now - SENDING_STALE_MS, now - SENDING_RETRY_MAX_MS)
     .run();
   return meta.changes > 0;
 }

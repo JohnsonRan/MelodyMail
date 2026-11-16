@@ -115,6 +115,10 @@
       "delivery_failed": "投递失败"
     },
     "deliveryFailedHelp": "Resend 报告这封邮件未能送达。如需再次发送，请转发这封邮件或写一封新邮件。",
+    "sendStalled": "未完成发送",
+    "sendStalledHelp": "这封邮件已开始发送，但没有完成。请重新发送，邮件仍只会发出一次。",
+    "sendUnknown": "状态未知",
+    "sendUnknownHelp": "这封邮件在一天内没有完成发送。请在 Resend 仪表板中查看它的状态。",
     "closeCompose": "关闭"
   },
   "settings": {

@@ -115,6 +115,10 @@
       "delivery_failed": "配信失敗"
     },
     "deliveryFailedHelp": "Resend から、このメッセージを配信できなかったという報告がありました。もう一度送信するには、転送するか新しいメッセージを作成してください。",
+    "sendStalled": "送信が完了していません",
+    "sendStalledHelp": "このメッセージは送信を開始しましたが、完了していません。もう一度送信してください。送信されるのは 1 回だけです。",
+    "sendUnknown": "状態不明",
+    "sendUnknownHelp": "このメッセージは 1 日以内に送信が完了しませんでした。Resend ダッシュボードで状態を確認してください。",
     "closeCompose": "閉じる"
   },
   "settings": {

@@ -115,6 +115,10 @@
       "delivery_failed": "Delivery failed"
     },
     "deliveryFailedHelp": "Resend reported that this message could not be delivered. To send it again, forward it or write a new message.",
+    "sendStalled": "Not finished sending",
+    "sendStalledHelp": "This message started sending but did not finish. Send it again; it still goes out only once.",
+    "sendUnknown": "Status unknown",
+    "sendUnknownHelp": "This message did not finish sending within a day. Check its status in the Resend dashboard.",
     "closeCompose": "Close"
   },
   "settings": {

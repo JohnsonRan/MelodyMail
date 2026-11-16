@@ -177,11 +177,12 @@ describe("compose end to end", () => {
     expect(app.send.sends[2]).toMatchObject({ subject: "Fixed", idempotencyKey: newKey });
   });
 
-  test("shows final send states in the reader without Retry", async () => {
-    const seed = (id: string, status: string, error: string | null = null) => {
+  test("offers Retry in the reader only where it may still send", async () => {
+    const seed = (id: string, status: string, error: string | null = null, age = 0) => {
       const body = { to: ["friend@example.org"], subject: id, text: "Hi", idempotencyKey: id };
       const stored = sentMessage(id, body, status);
       stored.item.error = error;
+      stored.item.receivedAt = Date.now() - age;
       const attachment = { uploadId: "up-1", filename: "notes.txt", contentType: "text/plain" };
       stored.raw = JSON.stringify({
         ...JSON.parse(stored.raw),
@@ -191,6 +192,9 @@ describe("compose end to end", () => {
     };
     seed("sent-lost", "delivery_failed");
     seed("sent-rejected", "failed", "send_rejected");
+    seed("sent-fresh", "sending", null, 10_000);
+    seed("sent-unknown", "sending", null, 25 * 3600_000);
+    seed("sent-stalled", "sending", null, 5 * 60_000);
     session = await openSession(app.origin, "/sent?m=sent-lost");
     const s = session;
     const retry = s.page.getByRole("button", { name: "Send again" });
@@ -204,6 +208,20 @@ describe("compose end to end", () => {
     await s.page.getByText("The mail service refused this message").waitFor();
     expect(await retry.count()).toBe(0);
     expect(await s.page.getByText("notes.txt").count()).toBe(0);
+    // Sending for 10 s: still in progress, nothing to do.
+    await s.page.locator('[data-message-row="sent-fresh"]').click();
+    await s.page.getByRole("heading", { name: "sent-fresh" }).waitFor();
+    expect(await retry.count()).toBe(0);
+    // Unfinished after 24 h: Resend no longer dedupes, so no Retry.
+    await s.page.locator('[data-message-row="sent-unknown"]').click();
+    await s.page.getByText("Check its status in the Resend dashboard.").waitFor();
+    expect(await retry.count()).toBe(0);
+    // Unfinished after 5 minutes: Retry under the same key.
+    await s.page.locator('[data-message-row="sent-stalled"]').click();
+    await s.page.getByText("This message started sending but did not finish.").waitFor();
+    await retry.click();
+    await s.page.getByText("Message sent", { exact: true }).first().waitFor();
+    expect(app.send.sends).toEqual([{ idempotencyKey: "sent-stalled" }]);
   });
 
   test("warns near the quota, blocks when it is used up or sending is not set up", async () => {

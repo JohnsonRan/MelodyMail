@@ -1,7 +1,7 @@
 import { env, exports } from "cloudflare:workers";
 import { Webhook } from "standardwebhooks";
 import { describe, expect, it, vi } from "vitest";
-import { SENDING_STALE_MS } from "../src/send/send";
+import { SENDING_RETRY_MAX_MS, SENDING_STALE_MS } from "../src/send/send";
 import { WEBHOOK_BODY_MAX } from "../src/send/webhook";
 import {
   messageRow,
@@ -53,6 +53,31 @@ describe("retrying a send", () => {
     const exp = Number(new URL(attachment?.path ?? "").searchParams.get("exp"));
     expect(exp - before).toBeGreaterThanOrEqual(24 * 3600);
     expect(exp - before).toBeLessThanOrEqual(24 * 3600 + 5);
+  });
+});
+
+describe("retrying a send that never finished", () => {
+  it("claims a sending row between 60 s and 24 h old, and refuses an older one", async () => {
+    const client = await signedIn();
+    const from = await sender();
+    const calls = stubResend((n) => (n === 0 ? resendError(500, "application_error") : resendOk()));
+    const body = sendBody(from);
+    expect((await send(client, body)).status).toBe(502);
+    // As if an attempt had died mid-send: the row stays "sending" from its last attempt.
+    const age = (ms: number) =>
+      env.DB.prepare(
+        "UPDATE messages SET status = 'sending', received_at = ? WHERE idempotency_key = ?",
+      )
+        .bind(Date.now() - ms, body.idempotencyKey)
+        .run();
+    const retry = () => send(client, { idempotencyKey: body.idempotencyKey });
+
+    await age(SENDING_RETRY_MAX_MS + 60_000);
+    expect((await retry()).status).toBe(409);
+    expect(calls).toHaveLength(1);
+    await age(SENDING_RETRY_MAX_MS - 60_000);
+    expect((await retry()).status).toBe(200);
+    expect(calls).toHaveLength(2);
   });
 });
 

@@ -83,8 +83,10 @@ marker with a reason, and the walk asserts that nothing else is public.
    (idempotency_key) DO NOTHING`. If the row already existed:
    - `sent` or later: return it (200), no second call;
    - `sending` and younger than 60 s: return 409 `send_in_progress` (a concurrent submit);
-   - `failed`, or `sending` older than 60 s: call Resend again with the same key, so Resend's own
-     24-hour idempotency guarantees one email.
+   - `failed` (except `send_rejected`), or `sending` older than 60 s and younger than 24 h: call
+     Resend again with the same key, so Resend's own 24-hour idempotency guarantees one email;
+   - `sending` older than 24 h: 409, no call; Resend no longer dedupes the key and the outcome
+     is unknown (owner ruling 2026-11-16).
 3. Call Resend once with `Idempotency-Key` = the client's key. Thread headers for replies:
    `In-Reply-To` = the source's Message-ID, `References` = the source's References plus its
    Message-ID; subject gets `Re:` / `Fwd:` once. Attachments go as `path` = the signed URL.
@@ -137,7 +139,9 @@ at `sent` or later (owner ruling 2026-11-16).
   re-uploaded from the browser's parsed copy when kept.
 - **Sent** and **Drafts** in the side navigation (hidden in M4). Sent rows show the delivery
   status as a badge; the reader shows the status and a Retry for `failed`, except a rejection
-  (`send_rejected`), which is final. For
+  (`send_rejected`), which is final. A row still `sending` after 60 s gets the same Retry until
+  it is 24 h old; after that the reader says the status is unknown and to check it in Resend, with
+  no Retry. For
   `delivery_failed` it explains that Resend reported a delivery failure and that the owner
   forwards the message or writes a new one to send it again; there is no Retry.
 - **Quota**: "Today 12 / 100 · This month 340 / 3,000" in the compose panel and Settings;
