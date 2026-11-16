@@ -3,21 +3,15 @@ name: telegram
 # The Telegram suites (Playwright driven by bun test): Settings > Notifications > Telegram and the
 # widget card with a stand-in widget API. Split from the browser suite by M5b owner ruling 1
 # (2026-11-16) once the browser tier went over its 30 s limit: it runs every night on main, by
-# hand, and on pull requests that touch the Telegram frontend, the card or these tests.
+# hand, and on pull requests that touch web/ (the suites share its stand-in, build and settings
+# page), the card or the dependencies, as browser.yml does.
 on:
   pull_request:
     paths:
-      - "web/src/components/TelegramSection.tsx"
-      - "web/src/pages/NotificationsPage.tsx"
-      - "web/src/errors.ts"
-      - "web/src/locales/**"
+      - "web/**"
       - "worker/src/telegram/card.html"
-      - "worker/src/telegram/card.ts"
-      - "web/test/telegram.test.ts"
-      - "web/test/telegram-card.test.ts"
-      - "web/test/stub-telegram.ts"
-      - "web/vite.config.ts"
-      - "web/package.json"
+      - "package.json"
+      - "bun.lock"
       - ".github/workflows/telegram.yml"
   schedule:
     - cron: "17 4 * * *"
