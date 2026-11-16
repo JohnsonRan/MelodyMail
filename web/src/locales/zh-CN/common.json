@@ -283,7 +283,7 @@
     "telegram_not_connected": "尚未连接 Telegram。请先连接。",
     "telegram_failed": "Telegram 未接受此请求。请过几分钟后重试。",
     "invalid_rule_name": "请输入不超过 100 个字符的名称。",
-    "invalid_condition": "每个条件都需要不超过 256 个字符的值。邮件头条件还需要邮件头名称，例如 List-Id：只能使用字母、数字和 - . _，不能有空格或括号。",
+    "invalid_condition": "每个条件都需要不超过 256 个字符的值。邮件头条件还需要邮件头名称，例如 List-Id，不能包含空格、括号或 / @ : = , 等符号。",
     "no_rule_action": "请至少选择一个操作。",
     "too_many_rule_targets": "一条规则最多可以转发到 5 个地址。",
     "too_many_rules": "最多可以有 50 条规则。请先删除一条。",
