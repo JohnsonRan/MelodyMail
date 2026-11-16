@@ -142,7 +142,15 @@ async function deliver(c: Context<AppEnv>, id: string, key: string, copy: SentCo
   const now = Date.now();
   const quota = outcome.quota ? [quotaUpsert(db, outcome.quota, now)] : [];
   if (!outcome.ok) {
-    log("warn", "send_failed", { messageId: id, status: outcome.status, name: outcome.name });
+    const fields = { messageId: id, status: outcome.status, name: outcome.name };
+    if (outcome.code === "send_in_progress") {
+      // Marking the row failed could overwrite the first request's success, which only updates
+      // a row still "sending". After SENDING_STALE_MS a repeat may claim the row again.
+      log("warn", "send_in_progress", fields);
+      if (quota.length > 0) await db.batch(quota);
+      return fail(c, 409, "send_in_progress");
+    }
+    log("warn", "send_failed", fields);
     await db.batch([...quota, failedUpdate(db, id, outcome.code)]);
     await notifyHub(env, { type: "changed", id });
     return c.json({ error: outcome.code, id }, HTTP_STATUS[outcome.code]);

@@ -1,5 +1,8 @@
+import { env } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
+import { SENDING_STALE_MS } from "../src/send/send";
 import {
+  messageRow,
   resendError,
   resendOk,
   sendBody,
@@ -43,4 +46,41 @@ describe("retrying a send", () => {
     expect(exp - before).toBeGreaterThanOrEqual(24 * 3600);
     expect(exp - before).toBeLessThanOrEqual(24 * 3600 + 5);
   });
+});
+
+describe("Resend's idempotency conflicts", () => {
+  it.each(["concurrent_idempotent_requests", "invalid_idempotent_request"])(
+    "leaves the row sending on 409 %s, so a concurrent success lands",
+    async (name) => {
+      const client = await signedIn();
+      const from = await sender();
+      let release = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const calls = stubResend(async (n) => {
+        if (n === 1) return resendError(409, name);
+        await gate;
+        return resendOk("re_first");
+      });
+      const body = sendBody(from);
+      const first = send(client, body);
+      await vi.waitFor(() => expect(calls).toHaveLength(1));
+      // The first attempt looks stale, so a repeat claims the row and calls Resend again.
+      const row = await env.DB.prepare(
+        "UPDATE messages SET received_at = ? WHERE idempotency_key = ? RETURNING id",
+      )
+        .bind(Date.now() - SENDING_STALE_MS - 1000, body.idempotencyKey)
+        .first<{ id: string }>();
+      const id = row?.id as string;
+      const second = await send(client, body);
+      expect(second.status).toBe(409);
+      expect(await second.json()).toEqual({ error: "send_in_progress" });
+      expect(await messageRow(id)).toMatchObject({ status: "sending", error: null });
+
+      release();
+      expect((await first).status).toBe(200);
+      expect(await messageRow(id)).toMatchObject({ status: "sent", resendId: "re_first" });
+    },
+  );
 });

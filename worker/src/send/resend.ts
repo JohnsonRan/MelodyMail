@@ -15,11 +15,22 @@ export type SendError =
   | "send_rejected"
   | "send_failed";
 
+/**
+ * Resend still holds the first request under this key, or holds one with another body. The
+ * message may be on its way, so the row is left "sending" for the first request to finish.
+ */
+export type InProgress = "send_in_progress";
+
+const IDEMPOTENCY_CONFLICTS = new Set([
+  "concurrent_idempotent_requests",
+  "invalid_idempotent_request",
+]);
+
 export type SendOutcome =
   | { ok: true; resendId: string; quota: Quota | null }
   | {
       ok: false;
-      code: SendError;
+      code: SendError | InProgress;
       status: number | null;
       /** Resend's error name, kept only when it looks like one (a short snake_case word). */
       name: string | null;
@@ -42,7 +53,8 @@ function quotaFrom(headers: Record<string, string> | null): Quota | null {
   return daily === null || monthly === null ? null : { dailyUsed: daily, monthlyUsed: monthly };
 }
 
-function errorCode(status: number | null, name: string): SendError {
+function errorCode(status: number | null, name: string): SendError | InProgress {
+  if (status === 409 && IDEMPOTENCY_CONFLICTS.has(name)) return "send_in_progress";
   if (status === 429) {
     if (name === "daily_quota_exceeded" || name === "monthly_quota_exceeded") return name;
     return "rate_limited";

@@ -93,6 +93,9 @@ marker with a reason, and the walk asserts that nothing else is public.
 5. On 429 quota, 4xx validation, 5xx or network error: status `failed` with a short error code;
    the UI shows the reason and a Retry that reuses the same key. Upstream error text never reaches
    the client or the logs (log the status and the Resend error `name` only).
+   Resend's 409 `concurrent_idempotent_requests` and `invalid_idempotent_request` leave the row
+   `sending` and answer 409 `send_in_progress`: the first request under the key may still
+   succeed, and its update only applies to a row still `sending` (owner ruling 2026-11-16).
 6. CPU: one fetch, a few D1 statements, one R2 put of a small JSON; no base64 or MIME work.
 
 The client creates the idempotency key once per compose session (stored on the draft), so a
