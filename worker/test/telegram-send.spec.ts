@@ -4,6 +4,7 @@ import { copy } from "../src/telegram/card";
 import html from "../src/telegram/card.html";
 import { telegramNewMail } from "../src/telegram/send";
 import { ORIGIN } from "./helpers";
+import { report } from "./hub-helpers";
 import { seedMessage } from "./mailbox-helpers";
 import { signedIn } from "./send-helpers";
 import {
@@ -116,19 +117,26 @@ describe("telegram cards for new mail", () => {
     expect(await cardRows()).toEqual([]);
   });
 
-  it("still sends the card while a mailbox page is open", async () => {
+  it("sends the card while a page is open in the background, and nothing in the foreground", async () => {
     await seedTelegram();
     await seedMessage({ id: "m1" });
+    await seedMessage({ id: "m2" });
     const client = await signedIn();
     const cookie = [...client.cookies].map(([k, v]) => `${k}=${v}`).join("; ");
     const res = await exports.default.fetch(`${ORIGIN}/api/events`, {
       headers: { upgrade: "websocket", origin: ORIGIN, cookie },
     });
-    res.webSocket?.accept();
-    if (res.webSocket) open.push(res.webSocket);
+    const ws = res.webSocket;
+    if (!ws) throw new Error("no socket");
+    ws.accept();
+    open.push(ws);
     const calls = stubTelegram(sentWidget);
     expect(await notifyNewMail("m1")).toBe(1);
     expect(calls.map((c) => c.method)).toEqual(["sendWidget"]);
+    await report(ws, "fg");
+    expect(await notifyNewMail("m2")).toBe(1);
+    expect(calls.map((c) => c.method)).toEqual(["sendWidget"]);
+    expect((await cardRows()).map((r) => r.messageId)).toEqual(["m1"]);
   });
 
   it("falls back to a plain message with the four buttons when the widget is refused", async () => {

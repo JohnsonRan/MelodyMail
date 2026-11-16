@@ -11,7 +11,10 @@ import { telegramNewMail } from "../telegram/send";
 // waking the object, so an idle connection is not billed for duration. For a new message the Hub
 // also sends Web Push to the devices without an open page (docs/M4b-pwa.md, "Sending") and the
 // Telegram card (docs/M5b-telegram.md, "Sending"), so the encryption and the upstream requests run
-// in this invocation, not in the queue consumer.
+// in this invocation, not in the queue consumer. Pages report "fg" or "bg" as they gain or lose the
+// foreground; while any page is in the foreground, new mail sends neither (docs/M5c-foreground.md).
+// The report is kept as the socket's attachment, which survives hibernation; the Hub keeps no
+// state in memory.
 
 /** Set by the Worker after it validated the session; a client cannot reach the Hub directly. */
 const SESSION_HEADER = "x-melodymail-session";
@@ -21,6 +24,13 @@ export const SESSION_ENDED = 4001;
 /** "message": new inbound mail (pushed to devices without a page). "changed": a sent message or
  * its delivery status changed; pages refetch, nothing is pushed. */
 export type HubEvent = { type: "message" | "changed"; id: string };
+
+/** What a page last reported; a socket without a report counts as background. */
+type Attachment = { foreground: boolean };
+
+function inForeground(ws: WebSocket): boolean {
+  return (ws.deserializeAttachment() as Attachment | null)?.foreground === true;
+}
 
 export class Hub extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -39,16 +49,20 @@ export class Hub extends DurableObject<Env> {
   }
 
   /**
-   * Sends the event to every open page and returns how many sockets it reached. Every device
-   * whose session has no page open gets a push; a session with an open page notifies itself
-   * while hidden (web/src/pwa/notifyHidden.ts). The Telegram card goes out whether or not a page
-   * is open (owner ruling 3). A push or Telegram failure is logged and never fails the caller.
+   * Sends the event to every open page and returns how many sockets it reached. New mail while a
+   * page is in the foreground goes to the pages with `quiet: true` and nowhere else: no push, no
+   * Telegram, and hidden pages do not notify themselves. Otherwise every device whose session has
+   * no page open gets a push, a session with an open page notifies itself while hidden
+   * (web/src/pwa/notifyHidden.ts), and the Telegram card goes out. A push or Telegram failure is
+   * logged and never fails the caller.
    */
   async notify(event: HubEvent): Promise<number> {
-    const data = JSON.stringify(event);
+    const sockets = this.ctx.getWebSockets();
+    const quiet = event.type === "message" && sockets.some(inForeground);
+    const data = JSON.stringify(quiet ? { ...event, quiet } : event);
     let sent = 0;
     const reached = new Set<string>();
-    for (const ws of this.ctx.getWebSockets()) {
+    for (const ws of sockets) {
       try {
         ws.send(data);
         sent++;
@@ -57,7 +71,7 @@ export class Hub extends DurableObject<Env> {
         // A socket closing right now; its page reconnects and refetches.
       }
     }
-    if (event.type !== "message") return sent;
+    if (event.type !== "message" || quiet) return sent;
     await Promise.all([
       pushNewMail(this.env, event.id, [...reached]).catch((err) => {
         log("warn", "push_new_mail_failed", { messageId: event.id, error: errorText(err) });
@@ -85,8 +99,12 @@ export class Hub extends DurableObject<Env> {
     return closed;
   }
 
-  // Pages send nothing but "ping" (auto-answered); anything else is ignored.
-  override webSocketMessage(): void {}
+  /** Keeps a page's "fg" or "bg" report; "ping" is answered by the runtime, the rest is ignored. */
+  override webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
+    if (message === "fg" || message === "bg") {
+      ws.serializeAttachment({ foreground: message === "fg" } satisfies Attachment);
+    }
+  }
 }
 
 function hub(env: Env) {
