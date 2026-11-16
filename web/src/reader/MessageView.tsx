@@ -122,11 +122,14 @@ function Attachments({ parts }: { parts: MailPart[] }) {
 export function MessageView({
   message,
   remoteImages,
-  onRemoteContent,
+  darkReading,
+  onContent,
 }: {
   message: MessageDetail;
   remoteImages: boolean;
-  onRemoteContent: (id: string, has: boolean) => void;
+  darkReading: boolean;
+  /** Tells the reader what the toolbar can offer for this message. */
+  onContent: (id: string, content: { remote: boolean; html: boolean }) => void;
 }) {
   const { t } = useTranslation();
   const load = useParsedMail(message);
@@ -143,7 +146,11 @@ export function MessageView({
     [mail, remoteImages, t],
   );
   const hasRemote = clean?.hasRemoteContent ?? false;
-  useEffect(() => onRemoteContent(message.id, hasRemote), [message.id, hasRemote, onRemoteContent]);
+  const hasHtml = clean !== null;
+  useEffect(
+    () => onContent(message.id, { remote: hasRemote, html: hasHtml }),
+    [message.id, hasRemote, hasHtml, onContent],
+  );
 
   const files = mail
     ? mail.parts.filter((p) => !(p.contentId && clean?.usedContentIds.has(p.contentId)))
@@ -191,6 +198,7 @@ export function MessageView({
         <MailFrame
           html={clean.html}
           remoteImages={remoteImages}
+          darkReading={darkReading}
           title={message.subject ?? t("mail.noSubject")}
         />
       )}

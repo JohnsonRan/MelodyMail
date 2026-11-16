@@ -9,6 +9,8 @@ declare namespace Cloudflare {
     ASSETS: Fetcher;
     DB: D1Database;
     AUTH_LIMITER: RateLimit;
+    /** Abuse guard on the push test send, keyed by session. */
+    PUSH_LIMITER: RateLimit;
     /** Raw inbound messages. */
     MAIL: R2Bucket;
     /** Producer for melodymail-inbound; the body is { id } of a stored message. */
@@ -19,6 +21,12 @@ declare namespace Cloudflare {
     SETUP_TOKEN?: string;
     /** DNS-over-HTTPS JSON API used by the domain DNS check. */
     DOH_URL: string;
+    /** Web Push (VAPID) public key, base64url; push is off while any VAPID value is unset. */
+    VAPID_PUBLIC_KEY?: string;
+    /** Worker secret: the VAPID private key, base64url. */
+    VAPID_PRIVATE_KEY?: string;
+    /** The app's own https:// origin, sent to push services as the VAPID subject. */
+    VAPID_SUBJECT?: string;
   }
 }
 

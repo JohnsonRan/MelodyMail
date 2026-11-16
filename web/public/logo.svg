@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="t">
+  <title id="t">MelodyMail</title>
+  <rect width="512" height="512" rx="112" fill="#1b1b1b"/>
+  <rect x="80" y="176" width="288" height="208" rx="28" fill="#ffffff"/>
+  <path d="M100 200 L224 292 L348 200" fill="none" stroke="#1b1b1b" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <g fill="#ffffff" stroke="#1b1b1b" stroke-width="18" paint-order="stroke">
+    <path d="M396 104 v220 a12 12 0 0 1 -24 0 v-220 a12 12 0 0 1 24 0 z"/>
+    <path d="M384 96 c18 28 64 40 64 92 c0 18 -6 34 -14 44 c4 -40 -22 -62 -50 -70 z"/>
+    <ellipse cx="350" cy="330" rx="46" ry="34" transform="rotate(-24 350 330)"/>
+  </g>
+</svg>

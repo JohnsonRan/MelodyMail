@@ -96,5 +96,5 @@ export function useSettingsPage<T>(load: () => Promise<T>) {
     }
   };
 
-  return { data, loadError, busy, act, reload, toast, t };
+  return { data, setData, loadError, busy, act, reload, toast, t };
 }

@@ -5,9 +5,10 @@ import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Icon } from "@astryxdesign/core/Icon";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
-import { InboxIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import { InboxIcon, MagnifyingGlassIcon, SignalSlashIcon } from "@heroicons/react/24/outline";
 import type { ComponentProps, RefObject } from "react";
 import { useTranslation } from "react-i18next";
+import { useNetwork } from "../network";
 import type { ListQuery } from "./api";
 import { MessageList } from "./MessageList";
 import type { ListState } from "./useMessageList";
@@ -39,10 +40,19 @@ export function ListBody({
 }) {
   const { t } = useTranslation();
   const search = "search" in query;
+  const { offline } = useNetwork();
   return (
     <>
       {list.status === "loading" && <ListSkeleton />}
-      {list.status === "error" && (
+      {list.status === "error" && offline && (
+        <Center height="100%">
+          <EmptyState
+            icon={<Icon icon={SignalSlashIcon} size="lg" color="secondary" />}
+            title={t("mail.offlineList")}
+          />
+        </Center>
+      )}
+      {list.status === "error" && !offline && (
         <Banner
           status="error"
           title={t("mail.listFailed")}

@@ -2,11 +2,14 @@ import { DurableObject } from "cloudflare:workers";
 import type { Hono } from "hono";
 import type { AppEnv, Env } from "../env";
 import { errorText, fail, log } from "../http";
+import { pushNewMail } from "../push/send";
 
 // Real-time push (docs/M4-mailbox.md). One Hub holds every open mailbox page as a hibernatable
 // WebSocket tagged with its session id hash. Events carry message ids only; the page refetches
 // through the authenticated routes. Clients send "ping", which the runtime answers without
-// waking the object, so an idle connection is not billed for duration.
+// waking the object, so an idle connection is not billed for duration. For a new message the Hub
+// also sends Web Push to the devices without an open page (docs/M4b-pwa.md, "Sending"), so the
+// encryption and the push requests run in this invocation, not in the queue consumer.
 
 /** Set by the Worker after it validated the session; a client cannot reach the Hub directly. */
 const SESSION_HEADER = "x-melodymail-session";
@@ -31,17 +34,29 @@ export class Hub extends DurableObject<Env> {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  /** Sends the event to every open page; returns how many sockets it reached. */
-  notify(event: HubEvent): number {
+  /**
+   * Sends the event to every open page and returns how many sockets it reached. Every device
+   * whose session has no page open gets a push; a session with an open page notifies itself
+   * while hidden (web/src/pwa/notifyHidden.ts). A push failure is logged and never fails the
+   * caller.
+   */
+  async notify(event: HubEvent): Promise<number> {
     const data = JSON.stringify(event);
     let sent = 0;
+    const reached = new Set<string>();
     for (const ws of this.ctx.getWebSockets()) {
       try {
         ws.send(data);
         sent++;
+        for (const tag of this.ctx.getTags(ws)) reached.add(tag);
       } catch {
         // A socket closing right now; its page reconnects and refetches.
       }
+    }
+    try {
+      await pushNewMail(this.env, event.id, [...reached]);
+    } catch (err) {
+      log("warn", "push_new_mail_failed", { messageId: event.id, error: errorText(err) });
     }
     return sent;
   }

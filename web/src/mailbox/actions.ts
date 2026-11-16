@@ -1,4 +1,4 @@
-import type { ReaderAction } from "../reader/Reader";
+import type { ReaderAction } from "../reader/ReaderToolbar";
 import type { Flags, ListQuery, MessageItem } from "./api";
 
 /** The flags each toolbar and shortcut action sets. */

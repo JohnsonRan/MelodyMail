@@ -9,7 +9,8 @@
     "security": "Security",
     "domains": "Domains",
     "addresses": "Addresses",
-    "forwarding": "Forwarding"
+    "forwarding": "Forwarding",
+    "notifications": "Notifications"
   },
   "folder": {
     "inbox": "Inbox",
@@ -47,6 +48,7 @@
     "markUnread": "Mark as unread",
     "backToList": "Back to the list",
     "showRemoteImages": "Show remote images",
+    "darkReading": "Dark reading",
     "remoteBlocked": "Remote images and styles in this message are blocked to protect your privacy.",
     "deleteForever": "Delete forever",
     "deleteForeverTitle": "Delete this message forever?",
@@ -54,6 +56,7 @@
     "reader": "Reading pane",
     "nothingOpen": "Select a message to read it",
     "listFailed": "The messages could not be loaded.",
+    "offlineList": "Your mail loads when you're back online.",
     "threadFailed": "This conversation could not be loaded. Try again.",
     "readFailed": "This message could not be read",
     "readFailedDescription": "Download the original message to open it in another mail app.",
@@ -208,7 +211,10 @@
     "invalid_email": "This is not a valid email address. Check it and try again.",
     "target_exists": "This forwarding address is already added.",
     "target_in_use": "Addresses still forward to this address. Confirm removing it from them.",
-    "not_in_trash": "Only messages in Trash can be deleted forever. Move it to Trash first."
+    "not_in_trash": "Only messages in Trash can be deleted forever. Move it to Trash first.",
+    "not_subscribed": "This device isn't subscribed. Turn notifications on first.",
+    "push_failed": "The notification couldn't be delivered. Try again later.",
+    "invalid_subscription": "This browser's subscription couldn't be saved. Try again."
   },
   "common": {
     "cancel": "Cancel"
@@ -322,5 +328,42 @@
     "removeDescription": "No mail is forwarded to this address any more.",
     "removeInUse": "It is removed from these addresses: {{addresses}}. This cannot be undone.",
     "switchesToStore": "This was the last forwarding address of {{addresses}}, so they stop being forward-only and keep a copy in MelodyMail."
+  },
+  "system": {
+    "offlineTitle": "You're offline",
+    "offlineDescription": "MelodyMail reconnects when the network is back.",
+    "updateTitle": "A new version is available",
+    "updateDescription": "Reload to start using it.",
+    "reload": "Reload"
+  },
+  "notification": {
+    "newMail": "New mail",
+    "testBody": "Notifications work on this device."
+  },
+  "notifications": {
+    "title": "Notifications",
+    "sectionTitle": "Notifications on this device",
+    "description": "Get a notification for new mail while MelodyMail is closed. It shows the sender and the subject, never the message text.",
+    "switch": "Notify me about new mail",
+    "stateOn": "On for this device.",
+    "stateOff": "Off for this device.",
+    "sendTest": "Send test notification",
+    "testSent": "Test notification sent. It appears in a few seconds.",
+    "turnedOn": "Notifications turned on.",
+    "turnedOff": "Notifications turned off.",
+    "blockedTitle": "Notifications are blocked",
+    "blockedDescription": "Allow notifications for this site in your browser's settings, then reload this page.",
+    "notSetUpTitle": "Push isn't set up on this server",
+    "notSetUpDescription": "Add a VAPID key pair to the Worker first. The \"Notifications\" section of the README shows how.",
+    "unsupported": {
+      "browser": {
+        "title": "This browser can't show push notifications",
+        "description": "Use a current version of Chrome, Edge, Firefox or Safari."
+      },
+      "homeScreen": {
+        "title": "Add MelodyMail to your Home Screen first",
+        "description": "On iPhone and iPad, only the app opened from the Home Screen can get notifications. In Safari, tap Share, then Add to Home Screen."
+      }
+    }
   }
 }

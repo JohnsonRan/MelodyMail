@@ -137,7 +137,8 @@ events to open pages.
 
 Messages are parsed in the browser. Sender HTML is shown in a sandboxed frame without scripts,
 remote images stay blocked until "Show remote images" is chosen for that message, and
-attachments are always downloaded, never opened in the app.
+attachments are always downloaded, never opened in the app. In the dark theme, "Dark reading" in
+the reader shows one HTML message inverted; it is off for every message you open.
 
 To fill a local mailbox with the test fixtures, start the Worker and run the seed script. It
 sends every `.eml` in `worker/test/fixtures` through the real `email()` handler of `wrangler dev`
@@ -154,3 +155,45 @@ The browser security suite needs Chromium for Playwright once:
 ```sh
 bun run --cwd web test:browser
 ```
+
+## Install and offline
+
+MelodyMail is an installable web app. In Chrome or Edge, choose Install in the address bar; on
+iPhone and iPad, choose Share, then Add to Home Screen. Its service worker caches only the app
+itself, never mail or API answers, so the app opens without a network and says it is offline;
+reading mail needs the network. After a deploy, open pages show "A new version is available"
+with a Reload action.
+
+The icons in `web/public` are generated from `web/public/logo.svg`. After changing the logo,
+run `bun run --cwd web icons` and commit the PNG files.
+
+## Notifications
+
+MelodyMail sends a Web Push notification for new mail to each device that has no MelodyMail page
+open; an open page that is hidden shows the notification itself. The notification shows the
+sender and the subject, never the message text. Push stays off until the Worker has a VAPID key
+pair and subject; Settings > Notifications then says push is not set up.
+
+Apply migration 0008 after deploying this version (`bun run --cwd worker db:migrate:remote`).
+Then generate a key pair and store it from `worker/`:
+
+```sh
+bun run vapid                                   # prints VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY
+bun run wrangler secret put VAPID_PRIVATE_KEY
+bun run wrangler secret put VAPID_PUBLIC_KEY
+bun run wrangler secret put VAPID_SUBJECT       # the app's own origin, e.g. https://mail.example.com
+```
+
+`VAPID_SUBJECT` must be an `https://` URL. Push services use it to contact the sender, so no
+e-mail address is sent to them. For `wrangler dev`, put the three values in `worker/.dev.vars`.
+
+Changing the key pair ends every subscription: push services refuse messages signed with a key the
+browser did not subscribe with. Delete the old rows, then turn notifications on again in
+Settings > Notifications on each device:
+
+```sh
+bun run wrangler d1 execute melodymail --remote --command "DELETE FROM push_subscriptions"
+```
+
+Signing a device out, or revoking its session, also ends its notifications until that device
+signs in again.

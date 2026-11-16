@@ -15,6 +15,7 @@ const TABLES = [
   "domains",
   "owner",
   "passkeys",
+  "push_subscriptions",
   "sessions",
   "auth_challenges",
   "login_attempts",

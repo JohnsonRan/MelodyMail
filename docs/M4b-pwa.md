@@ -91,21 +91,26 @@ idle-expired) so a session that expired but was not swept yet gets nothing.
 | `POST /api/push/test` | Sends one test notification to the current session's subscription. Rate limited with the existing limiter pattern. |
 
 Endpoint validation on PUT: `https:` only, and the host must belong to a known push service:
-`fcm.googleapis.com`, `updates.push.services.mozilla.com`, `*.push.apple.com`,
+`fcm.googleapis.com`, `jmt17.google.com` (Chrome Dev, Canary and other non-stable Chromium
+builds; added after the owner's real push test), `updates.push.services.mozilla.com`, `*.push.apple.com`,
 `*.notify.windows.com`. Anything else is 400. Reason: the Worker POSTs to this URL; the allowlist
 keeps it from becoming a request relay even with a stolen session. Key lengths are checked
 (`p256dh` a 65-byte P-256 point, `auth` 16 bytes).
 
 ### Sending
 
-- The queue consumer already calls `hub.notify({ id })` after a parse. The Hub returns how many
-  sockets it reached. When it reached none, the Hub itself sends the push (one more step inside the
-  same RPC), so the encryption and the subrequests run in the Hub's invocation and the consumer's
-  10 ms CPU budget is untouched. A push failure is logged with ids and status only, and never
-  fails the parse.
+- The queue consumer already calls `hub.notify({ id })` after a parse. The Hub collects the
+  session tags of the sockets it reached and pushes to every subscription whose session has no
+  open page (one more step inside the same RPC), so the encryption and the subrequests run in the
+  Hub's invocation and the consumer's 10 ms CPU budget is untouched. A push failure is logged with
+  ids and status only, and never fails the parse. (Changed after the review of `c0abeaf`: the
+  first rule, "push only when no socket at all", let one open page silence every device.)
 - When a page is open but hidden (another tab, minimized), the page shows the notification itself
-  through `registration.showNotification` on the live event, if permission is granted. So the
-  owner is notified exactly once either way.
+  through `registration.showNotification` on the live event, if permission is granted. So each
+  device is notified once.
+- The signed-in shell stores the browser's subscription again each time it mounts (permission
+  granted, current VAPID key), because the cascade drops the row when a session ends and the
+  browser keeps its subscription across sign-in.
 - Payload (encrypted end to end; the push service sees only size and timing): message id, sender
   display name (or address), subject, and the address it arrived at. Truncate the subject to 200
   characters. No body text, no snippet. This content is an open question for the owner, see below.

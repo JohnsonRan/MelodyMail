@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Server } from "bun";
 import type { Frame } from "playwright";
+import { DARK_READING_STYLE } from "../src/reader/sanitize";
 import { bundle, openSession, type Session, shutdown } from "./browser";
 import type { RenderInput, RenderResult } from "./harness";
 
@@ -223,6 +224,41 @@ describe("hostile HTML corpus", () => {
       expect(s.popups).toEqual([]);
     });
   }
+
+  test("stays closed with dark reading on", async () => {
+    const html = CORPUS.map((c) => c.html).join("");
+    const { result, s } = await render({ html, darkReading: true });
+    expect(result.sandbox).toBe("allow-popups allow-popups-to-escape-sandbox");
+    expect(result.srcdoc).toStartWith(
+      `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:">`,
+    );
+    expect(result.srcdoc).toContain(DARK_READING_STYLE);
+    expect(result.sanitized).not.toMatch(/<script|javascript:|vbscript:|data:text\/html/i);
+    expect(await posted(s)).toEqual([]);
+    expect(s.remote).toEqual([]);
+    expect(s.popups).toEqual([]);
+  });
+
+  test("dark reading inverts the page and turns pictures back", async () => {
+    const plain = await render({ html: "<p>x</p>" });
+    expect(plain.result.srcdoc).not.toContain("invert(");
+    const img = `<img id="pic" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="><div id="bg" style="background-image:url(data:image/gif;base64,R0lGODlhAQABAAAAACw=)">t</div><p id="text">t</p>`;
+    const { s } = await render({ html: img, darkReading: true });
+    const frame = s.page.frames().find((f) => f !== s.page.mainFrame());
+    if (!frame) throw new Error("no frame");
+    const filters = await frame.evaluate(() =>
+      ["pic", "bg", "text"].map(
+        (id) => getComputedStyle(document.getElementById(id) as Element).filter,
+      ),
+    );
+    const root = await frame.evaluate(() => getComputedStyle(document.documentElement).filter);
+    expect(root).toBe("invert(1) hue-rotate(180deg)");
+    expect(filters).toEqual([
+      "invert(1) hue-rotate(180deg)",
+      "invert(1) hue-rotate(180deg)",
+      "none",
+    ]);
+  });
 
   test("links open a new tab without opener or referrer", async () => {
     const { result, s } = await render({

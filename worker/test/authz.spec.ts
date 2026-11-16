@@ -49,6 +49,10 @@ const GUARDED = [
   "GET /api/search",
   "GET /api/counts",
   "GET /api/events",
+  "GET /api/push/key",
+  "PUT /api/push/subscription",
+  "DELETE /api/push/subscription",
+  "POST /api/push/test",
 ];
 
 describe("authorization", () => {

@@ -1,0 +1,40 @@
+name: pwa
+
+# The PWA suite (Playwright driven by bun test): installability, the service worker cache, the
+# offline shell, the update banner and the notifications settings. Split from the browser suite by
+# owner ruling (2026-11-16) so pull requests wait less: it runs every night on main, by hand, and
+# on pull requests that touch the service worker or its build.
+on:
+  pull_request:
+    paths:
+      - "web/src/sw.ts"
+      - "web/src/pwa/**"
+      - "web/vite.config.ts"
+      - "web/public/**"
+      - "web/index.html"
+      - "web/test/pwa.test.ts"
+      - ".github/workflows/pwa.yml"
+  schedule:
+    - cron: "37 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pwa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pwa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bunx --bun playwright install --with-deps chromium-headless-shell
+        working-directory: web
+      - run: bun run test:pwa

@@ -31,6 +31,19 @@ function useFocusTitleOnNavigate() {
   }, [pathname]);
 }
 
+/**
+ * Registers the service worker once the page has loaded, from its own chunk, so registration
+ * is not part of first paint (docs/M4b-pwa.md, "Service worker and caching").
+ */
+function useServiceWorker() {
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const start = () => void import("./pwa/register");
+    if (document.readyState === "complete") start();
+    else window.addEventListener("load", start, { once: true });
+  }, []);
+}
+
 function DocumentMeta({ locale }: { locale: Locale }) {
   const { t } = useTranslation();
   useEffect(() => {
@@ -48,6 +61,7 @@ export function RootLayout({
   initialMessages: AstryxMessages;
 }) {
   useFocusTitleOnNavigate();
+  useServiceWorker();
   return (
     <PreferencesProvider initialLocale={initialLocale} initialMessages={initialMessages}>
       {({ locale, mode, astryxMessages }) => (

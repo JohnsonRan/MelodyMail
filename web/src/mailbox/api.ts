@@ -57,6 +57,11 @@ export function listMessages(query: ListQuery, cursor?: string | null): Promise<
   return api<MessagePage>("GET", `${path}?${params}`);
 }
 
+/** One message's metadata (GET /api/messages/:id). */
+export function getMessage(id: string): Promise<{ message: MessageDetail }> {
+  return api("GET", `/messages/${encodeURIComponent(id)}`);
+}
+
 export function getThread(id: string): Promise<{ messages: MessageDetail[] }> {
   return api("GET", `/messages/${encodeURIComponent(id)}/thread`);
 }

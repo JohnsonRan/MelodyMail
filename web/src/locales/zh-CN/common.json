@@ -9,7 +9,8 @@
     "security": "安全",
     "domains": "域名",
     "addresses": "地址",
-    "forwarding": "转发"
+    "forwarding": "转发",
+    "notifications": "通知"
   },
   "folder": {
     "inbox": "收件箱",
@@ -47,6 +48,7 @@
     "markUnread": "标记为未读",
     "backToList": "返回列表",
     "showRemoteImages": "显示远程图片",
+    "darkReading": "深色阅读",
     "remoteBlocked": "为保护你的隐私，此邮件中的远程图片和样式已被阻止。",
     "deleteForever": "永久删除",
     "deleteForeverTitle": "要永久删除此邮件吗？",
@@ -54,6 +56,7 @@
     "reader": "阅读窗格",
     "nothingOpen": "选择一封邮件进行阅读",
     "listFailed": "无法加载邮件。",
+    "offlineList": "恢复联网后会加载你的邮件。",
     "threadFailed": "无法加载此会话。请重试。",
     "readFailed": "无法读取此邮件",
     "readFailedDescription": "下载原始邮件，用其他邮件应用打开。",
@@ -208,7 +211,10 @@
     "invalid_email": "这不是有效的电子邮件地址。请检查后重试。",
     "target_exists": "此转发地址已添加。",
     "target_in_use": "仍有地址转发到此地址。请确认将它从这些地址中移除。",
-    "not_in_trash": "只能永久删除“已删除”中的邮件。请先将其移到“已删除”。"
+    "not_in_trash": "只能永久删除“已删除”中的邮件。请先将其移到“已删除”。",
+    "not_subscribed": "此设备尚未订阅。请先开启通知。",
+    "push_failed": "无法发送通知。请稍后重试。",
+    "invalid_subscription": "无法保存此浏览器的订阅。请重试。"
   },
   "common": {
     "cancel": "取消"
@@ -322,5 +328,42 @@
     "removeDescription": "不会再有邮件转发到此地址。",
     "removeInUse": "它将从以下地址中移除：{{addresses}}。此操作无法撤消。",
     "switchesToStore": "它是 {{addresses}} 的最后一个转发地址，因此这些地址将不再只转发，而是在 MelodyMail 中保存副本。"
+  },
+  "system": {
+    "offlineTitle": "你已离线",
+    "offlineDescription": "网络恢复后，MelodyMail 会自动重新连接。",
+    "updateTitle": "有新版本可用",
+    "updateDescription": "重新加载即可开始使用。",
+    "reload": "重新加载"
+  },
+  "notification": {
+    "newMail": "新邮件",
+    "testBody": "此设备可以正常接收通知。"
+  },
+  "notifications": {
+    "title": "通知",
+    "sectionTitle": "此设备上的通知",
+    "description": "MelodyMail 未打开时，收到新邮件会通知你。通知显示发件人和主题，不显示邮件正文。",
+    "switch": "新邮件通知",
+    "stateOn": "已在此设备上开启。",
+    "stateOff": "已在此设备上关闭。",
+    "sendTest": "发送测试通知",
+    "testSent": "测试通知已发送，几秒钟后会显示。",
+    "turnedOn": "已开启通知。",
+    "turnedOff": "已关闭通知。",
+    "blockedTitle": "通知已被阻止",
+    "blockedDescription": "请在浏览器设置中允许此网站发送通知，然后重新加载此页面。",
+    "notSetUpTitle": "此服务器尚未设置推送",
+    "notSetUpDescription": "请先为 Worker 添加 VAPID 密钥对。操作步骤见 README 中的“Notifications”一节。",
+    "unsupported": {
+      "browser": {
+        "title": "此浏览器无法显示推送通知",
+        "description": "请使用最新版本的 Chrome、Edge、Firefox 或 Safari。"
+      },
+      "homeScreen": {
+        "title": "请先将 MelodyMail 添加到主屏幕",
+        "description": "在 iPhone 和 iPad 上，只有从主屏幕打开的应用才能收到通知。请在 Safari 中轻点“共享”，然后轻点“添加到主屏幕”。"
+      }
+    }
   }
 }
