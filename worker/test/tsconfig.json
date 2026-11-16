@@ -3,5 +3,7 @@
   "compilerOptions": {
     "types": ["@cloudflare/workers-types", "@cloudflare/vitest-plugin/types"]
   },
-  "include": ["./**/*.ts", "../src", "../bench", "../scripts"]
+  "include": ["./**/*.ts", "../src", "../bench", "../scripts"],
+  // Bun programs that run on the owner's machine, like the root scripts/: no Bun types here.
+  "exclude": ["../scripts/prod-config.ts", "../scripts/backup-restore.ts"]
 }

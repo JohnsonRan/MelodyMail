@@ -9,3 +9,6 @@ coverage/
 test-results/
 playwright-report/
 __pycache__/
+# Production config (docs/M7-ops.md): account ids and the generated file stay on the owner's machine.
+worker/deploy.local.jsonc
+worker/.wrangler-production.jsonc
