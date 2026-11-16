@@ -121,6 +121,10 @@ describe("mailbox end to end", () => {
     await row(s, "note1").click();
     await s.page.getByText("Plain note 1.").waitFor();
     expect(await toggle.count()).toBe(0);
+    // Not remembered: back on the message, it is white again.
+    await row(s, "hostile").click();
+    await toggle.waitFor();
+    expect(await toggle.getAttribute("aria-pressed")).toBe("false");
   });
 
   test("downloads an HTML attachment and never opens it", async () => {

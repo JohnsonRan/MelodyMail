@@ -73,8 +73,6 @@ export default function Reader({
     setThread({ state: "loading" });
     setAllowRemote(new Set());
     setRemote(new Set());
-    setHtml(new Set());
-    setDark(new Set());
     getThread(id)
       .then(({ messages }) => {
         if (!live) return;

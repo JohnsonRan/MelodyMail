@@ -147,7 +147,14 @@ describe("updates", () => {
 // reach (AGENTS.md, hard limits); these pages get a stand-in that keeps one subscription in memory.
 const KEY = Buffer.from([4, ...Array.from({ length: 64 }, (_, i) => i)]).toString("base64url");
 
-async function pushPage(options: { permission?: NotificationPermission; hidden?: boolean } = {}) {
+type PushPageOptions = {
+  permission?: NotificationPermission;
+  hidden?: boolean;
+  /** Starts with a subscription made with another VAPID key. */
+  staleKey?: boolean;
+};
+
+async function pushPage(options: PushPageOptions = {}) {
   const p = await context.newPage();
   await p.addInitScript((opts) => {
     const w = window as unknown as { shown: { title: string; options: NotificationOptions }[] };
@@ -171,6 +178,16 @@ async function pushPage(options: { permission?: NotificationPermission; hidden?:
       };
       return current as PushSubscription;
     };
+    if (opts.staleKey) {
+      current = {
+        options: { applicationServerKey: new Uint8Array(65).buffer },
+        unsubscribe: async () => {
+          current = null;
+          (window as unknown as { unsubscribed: boolean }).unsubscribed = true;
+          return true;
+        },
+      };
+    }
     PushManager.prototype.getSubscription = async () => current as PushSubscription | null;
     ServiceWorkerRegistration.prototype.showNotification = async (title, options = {}) => {
       w.shown.push({ title, options });
@@ -221,6 +238,19 @@ describe("notifications settings", () => {
       path: "/api/push/subscription",
       body: null,
     });
+    await p.close();
+  });
+
+  test("drops a subscription made with an earlier key pair", async () => {
+    app.pushKey = KEY;
+    const p = await pushPage({ permission: "granted", staleKey: true });
+    await p.goto(`${app.origin}/settings/notifications`);
+    const toggle = p.getByRole("switch", { name: "Notify me about new mail" });
+    await toggle.waitFor();
+    expect(await toggle.isChecked()).toBe(false);
+    expect(
+      await p.evaluate(() => (window as unknown as { unsubscribed?: boolean }).unsubscribed),
+    ).toBe(true);
     await p.close();
   });
 
