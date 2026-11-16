@@ -2603,6 +2603,8 @@ two sections tall).
 Plan: `docs/M5c-foreground.md`. Risk class Medium (when Web Push and Telegram go out, a notice on
 the page; no login, secret or stored-data change). Not pushed; waits for review, the owner's look
 at the screenshots and the owner's check on local `wrangler dev`.
+Since the owner's ruling of 2026-11-16 quiet foreground is a switch, off by default; "Done"
+below describes it switched on (see "Review fixes and the owner's switch").
 
 Commits on `39a8302`: `f864d96` the test pool's own assets directory (gate race); `e6562c9` Hub
 foreground reports and quiet notify; `051970d` the page's reports and the notice; and the docs
@@ -2732,12 +2734,12 @@ Timed with the scratchpad's `time-gate.ts` and `time-cmd.ts`, CPU load read befo
 
 1. **Browser tier at 29.7 s on a quiet host, 29.9–30.9 s under load (limit 30 s).** Settled by
    M5b owner ruling 1: the two Telegram suites moved into `bun run test:telegram` with
-   `.github/workflows/telegram.yml` (nightly, by hand, and on pull requests touching the Telegram
-   frontend, the card or its tests). Browser tier now 25.4–26.1 s (55 tests), Telegram tier
+   `.github/workflows/telegram.yml` (nightly, by hand, and, after the review fix, on pull
+   requests touching `web/`, the card or the dependencies, as `browser.yml`). Browser tier now 25.4–26.1 s (55 tests), Telegram tier
    6.5–7.0 s (12 tests), CPU load 0–10%. Its limit, 10 s, is proposed and awaits the owner.
-2. **Stale foreground after a crash.** A page that dies without closing its socket keeps its last
-   report until the runtime closes the socket; the page sends `"bg"` on blur, so the window is
-   short. Accepted in the plan; listed for the owner's check.
+2. **Stale foreground after a crash.** Settled by the review fix below: a report older than 75 s
+   counts as background, so a crashed, sleeping or disconnected page stops holding back push and
+   Telegram within 75 s.
 
 ### Not verified
 
@@ -2757,3 +2759,96 @@ Timed with the scratchpad's `time-gate.ts` and `time-cmd.ts`, CPU load read befo
 and ja-JP. `scrollWidth` equalled the viewport width in all 18. Taken with Playwright against
 `web/dist` and the in-memory API stand-in. The long subject wraps inside the toast; Open and the
 close button stay on its first line.
+
+### Review fixes and the owner's switch (review "FIX FIRST", owner ruling 2026-11-16)
+
+Commits on `d1cc7b2`: `ab658d8` the Hub forgets a report after 75 s; `89406da` the page re-checks
+every second and refreshes `"fg"` every 30 s; `6a39ba1` the Telegram workflow filter; `9e6a927`
+the quiet setting in the Worker (migration 0012); `35ca1f4` the switch in Settings >
+Notifications; `4848d7b` the PWA check for the new switch and one reload less per notice test;
+and the docs commit after them.
+
+**[High] A page could stay "fg" at the Hub indefinitely.** Focus inside the sandboxed reader
+frame hides the top window's blur when the owner then leaves the browser; a laptop that sleeps or
+loses its network leaves a half-open socket. Fix, as asked:
+
+- The page re-evaluates visibility and focus every second, locally, and sends only on a change;
+  while it stays in the foreground it repeats `"fg"` every 30 s.
+- The attachment carries the report time; a socket counts as foreground only while its last
+  `"fg"` is younger than 75 s (`FOREGROUND_TTL_MS`). An attachment from before this change has no
+  time and counts as background until the page reports again.
+
+**[Low] Telegram workflow filter.** Now `web/**`, the card, `package.json`, `bun.lock` and the
+workflow itself, as `browser.yml`.
+
+**Owner ruling: a switch, default off.** "Quiet while MelodyMail is open" in Settings >
+Notifications, stored in a one-row `settings` table (migration 0012, `CREATE TABLE IF NOT
+EXISTS`; no row means off), `GET`/`PUT /api/settings/quiet` with a normal session. Off: the Hub
+notifies exactly as in M5b and sends no `quiet`. On: the behaviour above. The in-page notice
+shows in both modes. The page keeps reporting `"fg"`/`"bg"` with the switch off: it does not
+know the setting, and the reports are cheap (below). `docs/M5c-foreground.md` has the ruling.
+
+Durable Objects cost (developers.cloudflare.com/durable-objects/platform/pricing/, read
+2026-11-16): Workers Free allows 100,000 requests and 13,000 GB-s a day; incoming WebSocket
+messages are billed as requests at 20:1; an object that is idle and eligible for hibernation is
+not billed for duration. A page in the foreground all day sends 2,880 refreshes, 144 billed
+requests, plus one message per tab or window switch; each wakes the Hub for one
+`serializeAttachment`. The setting costs one D1 row read per new mail, and only while a fresh
+`"fg"` exists (Workers Free: 5 million row reads a day).
+
+Proof:
+
+- Worker: a report aged by 74 s still quiets new mail, one aged past 75 s does not, and a
+  repeated `"fg"` makes it fresh again; with the setting off a foreground page changes nothing
+  (`hub.spec.ts`); push goes out while a page reports `"fg"` with the setting off, not with it
+  on, and again once the report is 75 s old (`push-hub.spec.ts`); the same for the Telegram card
+  (`telegram-send.spec.ts`); the setting is off by default, changes with a session that has no
+  fresh passkey, refuses anything but a boolean, and a failed read notifies as usual with a
+  `quiet_setting_failed` warning (`quiet.spec.ts`); both routes are in the authz route walk.
+- Browser: focus moves into the reader's frame, then `hasFocus()` turns false with no top-level
+  event, and `"bg"` arrives; on Playwright's clock nothing is repeated at 29 s, `"fg"` is repeated
+  at 30.5 s, and a background page repeats nothing; the switch starts off, stores the change and
+  shows it after a reload. Tests that move the clock run in a context of their own (Playwright's
+  clock is context-wide; the first try froze the later tests).
+- Migration 0012 applied to the local D1 holding 20 messages; a second `db:migrate:local`
+  reported nothing to apply; the file run again by hand succeeded.
+
+Ablation (`ablate-m5c.ts` with `ablate-quiet-extra.ts`, scratchpad): 37 hunks, 37 red. New ones:
+the 75 s check, the report time, the 1 s re-check, the refresh, refresh only in the foreground,
+the refresh time, reading the setting, a failed read counting as off, the default off, the
+boolean check, storing off, the page storing the switch; the reworked foreground condition and
+its new-mail-only term again. Not ablated: the error banner of the switch section, the copy.
+
+Numbers (dev workstation, Ryzen 9 9950X3D, Bun 1.4.4, CPU load read before each run):
+
+- `bun run check`: 9.59, 9.62, 9.56 s at 0–2% load; 383 worker tests (378 before). Earlier the
+  same day the host ran slower: 10.2–12.0 s, and `d1cc7b2` (before these fixes) measured 10.8 s
+  for the worker suite alone then, against 10.3 s for these fixes, so that was the host.
+- `bun run test:browser`: 26.22, 26.27, 26.25 s at 0–2% load, 58 tests. Before `4848d7b` it took
+  29.0–30.9 s; the notice tests now install their stand-ins before the first navigation instead
+  of loading the inbox twice.
+- `bun run test:pwa`: 12.20, 12.37, 11.73 s at 1–5% load, 11 tests.
+- `bun run test:telegram`: 6.05, 6.04, 6.03 s at 0–5% load, 12 tests.
+- `bun run test:send`: 13.50 s at 2% load, 9 tests (one run).
+- Bundle (gzip -6): total 720.4 → 720.9 kB (limit 770), first paint 311.8 kB unchanged.
+- Files above the 242-line p90: `hub.spec.ts` 280, `push-hub.spec.ts` 245, `telegram-send.spec.ts`
+  295, `stub-app.ts` 254, `pwa.test.ts` 349, `schema.ts` 402 (+13, the table). Same reasons as
+  above; the setting's route tests went into a new `quiet.spec.ts` instead.
+
+Screenshots: 18 more PNG files in `shots-m5c`, `quiet-<locale>-<mode>-<width>-<on|off>.png`:
+Settings > Notifications at 390, 1280 and 1920 px, light and dark, en, zh-CN and ja-JP, the switch
+on at 390 and 1920 px and off at 1280 px. `scrollWidth` equalled the viewport width in all 18.
+The section keeps the page's two-column layout and stacks at 390 px.
+
+Deferred (owner decides after release):
+
+- The Hub's quiet decision can race a blur by milliseconds: mail that arrives as the owner
+  leaves the page may be held back once. Source: M5c review (hypothesis). Waits: the window is
+  one round trip; the setting is off by default.
+- A focused, visible, unattended desktop holds back remote notifications for as long as it stays
+  so, by the owner's rule (the walk-away case). Source: M5c review. Waits: an idle timeout would
+  change the rule; the owner decides.
+
+Not verified: the real iframe case in a headed browser (the review's repro scripts were not
+rerun; the browser test reproduces the missing top-level event with the focus stand-in); real
+sleep or network loss; the switch against the deployed Worker; CI.
