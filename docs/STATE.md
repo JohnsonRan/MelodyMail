@@ -2597,3 +2597,162 @@ light and a dark palette in the three locales (12). `scrollWidth` equalled the v
 all 156. Taken with Playwright against `web/dist` and the in-memory API stand-in. No layout bug
 was found; the page keeps the M4b layout (one column of sections; at 1280 and 1920 px the page is
 two sections tall).
+
+## M5c: in-page notice and quiet foreground (built 2026-11-16, branch `m5c-foreground`)
+
+Plan: `docs/M5c-foreground.md`. Risk class Medium (when Web Push and Telegram go out, a notice on
+the page; no login, secret or stored-data change). Not pushed; waits for review, the owner's look
+at the screenshots and the owner's check on local `wrangler dev`.
+
+Commits on `39a8302`: `f864d96` the test pool's own assets directory (gate race); `e6562c9` Hub
+foreground reports and quiet notify; `051970d` the page's reports and the notice; and the docs
+commit after them.
+
+### Durable Objects facts checked (2026-11-16)
+
+Read from `developers.cloudflare.com/durable-objects/best-practices/websockets/` and
+`/durable-objects/api/state/` (TinyFish `fetch_content`, both pages in full):
+
+- `serializeAttachment` keeps a structured-clone value with the socket "through hibernation as
+  long as the WebSocket remains healthy", at most 16,384 bytes; `deserializeAttachment` returns
+  the last value or `null`.
+- "When a message arrives, the Durable Object wakes up automatically"; the constructor runs again
+  and in-memory state is reset.
+- `setWebSocketAutoResponse` answers a matching request "without waking WebSockets in hibernation
+  and incurring billable duration charges", so `"ping"` stays free; `"fg"` and `"bg"` wake the Hub.
+
+No fact differs from the plan.
+
+### Done
+
+- **Gate race.** The worker test pool serves `worker/test/assets` (one `index.html`) instead of
+  `web/dist` (`miniflare.assets.directory` in `worker/vitest.config.ts`). No worker test reads the
+  SPA; the binding, the SPA fallback and `run_worker_first` still come from `wrangler.jsonc`, and
+  `wrangler dev` and deploy keep `web/dist`. `scripts/check.ts` is unchanged: its steps are now
+  really independent, so they still run at the same time.
+- **Hub.** `webSocketMessage` stores `"fg"` or `"bg"` as `{ foreground }` with
+  `serializeAttachment` and ignores every other message. `notify` for new mail, when any socket
+  reports foreground, sends `{ type, id, quiet: true }` to the pages and skips Web Push and
+  Telegram. A socket that never reported counts as background, so a page from before this change
+  keeps today's behaviour. `"changed"` events are unchanged.
+- **Page.** `MailboxProvider` reports `"fg"` (visible and focused) or `"bg"` when a socket opens
+  and on `visibilitychange`, `focus` and `blur`, once per change and again on each new socket.
+  New mail in the foreground shows an Astryx toast (`useToast`): "New mail from {sender}:
+  {subject}" and an Open button that opens the message; it hides after Astryx's 5 s default. The
+  notices take turns in three `uniqueID` slots, so at most three are visible and a fourth replaces
+  the oldest. A hidden page skips `notifyWhenHidden` for a quiet event. Copy in en, zh-CN and
+  ja-JP (`notification.notice`, `notification.open`).
+- README "Notifications" and "Telegram" describe the foreground rule.
+
+Usability references: Outlook on the web shows "a notification at the top of the Outlook Web App
+window when a new message arrives"
+(https://support.microsoft.com/en-us/outlook/mail-settings), and Outlook.com notifications "pop up
+automatically in the app" and "disappear automatically after a brief time"
+(https://support.microsoft.com/en-us/outlook/mail-and-calendar-notifications-in-outlook-com).
+Divergence: no message text, as everywhere else in MelodyMail.
+
+### Proof
+
+- Worker (`hub.spec.ts`, `push-hub.spec.ts`, `telegram-send.spec.ts`; shared `hub-helpers.ts`):
+  the last `"fg"`/`"bg"` is kept, and `"FG"`, `"fg "`, `"\"bg\""`, `"foreground"` and a binary
+  frame are ignored while `"ping"` is still auto-answered; a fresh `Hub` built on the same state
+  (as after hibernation) marks new mail quiet and leaves `"changed"` alone; a page that reported
+  `"bg"` again does not mark it quiet; no push to any device while another session's page is in
+  the foreground, and a push once it reports `"bg"`; a Telegram card while the page is in the
+  background, none (and no claim row) in the foreground.
+- Web, browser tier (`notice.test.ts`): the report sequence over two visibility changes, blur,
+  focus, blur, a hidden blurred page (no repeat) and focus, then a new `"fg"` after a reconnect;
+  the notice names sender and subject and contains neither the snippet nor the body, is read out
+  by a polite live region and not the assertive one, leaves focus on the focused checkbox, and
+  Open navigates to `?m=` and removes the notice; no notice on a blurred page; the "(no subject)"
+  fallback; four in a row leave three.
+- Web, PWA tier (`pwa.test.ts`): a hidden page with push on shows nothing for a quiet event.
+- Gate race: the scratchpad's `churn.ts` rewrites files in `web/dist` in a tight loop while the
+  worker suite runs. Before `f864d96`: 3 of 3 runs failed with `ENOENT ... web\dist\churn-*.mjs`.
+  After: 3 of 3 green (374 tests). The fix has one hunk; this is its failing-without-fix proof.
+
+### Ablation
+
+The scratchpad's `ablate-m5c.ts` applies one mutation at a time, runs the three worker specs or a
+rebuild with `notice.test.ts` (`pwa.test.ts` for the quiet branch), and restores the file.
+23 hunks, 23 red:
+
+- Hub (7): storing the report, the `"fg"`/`"bg"` filter, the foreground check in `notify`, its
+  new-mail-only condition, the `quiet` flag in the event, the early return before push and
+  Telegram, `foreground === true`.
+- Page reports (9): the report on open, the reset per socket, each of the three listeners, the
+  once-per-change check, the send, the notice only in the foreground, the quiet check before
+  `notifyWhenHidden`. First pass: the blur listener survived (the next `visibilitychange`
+  reported the same `"bg"`); the test now blurs and refocuses without a visibility change.
+- Notice (7): the visibility and the focus terms of `inForeground`, the three slots, the sender,
+  the no-subject copy, Open's dismiss, Open's navigation.
+
+Not ablated: the notice's `getMessage` failure branch (returns without a notice; no test fails a
+fetch there), `worker/test/assets` and the stand-in's report recording (test infrastructure), the
+copy.
+
+### Numbers (2026-11-16, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
+
+Timed with the scratchpad's `time-gate.ts` and `time-cmd.ts`, CPU load read before each run.
+
+- Gate baseline before touching the race, on `39a8302`: 13.32, 13.30, 13.14 s, CPU load 35–60%
+  from other programs on the host. After the race fix, same busy host: 13.76, 16.10, 14.49 s
+  (load 29–88%). On a quiet host after M5c: 9.48, 9.36, 9.34 s, CPU load 0–7%; the base
+  `39a8302` on the same quiet host: 9.49, 9.75, 9.94 s. Worker suite 8.18 s, 378 tests (374
+  before).
+- `bun run test:browser`: 29.67, 29.74, 29.67 s at 2% load, 67 tests (64 before); the base
+  `39a8302` 26.22, 25.34 s at 4–11% load. At 55–70% load: 30.86, 30.57, 29.85 s, against the same
+  tier without `notice.test.ts` at 53–74% load: 27.63, 27.93, 28.77 s. The notice suite adds 3–4
+  s, about 1 s of it the reconnect backoff. Open question 1.
+- `bun run test:pwa`: 12.35, 12.30, 11.68 s, 11 tests, CPU load 0–1% (limit 15 s).
+- Bundle (gzip -6, the scratchpad's `bundle-m5c.ts`, both sides built on this host): total JS +
+  CSS 720.3 → 720.4 kB (limit 770); first paint 311.8 → 311.8 kB (limit 370).
+- Files above the 242-line p90 after M5c: `worker/test/hub.spec.ts` 256 (was 205),
+  `web/test/stub-app.ts` 246 (was 242), `worker/test/telegram-send.spec.ts` 283 (was 275) and
+  `web/test/pwa.test.ts` 349 (was 341). Reason: a new worker spec file adds a workerd start to
+  the merge gate, and the stand-in and PWA files grew by a few lines each. Test-only.
+
+### Deviations from the plan (decisions taken, open to the owner)
+
+1. **Hidden pages stay quiet too.** The plan skips Web Push and Telegram; the owner's request
+   says "send neither the system notification ... nor the Telegram message". A hidden page shows
+   the system notification itself (`notifyWhenHidden`), so the Hub marks the event `quiet` and
+   hidden pages skip it. Without this, a second tab or a phone with the app open in the
+   background would still notify while the owner reads mail elsewhere.
+2. **The race fix is in `worker/vitest.config.ts`, not `scripts/check.ts`.** Running `build`
+   first would add its 1.5–3 s to the 9–14 s worker step and break the 15 s limit under load; the
+   worker suite never needed the SPA.
+3. **Three slots instead of dismissing the oldest.** Dismissing the oldest toast by its handle
+   lost the race when four notices arrived in one batch (four visible in one browser run at 63%
+   load); a slot `uniqueID` lets the viewport replace it.
+4. **The same message twice shows twice** (one per slot); the Hub sends each new message once, so
+   this needs a repeated queue delivery.
+
+### Open questions for the owner
+
+1. **Browser tier at 29.7 s on a quiet host, 29.9–30.9 s under load (limit 30 s).** M5b owner
+   ruling 1 says to move the two Telegram suites into `bun run test:telegram` with its own
+   workflow when a run goes over 30 s; the brief for this build said to ask first, so nothing was
+   moved. Recommendation: move the Telegram suites as ruled.
+2. **Stale foreground after a crash.** A page that dies without closing its socket keeps its last
+   report until the runtime closes the socket; the page sends `"bg"` on blur, so the window is
+   short. Accepted in the plan; listed for the owner's check.
+
+### Not verified
+
+- Real hibernation: the tests build a fresh `Hub` on the same state, which is what a wake does;
+  workerd in the vitest pool was not made to evict the object.
+- A real tab or window switch: headless Chromium reports every page visible and focused, so the
+  tests override `visibilityState` and `hasFocus` and fire the events. The owner's check on local
+  `wrangler dev` covers the real browser (no Telegram traffic needed).
+- Real push services and Telegram (both stubbed).
+- The browser and PWA tiers have not run in CI (nothing pushed). WCAG contrast of the toast is
+  Astryx's own and was not measured.
+
+### Screenshots
+
+18 PNG files in the session scratchpad, folder `shots-m5c` (outside the repository): two notices
+(a short and a long subject) over the inbox at 390, 1280 and 1920 px, light and dark, en, zh-CN
+and ja-JP. `scrollWidth` equalled the viewport width in all 18. Taken with Playwright against
+`web/dist` and the in-memory API stand-in. The long subject wraps inside the toast; Open and the
+close button stay on its first line.

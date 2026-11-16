@@ -172,9 +172,14 @@ run `bun run --cwd web icons` and commit the PNG files.
 
 ## Notifications
 
-MelodyMail sends a Web Push notification for new mail to each device that has no MelodyMail page
-open; an open page that is hidden shows the notification itself. The notification shows the
-sender and the subject, never the message text. Push stays off until the Worker has a VAPID key
+While a MelodyMail page is in the foreground (visible and focused), new mail shows a notice in
+that page with the sender, the subject and an Open button; it hides after a few seconds, and at
+most three show at once. No other notification goes out then: no Web Push, no Telegram message,
+and hidden pages stay quiet, on every device.
+
+When no page is in the foreground, MelodyMail sends a Web Push notification for new mail to each
+device that has no MelodyMail page open; an open page that is hidden shows the notification
+itself. The notification shows the sender and the subject, never the message text. Push stays off until the Worker has a VAPID key
 pair and subject; Settings > Notifications then says push is not set up.
 
 Apply migration 0008 after deploying this version (`bun run --cwd worker db:migrate:remote`).
@@ -207,7 +212,8 @@ MelodyMail can also send a card to one private Telegram chat for each new mail: 
 subject and the address it arrived at, never the message text. The card's buttons open the
 message, mark it read or unread, archive it or move it back to the Inbox, and star it or remove
 the star. Telegram can read these fields, because bot messages are not end-to-end encrypted.
-A card is sent even while a MelodyMail page is open; mute the chat in Telegram to silence it.
+No card is sent while a MelodyMail page is in the foreground (see "Notifications"); otherwise one
+is sent even while a page is open in the background. Mute the chat in Telegram to silence it.
 
 Telegram currently refuses widgets from general bots (`INPUT_MEDIA_WIDGET_NOT_ALLOWED`), so cards
 arrive as plain messages: the sender and the subject, with the same four buttons below them. The
