@@ -38,6 +38,7 @@ describe("telegram cards for new mail", () => {
     await notifyNewMail("m1");
     await notifyNewMail("m1");
     expect(calls.map((c) => c.method)).toEqual(["sendWidget"]);
+    expect(calls[0]?.timed).toBe(true);
     const body = calls[0]?.body ?? {};
     expect(body).toMatchObject({
       chat_id: CHAT,
@@ -69,7 +70,7 @@ describe("telegram cards for new mail", () => {
       from: `"${'山田\\"太郎'.repeat(60)}" <yamada@example.jp>`,
     });
     await env.DB.prepare("UPDATE messages SET envelope_to = ? WHERE id = ?")
-      .bind(`${"a".repeat(64)}@${"b".repeat(13)}.jp`, id)
+      .bind(`${"a".repeat(64)}@${"b".repeat(250)}.jp`, id)
       .run();
     const calls = stubTelegram(sentWidget);
     await notifyNewMail(id);
@@ -78,6 +79,7 @@ describe("telegram cards for new mail", () => {
     expect(new TextEncoder().encode(data).byteLength).toBeLessThanOrEqual(1024);
     const parsed = JSON.parse(data);
     expect(parsed.s.length).toBeLessThan(200 * 4);
+    expect(parsed.t.length).toBe(200);
     expect(parsed.u.length).toBeLessThanOrEqual(256);
     expect(String(body.caption).length).toBeLessThanOrEqual(1024);
   });
@@ -91,6 +93,7 @@ describe("telegram cards for new mail", () => {
   });
 
   it("sends nothing without a bound chat or without a token", async () => {
+    const warn = vi.spyOn(console, "warn");
     await seedTelegram({ chatId: null });
     await seedMessage({ id: "m1" });
     const calls = stubTelegram(sentWidget);
@@ -98,6 +101,7 @@ describe("telegram cards for new mail", () => {
     await env.DB.prepare("UPDATE telegram SET chat_id = ?").bind(CHAT).run();
     await telegramNewMail({ ...env, TELEGRAM_BOT_TOKEN: undefined }, "m1");
     expect(calls).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
     expect(await cardRows()).toEqual([]);
   });
 
@@ -155,6 +159,15 @@ describe("telegram cards for new mail", () => {
     stubTelegram(sentWidget);
     await notifyNewMail("m9");
     expect((await telegramRow())?.lastError).toBeNull();
+  });
+
+  it("records a 200 without a Bot API answer as a failure", async () => {
+    await seedTelegram();
+    await seedMessage({ id: "m1" });
+    stubTelegram(() => new Response("{}"));
+    await notifyNewMail("m1");
+    expect((await telegramRow())?.lastError).toBe("failed");
+    expect(await cardRows()).toEqual([{ messageId: "m1", chatId: CHAT, tgMessageId: null }]);
   });
 
   it("never fails the notification when Telegram cannot be reached", async () => {

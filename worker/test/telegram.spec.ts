@@ -115,6 +115,29 @@ describe("telegram status and connect", () => {
     expect(await telegramRow()).toBeNull();
   });
 
+  it("stores nothing when setWebhook fails", async () => {
+    const calls = stubTelegram((method) =>
+      method === "getMe" ? ok({ username: "melody_test_bot" }) : botError(400, "Bad Request"),
+    );
+    const res = await (await freshClient()).request("POST", "/api/telegram/link", {});
+    expect(res.status).toBe(502);
+    expect(calls.map((c) => c.method)).toEqual(["getMe", "setWebhook"]);
+    expect(await telegramRow()).toBeNull();
+  });
+
+  it("refuses an origin too long for a card link", async () => {
+    const calls = stubTelegram();
+    const host = `${"a".repeat(63)}.${"b".repeat(63)}.${"c".repeat(30)}.test`;
+    const res = await requestAt(
+      await freshClient(),
+      `https://${host}`,
+      "POST",
+      "/api/telegram/link",
+    );
+    expect(res.status).toBe(409);
+    expect(calls).toEqual([]);
+  });
+
   it("cancels a pending code", async () => {
     await seedTelegram({ chatId: null, code: "abc" });
     const client = await signedIn();
@@ -152,6 +175,11 @@ describe("telegram disconnect and test card", () => {
     expect(await client.json("POST", "/api/telegram/test", {}, 409)).toEqual({
       error: "telegram_not_connected",
     });
+    await seedTelegram({ chatId: null });
+    expect(await client.json("POST", "/api/telegram/test", {}, 409)).toEqual({
+      error: "telegram_not_connected",
+    });
+    await env.DB.prepare("DELETE FROM telegram").run();
     await seedTelegram({ language: "ja-JP" });
     const calls = stubTelegram((method) =>
       method === "sendWidget" ? ok({ message_id: 7 }) : ok(),

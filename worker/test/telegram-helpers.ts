@@ -11,7 +11,13 @@ import { signedIn } from "./send-helpers";
 export const SECRET = "test_webhook_secret-0123456789abcdefghijklmn";
 export const CHAT = 111_111_111;
 
-export type BotCall = { method: string; url: string; body: Record<string, unknown> };
+export type BotCall = {
+  method: string;
+  url: string;
+  body: Record<string, unknown>;
+  /** Whether the call carried an abort signal (the timeout). */
+  timed: boolean;
+};
 
 export const ok = (result: unknown = true) => Response.json({ ok: true, result });
 export const botError = (status: number, description: string) =>
@@ -31,7 +37,12 @@ export function stubTelegram(
     if (!req.url.startsWith(env.TELEGRAM_API_URL))
       throw new Error("outbound fetch is off in tests");
     const method = req.url.split("/").pop() ?? "";
-    calls.push({ method, url: req.url, body: (await req.json()) as Record<string, unknown> });
+    calls.push({
+      method,
+      url: req.url,
+      body: (await req.json()) as Record<string, unknown>,
+      timed: init?.signal instanceof AbortSignal,
+    });
     return answer(method, calls.length - 1);
   });
   return calls;

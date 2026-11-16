@@ -123,7 +123,6 @@ async function act(c: Context<AppEnv>, config: Config, query: NonNullable<Update
     });
   const chatId = query.chat?.id;
   if (
-    config.chatId === null ||
     query.chat?.type !== "private" ||
     chatId !== config.chatId ||
     query.from?.id !== config.chatId

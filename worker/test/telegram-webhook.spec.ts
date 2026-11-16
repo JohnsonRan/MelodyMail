@@ -1,5 +1,5 @@
 import { env, exports } from "cloudflare:workers";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Client, ORIGIN, setupOwner, totpCode } from "./helpers";
 import { seedMessage } from "./mailbox-helpers";
 import { signedIn } from "./send-helpers";
@@ -9,7 +9,6 @@ import {
   cardFor,
   cardRows,
   message,
-  ok,
   query,
   SECRET,
   seedTelegram,
@@ -50,6 +49,20 @@ describe("telegram webhook authentication", () => {
       body: JSON.stringify(message("/start code-1")),
     });
     expect(declared.status).toBe(200);
+    // A chunked body declares no length; the bytes read are counted too.
+    const bytes = new TextEncoder().encode(big);
+    const chunked = await exports.default.fetch(`${ORIGIN}/api/webhooks/telegram`, {
+      method: "POST",
+      headers: { "x-telegram-bot-api-secret-token": SECRET },
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      }),
+    });
+    expect(chunked.status).toBe(200);
+    expect(await chunked.text()).toBe("");
     expect((await webhook("{not json")).status).toBe(200);
     expect((await telegramRow())?.chatId).toBeNull();
   });
@@ -70,8 +83,12 @@ describe("binding a chat", () => {
       language: "zh-CN",
       codeHash: null,
     });
-    const again = await webhook(message("/start code-1", { id: 222 }, { id: 222 }));
-    expect(((await again.json()) as { text: string }).text).toMatch(/^This code is invalid/);
+    const again = await webhook(
+      message("/start code-1", { id: 222 }, { id: 222, language_code: "ja" }),
+    );
+    expect(((await again.json()) as { text: string }).text).toMatch(
+      /^このコードは無効か期限切れです。/,
+    );
     expect((await telegramRow())?.chatId).toBe(CHAT);
   });
 
@@ -233,12 +250,15 @@ describe("card buttons", () => {
     await seedTelegram();
     await seedMessage({ id: "m1" });
     await cardFor("m1");
-    for (const failure of [
-      botError(400, "Bad Request: message is not modified"),
-      botError(500, "Internal"),
-    ]) {
-      stubTelegram(() => failure.clone());
+    for (const [status, description] of [
+      [400, "Bad Request: message is not modified"],
+      [500, "Internal"],
+    ] as const) {
+      stubTelegram(() => botError(status, description));
+      const warn = vi.spyOn(console, "warn");
       const res = await webhook(query("read:1"));
+      // Not modified is a success: logged as info, not as a warning.
+      expect(warn.mock.calls.length > 0, String(status)).toBe(status === 500);
       expect(JSON.parse(((await res.json()) as { data: string }).data)).toEqual({
         r: 1,
         a: 0,
