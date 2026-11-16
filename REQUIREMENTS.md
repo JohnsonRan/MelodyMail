@@ -129,6 +129,7 @@ Backend endpoints with no frontend caller:
 | GET /api/health | deploy and uptime checks; the app probes it while offline (`web/src/network.ts`) | liveness probe; carries no data |
 | GET /api/uploads/:id/blob | Resend, fetching an attachment of a message being sent | public, opened only by an HMAC-signed URL valid for 24 hours (`worker/src/send/signed-url.ts`) |
 | POST /api/webhooks/resend | Resend delivery events | public, authenticated by the Svix signature (`worker/src/send/webhook.ts`) |
+| POST /api/webhooks/telegram | Telegram updates (the `/start` that binds the chat, card button taps) | public, authenticated by the secret token Connect registers; only its SHA-256 is stored (`worker/src/telegram/webhook.ts`) |
 
 Intentional designs that look like defects:
 

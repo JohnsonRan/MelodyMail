@@ -15,11 +15,12 @@ describe("api", () => {
   });
 
   it("points every upstream at an unresolvable host and a fake key in tests", () => {
-    for (const url of [env.RESEND_API_URL, env.DOH_URL]) {
+    for (const url of [env.RESEND_API_URL, env.DOH_URL, env.TELEGRAM_API_URL]) {
       expect(new URL(url).hostname).toMatch(/\.invalid$/);
     }
     // wrangler also loads worker/.dev.vars, which may hold the owner's real key; the test
     // binding must win. Compared as a boolean so that a failure never prints the key.
     expect(env.RESEND_API_KEY === "re_test_not_a_real_key").toBe(true);
+    expect(env.TELEGRAM_BOT_TOKEN === "123456:test-not-a-real-token").toBe(true);
   });
 });

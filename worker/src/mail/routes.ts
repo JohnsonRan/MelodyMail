@@ -1,7 +1,7 @@
 import type { Context, Hono } from "hono";
 import { audit } from "../auth/store";
 import { parseFlag } from "../domains/validate";
-import type { AppEnv } from "../env";
+import type { AppEnv, Env } from "../env";
 import { errorText, fail, log, readJson } from "../http";
 import { searchFilter } from "./search";
 
@@ -99,7 +99,7 @@ async function page(
   });
 }
 
-type Flags = { read?: boolean; starred?: boolean; archived?: boolean; trashed?: boolean };
+export type Flags = { read?: boolean; starred?: boolean; archived?: boolean; trashed?: boolean };
 
 function parseFlags(body: Record<string, unknown>): Flags | null {
   const flags: Flags = {};
@@ -113,9 +113,12 @@ function parseFlags(body: Record<string, unknown>): Flags | null {
 
 const flag = (value: boolean | undefined) => (value === undefined ? null : Number(value));
 
-/** One UPDATE for any number of ids; a flag left out keeps its value. */
-function updateFlags(c: Context<AppEnv>, ids: string[], flags: Flags) {
-  return c.env.DB.prepare(
+/**
+ * One UPDATE for any number of ids; a flag left out keeps its value. The panel and the Telegram
+ * card buttons both change flags through this function.
+ */
+export function updateMessageFlags(env: Env, ids: string[], flags: Flags) {
+  return env.DB.prepare(
     `UPDATE messages SET read = COALESCE(?, read), starred = COALESCE(?, starred),
        archived = COALESCE(?, archived), trashed = COALESCE(?, trashed)
      WHERE id IN (SELECT value FROM json_each(?))`,
@@ -166,7 +169,7 @@ export function registerMessageRoutes(messages: Hono<AppEnv>): void {
     }
     if (ids.length > BULK_MAX) return fail(c, 400, "too_many_ids");
     // A repeated id matches its row once: IN (json_each) is a set test.
-    const result = await updateFlags(c, ids, flags);
+    const result = await updateMessageFlags(c.env, ids, flags);
     return c.json({ updated: result.meta.changes });
   });
 
@@ -221,7 +224,7 @@ export function registerMessageRoutes(messages: Hono<AppEnv>): void {
     const body = await readJson(c);
     const flags = body && parseFlags(body);
     if (!flags) return fail(c, 400, "bad_request");
-    const result = await updateFlags(c, [c.req.param("id")], flags);
+    const result = await updateMessageFlags(c.env, [c.req.param("id")], flags);
     return result.meta.changes > 0 ? c.json({ ok: true }) : fail(c, 404, "not_found");
   });
 

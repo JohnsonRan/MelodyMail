@@ -3,13 +3,15 @@ import type { Hono } from "hono";
 import type { AppEnv, Env } from "../env";
 import { errorText, fail, log } from "../http";
 import { pushNewMail } from "../push/send";
+import { telegramNewMail } from "../telegram/send";
 
 // Real-time push (docs/M4-mailbox.md). One Hub holds every open mailbox page as a hibernatable
 // WebSocket tagged with its session id hash. Events carry message ids only; the page refetches
 // through the authenticated routes. Clients send "ping", which the runtime answers without
 // waking the object, so an idle connection is not billed for duration. For a new message the Hub
-// also sends Web Push to the devices without an open page (docs/M4b-pwa.md, "Sending"), so the
-// encryption and the push requests run in this invocation, not in the queue consumer.
+// also sends Web Push to the devices without an open page (docs/M4b-pwa.md, "Sending") and the
+// Telegram card (docs/M5b-telegram.md, "Sending"), so the encryption and the upstream requests run
+// in this invocation, not in the queue consumer.
 
 /** Set by the Worker after it validated the session; a client cannot reach the Hub directly. */
 const SESSION_HEADER = "x-melodymail-session";
@@ -39,8 +41,8 @@ export class Hub extends DurableObject<Env> {
   /**
    * Sends the event to every open page and returns how many sockets it reached. Every device
    * whose session has no page open gets a push; a session with an open page notifies itself
-   * while hidden (web/src/pwa/notifyHidden.ts). A push failure is logged and never fails the
-   * caller.
+   * while hidden (web/src/pwa/notifyHidden.ts). The Telegram card goes out whether or not a page
+   * is open (owner ruling 3). A push or Telegram failure is logged and never fails the caller.
    */
   async notify(event: HubEvent): Promise<number> {
     const data = JSON.stringify(event);
@@ -56,11 +58,14 @@ export class Hub extends DurableObject<Env> {
       }
     }
     if (event.type !== "message") return sent;
-    try {
-      await pushNewMail(this.env, event.id, [...reached]);
-    } catch (err) {
-      log("warn", "push_new_mail_failed", { messageId: event.id, error: errorText(err) });
-    }
+    await Promise.all([
+      pushNewMail(this.env, event.id, [...reached]).catch((err) => {
+        log("warn", "push_new_mail_failed", { messageId: event.id, error: errorText(err) });
+      }),
+      telegramNewMail(this.env, event.id).catch((err) => {
+        log("warn", "telegram_new_mail_failed", { messageId: event.id, error: errorText(err) });
+      }),
+    ]);
     return sent;
   }
 

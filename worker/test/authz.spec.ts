@@ -16,6 +16,8 @@ const PUBLIC = [
   "GET /api/uploads/:id/blob",
   // Resend delivery events; Svix signature (docs/M5-sending.md).
   "POST /api/webhooks/resend",
+  // Telegram updates; secret token header (docs/M5b-telegram.md).
+  "POST /api/webhooks/telegram",
 ];
 
 // Every other route, listed so that a new route fails this file until someone decides.
@@ -67,6 +69,11 @@ const GUARDED = [
   "PUT /api/uploads",
   "GET /api/uploads/:id",
   "DELETE /api/uploads/:id",
+  "GET /api/telegram",
+  "POST /api/telegram/link",
+  "DELETE /api/telegram/link",
+  "DELETE /api/telegram",
+  "POST /api/telegram/test",
 ];
 
 describe("authorization", () => {

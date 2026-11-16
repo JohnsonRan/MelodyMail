@@ -26,6 +26,9 @@ export default defineConfig({
           RESEND_API_KEY: "re_test_not_a_real_key",
           RESEND_WEBHOOK_SECRET: `whsec_${btoa(crypto.randomUUID())}`,
           UPLOAD_URL_KEY: crypto.randomUUID(),
+          // Set here so a token in a local .dev.vars never reaches the tests; Telegram is stubbed.
+          TELEGRAM_BOT_TOKEN: "123456:test-not-a-real-token",
+          TELEGRAM_API_URL: "https://api.telegram.invalid",
         },
       },
     }),

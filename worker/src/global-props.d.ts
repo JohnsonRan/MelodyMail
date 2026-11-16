@@ -11,6 +11,8 @@ declare namespace Cloudflare {
     AUTH_LIMITER: RateLimit;
     /** Abuse guard on the push test send, keyed by session. */
     PUSH_LIMITER: RateLimit;
+    /** Abuse guard on Telegram Connect and the test card, keyed by session. */
+    TELEGRAM_LIMITER: RateLimit;
     /** Raw inbound messages. */
     MAIL: R2Bucket;
     /** Producer for melodymail-inbound; the body is { id } of a stored message. */
@@ -38,7 +40,17 @@ declare namespace Cloudflare {
     /** Plan limits shown with the quota (Resend Free: 100 per UTC day, 3,000 per month). */
     RESEND_DAILY_LIMIT: string;
     RESEND_MONTHLY_LIMIT: string;
+    /** Worker secret: the Telegram bot token from BotFather; Telegram is off while it is unset. */
+    TELEGRAM_BOT_TOKEN?: string;
+    /** The Telegram Bot API origin. */
+    TELEGRAM_API_URL: string;
   }
+}
+
+/** Wrangler's default module rules import .html as text (the Telegram card). */
+declare module "*.html" {
+  const text: string;
+  export default text;
 }
 
 /** The inbound queue message: the id of a messages row with status "stored". */

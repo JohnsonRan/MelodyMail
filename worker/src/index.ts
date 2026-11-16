@@ -17,6 +17,8 @@ import { registerSendInfoRoutes } from "./send/info";
 import { registerSendRoute } from "./send/send";
 import { registerUploadBlobRoute, registerUploadRoutes } from "./send/uploads";
 import { registerWebhookRoute } from "./send/webhook";
+import { registerTelegramRoutes } from "./telegram/routes";
+import { registerTelegramWebhook } from "./telegram/webhook";
 
 export { Hub } from "./mail/hub";
 export type { Env };
@@ -54,6 +56,11 @@ registerDraftRoutes(app.basePath("/drafts"));
 registerUploadRoutes(app.basePath("/uploads"));
 registerUploadBlobRoute(app);
 registerWebhookRoute(app);
+
+// Telegram notifications (docs/M5b-telegram.md). Public: the webhook, which checks the secret
+// token Telegram sends.
+registerTelegramRoutes(app.basePath("/telegram"));
+registerTelegramWebhook(app);
 
 app.notFound((c) => fail(c, 404, "not_found"));
 app.onError((err, c) => {

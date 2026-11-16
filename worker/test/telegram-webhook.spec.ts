@@ -1,0 +1,235 @@
+import { env, exports } from "cloudflare:workers";
+import { afterEach, describe, expect, it } from "vitest";
+import { ORIGIN } from "./helpers";
+import { seedMessage } from "./mailbox-helpers";
+import { signedIn } from "./send-helpers";
+import {
+  botError,
+  CHAT,
+  cardFor,
+  cardRows,
+  message,
+  ok,
+  query,
+  SECRET,
+  seedTelegram,
+  stubTelegram,
+  telegramRow,
+  webhook,
+} from "./telegram-helpers";
+
+// POST /api/webhooks/telegram (docs/M5b-telegram.md, "Webhook handling", "Binding", "Actions"),
+// against a real D1, with the Bot API stubbed.
+
+const open: WebSocket[] = [];
+afterEach(() => {
+  for (const ws of open.splice(0)) ws.close();
+});
+
+describe("telegram webhook authentication", () => {
+  it("answers 404 without a binding, 401 for a wrong or missing secret, 200 for the right one", async () => {
+    expect((await webhook({ update_id: 1 })).status).toBe(404);
+    await seedTelegram();
+    expect((await webhook({ update_id: 1 }, "wrong")).status).toBe(401);
+    expect((await webhook({ update_id: 1 }, null)).status).toBe(401);
+    expect((await webhook({ update_id: 1 }, `${SECRET}x`)).status).toBe(401);
+    const res = await webhook({ update_id: 1 });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("");
+  });
+
+  it("ignores an oversized body and invalid JSON with 200 and no effect", async () => {
+    await seedTelegram({ chatId: null, code: "code-1" });
+    const big = JSON.stringify({ ...message("/start code-1"), pad: "x".repeat(70_000) });
+    const res = await webhook(big);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("");
+    const declared = await exports.default.fetch(`${ORIGIN}/api/webhooks/telegram`, {
+      method: "POST",
+      headers: { "x-telegram-bot-api-secret-token": SECRET, "content-length": "70000" },
+      body: JSON.stringify(message("/start code-1")),
+    });
+    expect(declared.status).toBe(200);
+    expect((await webhook("{not json")).status).toBe(200);
+    expect((await telegramRow())?.chatId).toBeNull();
+  });
+});
+
+describe("binding a chat", () => {
+  it("binds the owner's private chat with a valid code, once", async () => {
+    await seedTelegram({ chatId: null, code: "code-1" });
+    const res = await webhook(message("/start code-1", {}, { language_code: "zh-hans" }));
+    expect(await res.json()).toEqual({
+      method: "sendMessage",
+      chat_id: CHAT,
+      text: "已连接。新邮件会显示在这里。",
+    });
+    expect(await telegramRow()).toMatchObject({
+      chatId: CHAT,
+      chatLabel: "@owner",
+      language: "zh-CN",
+      codeHash: null,
+    });
+    const again = await webhook(message("/start code-1", { id: 222 }, { id: 222 }));
+    expect(((await again.json()) as { text: string }).text).toMatch(/^This code is invalid/);
+    expect((await telegramRow())?.chatId).toBe(CHAT);
+  });
+
+  it("refuses expired and wrong codes, groups and another sender with the one reply", async () => {
+    const invalid =
+      "This code is invalid or expired. Create a new one in MelodyMail: Settings > Notifications.";
+    await seedTelegram({ chatId: null, code: "code-1", expiresAt: Date.now() + 600_000 });
+    const updates = [
+      message("/start wrong"),
+      message("/start"),
+      message("/start code-1", { type: "group", id: -5 }, { id: CHAT }),
+      message("/start code-1", {}, { id: CHAT + 1 }),
+    ];
+    for (const update of updates) {
+      const res = await webhook(update);
+      expect(((await res.json()) as { text: string }).text).toBe(invalid);
+    }
+    expect((await webhook(message("hello"))).status).toBe(200);
+    expect(await (await webhook(message("hello"))).text()).toBe("");
+    await env.DB.prepare("UPDATE telegram SET link_expires_at = ?")
+      .bind(Date.now() - 1)
+      .run();
+    const late = await webhook(message("/start code-1"));
+    expect(((await late.json()) as { text: string }).text).toBe(invalid);
+    expect((await telegramRow())?.chatId).toBeNull();
+  });
+
+  it("drops the old chat's cards when another chat binds", async () => {
+    await seedTelegram({ chatId: 999, code: "code-2" });
+    await seedMessage({ id: "m1" });
+    await cardFor("m1", 5, 999);
+    await webhook(message("/start code-2"));
+    expect((await telegramRow())?.chatId).toBe(CHAT);
+    expect(await cardRows()).toEqual([]);
+  });
+});
+
+describe("card buttons", () => {
+  async function socket(): Promise<string[]> {
+    const client = await signedIn();
+    const cookie = [...client.cookies].map(([k, v]) => `${k}=${v}`).join("; ");
+    const res = await exports.default.fetch(`${ORIGIN}/api/events`, {
+      headers: { upgrade: "websocket", origin: ORIGIN, cookie },
+    });
+    const ws = res.webSocket;
+    if (!ws) throw new Error("no socket");
+    ws.accept();
+    open.push(ws);
+    const events: string[] = [];
+    ws.addEventListener("message", (e) => {
+      events.push(String(e.data));
+    });
+    return events;
+  }
+
+  const flags = (id: string) =>
+    env.DB.prepare("SELECT read, archived, starred FROM messages WHERE id = ?").bind(id).first();
+
+  it("sets exactly the tapped flag, edits the card and answers with all three", async () => {
+    await seedTelegram();
+    await seedMessage({ id: "m1", subject: "Hello", from: "Alice <alice@example.org>" });
+    await cardFor("m1");
+    const events = await socket();
+    const steps: [string, Record<string, number>][] = [
+      ["read:1", { read: 1, archived: 0, starred: 0 }],
+      ["arch:1", { read: 1, archived: 1, starred: 0 }],
+      ["star:1", { read: 1, archived: 1, starred: 1 }],
+      ["read:0", { read: 0, archived: 1, starred: 1 }],
+      ["arch:0", { read: 0, archived: 0, starred: 1 }],
+      ["star:0", { read: 0, archived: 0, starred: 0 }],
+    ];
+    for (const [data, want] of steps) {
+      const calls = stubTelegram();
+      const res = await webhook(query(data));
+      expect(await flags("m1"), data).toEqual(want);
+      expect(await res.json()).toEqual({
+        method: "answerWidgetQuery",
+        widget_query_id: "q-1",
+        data: JSON.stringify({ r: want.read, a: want.archived, st: want.starred }),
+      });
+      expect(calls.map((c) => c.method)).toEqual(["editMessageWidgetData"]);
+      const edit = calls[0]?.body ?? {};
+      expect(edit).toMatchObject({ chat_id: CHAT, message_id: 42 });
+      expect(JSON.parse(String(edit.chat_data))).toEqual({
+        v: 1,
+        f: "Alice",
+        s: "Hello",
+        t: "shop@example.com",
+        u: `${ORIGIN}/?m=m1`,
+        r: want.read,
+        a: want.archived,
+        st: want.starred,
+      });
+    }
+    await expect.poll(() => events.length).toBe(steps.length);
+    expect(events[0]).toBe(JSON.stringify({ type: "changed", id: "m1" }));
+  });
+
+  it("changes nothing and answers unbound for another chat, a group or another sender", async () => {
+    await seedTelegram();
+    await seedMessage({ id: "m1" });
+    await cardFor("m1");
+    const calls = stubTelegram();
+    for (const update of [
+      query("read:1", 42, { id: 7 }, { id: 7 }),
+      query("read:1", 42, { type: "group" }),
+      query("read:1", 42, {}, { id: 7 }),
+    ]) {
+      const res = await webhook(update);
+      expect(JSON.parse(((await res.json()) as { data: string }).data)).toEqual({ e: "unbound" });
+    }
+    await env.DB.prepare("UPDATE telegram SET chat_id = NULL").run();
+    const res = await webhook(query("read:1"));
+    expect(JSON.parse(((await res.json()) as { data: string }).data)).toEqual({ e: "unbound" });
+    expect(await flags("m1")).toEqual({ read: 0, archived: 0, starred: 0 });
+    expect(calls).toEqual([]);
+  });
+
+  it("answers bad for unknown data", async () => {
+    await seedTelegram();
+    await seedMessage({ id: "m1" });
+    await cardFor("m1");
+    stubTelegram();
+    for (const data of ["trash:1", "read:2", "read:1:m2", "read"]) {
+      const res = await webhook(query(data));
+      expect(JSON.parse(((await res.json()) as { data: string }).data), data).toEqual({ e: "bad" });
+    }
+    expect(await flags("m1")).toEqual({ read: 0, archived: 0, starred: 0 });
+  });
+
+  it("marks a card of a deleted message as gone", async () => {
+    await seedTelegram();
+    await seedMessage({ id: "m1", trashed: true });
+    await cardFor("m1");
+    await env.DB.prepare("DELETE FROM messages WHERE id = 'm1'").run();
+    const calls = stubTelegram();
+    const res = await webhook(query("star:1"));
+    expect(JSON.parse(((await res.json()) as { data: string }).data)).toEqual({ e: "gone" });
+    expect(calls).toMatchObject([
+      { method: "editMessageWidgetData", body: { chat_data: '{"v":1,"g":1}' } },
+    ]);
+  });
+
+  it("takes message is not modified as done and still answers after a failed edit", async () => {
+    await seedTelegram();
+    await seedMessage({ id: "m1" });
+    await cardFor("m1");
+    for (const failure of [
+      botError(400, "Bad Request: message is not modified"),
+      botError(500, "Internal"),
+    ]) {
+      stubTelegram(() => failure.clone());
+      const res = await webhook(query("read:1"));
+      expect(JSON.parse(((await res.json()) as { data: string }).data)).toEqual({
+        r: 1,
+        a: 0,
+        st: 0,
+      });
+    }
+  });
+});
