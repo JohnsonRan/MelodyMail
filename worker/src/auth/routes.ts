@@ -1,6 +1,6 @@
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import type { AppEnv } from "../env";
-import { fail, readJson, str } from "../http";
+import { clientInfo, fail, readJson, str } from "../http";
 import { closeHubSessions } from "../mail/hub";
 import { publicRoute } from "../routing";
 import { checkAssertion, counterUpdate } from "./assertion";
@@ -176,6 +176,15 @@ export function registerAuthRoutes(auth: Hono<AppEnv>): void {
       // recovery must not leave open. With the row gone the webhook answers 404.
       db.prepare("DELETE FROM telegram_cards"),
       db.prepare("DELETE FROM telegram"),
+      // API keys are an access path as well (owner ruling 3, docs/M6-rules-api.md). The count is
+      // read before the delete, in the same transaction.
+      db
+        .prepare(
+          `INSERT INTO audit_log (event, created_at, ip, user_agent, detail)
+           SELECT 'api_keys_revoked', ?, ?, ?, COUNT(*) FROM api_keys HAVING COUNT(*) > 0`,
+        )
+        .bind(now, clientInfo(c).ip, clientInfo(c).userAgent),
+      db.prepare("DELETE FROM api_keys"),
       audit(c, "recover", now),
     ]);
     await closeHubSessions(

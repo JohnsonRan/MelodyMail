@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { app } from "../src/index";
-import { isPublicHandler } from "../src/routing";
+import { apiScopes, isPublicHandler } from "../src/routing";
+import { ALL_SCOPES, apiKey, v1 } from "./api-helpers";
 import { Client } from "./helpers";
+import { signedIn } from "./send-helpers";
 
 // The only routes that may answer without a session. Adding one is a reviewed decision.
 const PUBLIC = [
@@ -82,7 +84,24 @@ const GUARDED = [
   "POST /api/rules/test",
   "PUT /api/rules/:id",
   "DELETE /api/rules/:id",
+  "GET /api/keys",
+  "POST /api/keys",
+  "DELETE /api/keys/:id",
+  "GET /api/openapi.json",
 ];
+
+// The /api/v1/ routes: an API key only, with one of these scopes (docs/M6-rules-api.md).
+const API: Record<string, string[]> = {
+  "GET /api/v1/messages": ["mail:read"],
+  "GET /api/v1/messages/:id": ["mail:read"],
+  "GET /api/v1/messages/:id/thread": ["mail:read"],
+  "GET /api/v1/messages/:id/raw": ["mail:read"],
+  "GET /api/v1/search": ["mail:read"],
+  "GET /api/v1/addresses": ["mail:read", "mail:send"],
+  "PATCH /api/v1/messages": ["mail:write"],
+  "PATCH /api/v1/messages/:id": ["mail:write"],
+  "POST /api/v1/messages/send": ["mail:send"],
+};
 
 describe("authorization", () => {
   const endpoints = [
@@ -93,7 +112,15 @@ describe("authorization", () => {
 
   it("knows every registered route", () => {
     const all = endpoints.map((r) => `${r.method} ${r.path}`);
-    expect(all.sort()).toEqual([...PUBLIC, ...GUARDED].sort());
+    expect(all.sort()).toEqual([...PUBLIC, ...GUARDED, ...Object.keys(API)].sort());
+  });
+
+  it("gives exactly the /api/v1/ routes a key kind with their scopes", () => {
+    const marked = endpoints
+      .filter((r) => apiScopes(r.handler) !== undefined)
+      .map((r) => [`${r.method} ${r.path}`, [...(apiScopes(r.handler) ?? [])]]);
+    expect(Object.fromEntries(marked)).toEqual(API);
+    expect(endpoints.filter((r) => r.path.startsWith("/api/v1/")).length).toBe(marked.length);
   });
 
   it("marks exactly the reviewed routes as public", () => {
@@ -105,7 +132,7 @@ describe("authorization", () => {
 
   it("answers 401 without a session on every other route", async () => {
     const guarded = endpoints.filter((r) => !PUBLIC.includes(`${r.method} ${r.path}`));
-    expect(guarded).toHaveLength(GUARDED.length);
+    expect(guarded).toHaveLength(GUARDED.length + Object.keys(API).length);
     for (const route of guarded) {
       const key = `${route.method} ${route.path}`;
       const path = route.path.replaceAll(/:\w+/g, "x");
@@ -113,6 +140,48 @@ describe("authorization", () => {
       const res = await new Client().request(route.method, path, body);
       expect(res.status, key).toBe(401);
       expect(await res.json(), key).toEqual({ error: "unauthorized" });
+    }
+  });
+
+  // The matrix of docs/M6-rules-api.md, "Authorization matrix", for every registered route.
+  it("never lets a key reach a session route", async () => {
+    const { key } = await apiKey(ALL_SCOPES);
+    const client = new Client();
+    for (const route of GUARDED) {
+      const [method = "", path = ""] = route.split(" ");
+      const headers = { authorization: `Bearer ${key}` };
+      const body = method === "GET" ? undefined : {};
+      const res = await client.request(method, path.replaceAll(/:\w+/g, "1"), body, headers);
+      expect(res.status, route).toBe(401);
+      expect(await res.json(), route).toEqual({ error: "unauthorized" });
+    }
+  });
+
+  it("decides every /api/v1/ route by the key and its scope alone", async () => {
+    const session = await signedIn();
+    const cookie = [...session.cookies].map(([k, v]) => `${k}=${v}`).join("; ");
+    for (const [route, scopes] of Object.entries(API)) {
+      const [method = "", template = ""] = route.split(" ");
+      const path = template.replace("/api/v1", "").replaceAll(/:\w+/g, "x");
+      const body = method === "GET" ? undefined : {};
+      // A valid session cookie is ignored, with or without a same-origin Origin header.
+      const withCookie = await v1(null, method, path, body, {
+        cookie,
+        origin: "https://mail.test",
+      });
+      expect(withCookie.status, route).toBe(401);
+      expect(await withCookie.json(), route).toEqual({ error: "unauthorized" });
+
+      const others = ALL_SCOPES.filter((s) => !scopes.includes(s));
+      const wrong = await v1((await apiKey(others)).key, method, path, body, { cookie });
+      expect(wrong.status, route).toBe(403);
+      expect(await wrong.json(), route).toEqual({ error: "insufficient_scope" });
+
+      // Any one of the route's scopes is enough, and no Origin header is needed.
+      for (const scope of scopes) {
+        const right = await v1((await apiKey([scope])).key, method, path, body);
+        expect([401, 403], `${route} ${scope}`).not.toContain(right.status);
+      }
     }
   });
 });

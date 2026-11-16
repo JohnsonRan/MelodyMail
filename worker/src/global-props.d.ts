@@ -13,6 +13,8 @@ declare namespace Cloudflare {
     PUSH_LIMITER: RateLimit;
     /** Abuse guard on Telegram Connect and the test card, keyed by session. */
     TELEGRAM_LIMITER: RateLimit;
+    /** Abuse guard on /api/v1/, keyed by client IP, checked before the key lookup. */
+    API_LIMITER: RateLimit;
     /** Raw inbound messages. */
     MAIL: R2Bucket;
     /** Producer for melodymail-inbound; the body is { id } of a stored message. */

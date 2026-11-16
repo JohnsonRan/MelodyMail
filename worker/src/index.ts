@@ -1,6 +1,9 @@
 import { Hono } from "hono";
 import { registerAddressRoutes } from "./addresses/routes";
 import { registerTargetRoutes } from "./addresses/targets";
+import { registerKeyRoutes } from "./api/keys";
+import openapi from "./api/openapi.json";
+import { registerApiV1 } from "./api/v1";
 import { registerAccountRoutes } from "./auth/account";
 import { registerAuthRoutes } from "./auth/routes";
 import { registerDomainRoutes } from "./domains/routes";
@@ -69,6 +72,13 @@ registerQuietRoutes(app.basePath("/settings/quiet"));
 
 // Rules (docs/M6-rules-api.md): not public; no API key reaches them.
 registerRuleRoutes(app.basePath("/rules"));
+
+// API keys and their document (docs/M6-rules-api.md): session routes; no API key reaches them.
+registerKeyRoutes(app.basePath("/keys"));
+app.get("/openapi.json", (c) => c.json(openapi));
+
+// REST API v1: API keys only, never the session cookie (worker/src/routing.ts, apiRoute).
+registerApiV1(app.basePath("/v1"));
 
 app.notFound((c) => fail(c, 404, "not_found"));
 app.onError((err, c) => {

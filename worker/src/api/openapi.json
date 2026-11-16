@@ -1,0 +1,1038 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MelodyMail REST API",
+    "version": "1.0.0",
+    "description": "Read, flag and send mail with an API key. Create a key in Settings > API keys; it is shown once. Send it as `Authorization: Bearer mmk_...`; the session cookie is never read here. Every request counts against a limit of 120 requests a minute per client IP. Errors are `{ \"error\": \"<code>\" }`; a validation error of the send body adds `path`, the first failing field."
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "paths": {
+    "/messages": {
+      "get": {
+        "operationId": "listMessages",
+        "summary": "List the messages of a folder, newest first",
+        "security": [
+          {
+            "apiKey": ["mail:read"]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "folder",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["inbox", "sent", "starred", "archive", "trash"],
+              "default": "inbox"
+            }
+          },
+          {
+            "name": "address",
+            "in": "query",
+            "description": "Only messages of this address id.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "`nextCursor` of the previous page.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of messages.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateMessages",
+        "summary": "Set flags on up to 100 messages",
+        "security": [
+          {
+            "apiKey": ["mail:write"]
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Flags"
+                  }
+                ],
+                "type": "object",
+                "required": ["ids"],
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "How many messages matched.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["updated"],
+                  "properties": {
+                    "updated": {
+                      "type": "integer"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/messages/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getMessage",
+        "summary": "Read one message's metadata",
+        "security": [
+          {
+            "apiKey": ["mail:read"]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["message"],
+                  "properties": {
+                    "message": {
+                      "$ref": "#/components/schemas/MessageDetail"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateMessage",
+        "summary": "Set flags on one message",
+        "security": [
+          {
+            "apiKey": ["mail:write"]
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Flags"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["ok"],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/messages/{id}/thread": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getThread",
+        "summary": "Read the thread of a message, oldest first",
+        "description": "Outside Trash the thread leaves trashed messages out; in Trash it shows them. At most 100 messages.",
+        "security": [
+          {
+            "apiKey": ["mail:read"]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thread.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["messages"],
+                  "properties": {
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MessageDetail"
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/messages/{id}/raw": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getRawMessage",
+        "summary": "Download the raw message",
+        "description": "An inbound message as received (RFC 5322); a sent message as its stored JSON copy. Parse MIME on the client.",
+        "security": [
+          {
+            "apiKey": ["mail:read"]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The raw bytes.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "contentMediaType": "application/octet-stream"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "operationId": "searchMessages",
+        "summary": "Search subject, sender and body outside Trash, newest first",
+        "security": [
+          {
+            "apiKey": ["mail:read"]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Up to 8 terms, all of which must match; at most 200 characters.",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of 50 messages at most.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagePage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/addresses": {
+      "get": {
+        "operationId": "listAddresses",
+        "summary": "List the addresses and whether each may send",
+        "description": "Either scope may list them: a send-only key picks `from` here.",
+        "security": [
+          {
+            "apiKey": ["mail:read"]
+          },
+          {
+            "apiKey": ["mail:send"]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The addresses.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["addresses"],
+                  "properties": {
+                    "addresses": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Address"
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/messages/send": {
+      "post": {
+        "operationId": "sendMessage",
+        "summary": "Send a message without attachments",
+        "description": "The `Idempotency-Key` header is required. A repeat with the same key sends nothing new and returns the first send's result; a failed send may be repeated under the same key for 24 hours.",
+        "security": [
+          {
+            "apiKey": ["mail:send"]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "8 to 256 letters, digits, `_`, `.`, `:` and `-`; one per message. Missing: `idempotency_key_required`.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[\\w.:-]{8,256}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sent, or the result of the first send under this key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["message"],
+                  "properties": {
+                    "message": {
+                      "type": "object",
+                      "required": ["id", "status"],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "stored",
+                            "parsed",
+                            "parse_failed",
+                            "sending",
+                            "sent",
+                            "delayed",
+                            "delivered",
+                            "bounced",
+                            "complained",
+                            "failed",
+                            "suppressed",
+                            "delivery_failed"
+                          ]
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "`send_in_progress`, or `send_status_unknown` (with `id`) when a repeat past the retry window could send twice.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`send_rejected` (with `id`): Resend refused the message; send a corrected message under a new key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` (this API's limit or Resend's), `daily_quota_exceeded` or `monthly_quota_exceeded`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`internal`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`send_failed` (with `id`): the outcome is unknown; repeat with the same key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`send_not_configured`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "apiKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "An API key: `mmk_`, 8 characters, `_`, 43 characters. Scopes: `mail:read`, `mail:write`, `mail:send`."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "A stable code, such as `unauthorized`, `invalid_key`, `key_expired`, `insufficient_scope`, `rate_limited`, `idempotency_key_required`, `bad_request`, `not_found`."
+          },
+          "path": {
+            "type": "string",
+            "description": "With `bad_request` on the send body: the first failing field, such as `to.2`."
+          },
+          "id": {
+            "type": "string",
+            "description": "With a failed send: the message id."
+          }
+        },
+        "additionalProperties": false
+      },
+      "MessageItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "addressId",
+          "tag",
+          "from",
+          "subject",
+          "snippet",
+          "receivedAt",
+          "date",
+          "size",
+          "read",
+          "starred",
+          "archived",
+          "trashed",
+          "hasAttachments",
+          "status",
+          "threadKey",
+          "direction",
+          "to",
+          "error"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "addressId": {
+            "type": "integer"
+          },
+          "tag": {
+            "type": ["string", "null"],
+            "description": "The sub-address tag of the recipient (`github` in `shop+github@example.com`)."
+          },
+          "from": {
+            "type": "string",
+            "description": "The From header, or the envelope sender without one."
+          },
+          "subject": {
+            "type": ["string", "null"]
+          },
+          "snippet": {
+            "type": ["string", "null"]
+          },
+          "receivedAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          },
+          "date": {
+            "type": ["string", "null"],
+            "description": "The Date header as sent."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Size of the raw message in bytes."
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "starred": {
+            "type": "boolean"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "trashed": {
+            "type": "boolean"
+          },
+          "hasAttachments": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "stored",
+              "parsed",
+              "parse_failed",
+              "sending",
+              "sent",
+              "delayed",
+              "delivered",
+              "bounced",
+              "complained",
+              "failed",
+              "suppressed",
+              "delivery_failed"
+            ]
+          },
+          "threadKey": {
+            "type": ["string", "null"]
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["in", "out"]
+          },
+          "to": {
+            "type": ["string", "null"]
+          },
+          "error": {
+            "type": ["string", "null"],
+            "description": "Outbound only: why the send failed."
+          }
+        },
+        "additionalProperties": false
+      },
+      "MessageDetail": {
+        "type": "object",
+        "required": [
+          "id",
+          "addressId",
+          "tag",
+          "from",
+          "subject",
+          "snippet",
+          "receivedAt",
+          "date",
+          "size",
+          "read",
+          "starred",
+          "archived",
+          "trashed",
+          "hasAttachments",
+          "status",
+          "threadKey",
+          "direction",
+          "to",
+          "error",
+          "cc",
+          "bcc",
+          "idempotencyKey",
+          "firstAttemptAt",
+          "maybeAccepted",
+          "envelopeFrom",
+          "envelopeTo",
+          "forwardFailed"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "addressId": {
+            "type": "integer"
+          },
+          "tag": {
+            "type": ["string", "null"],
+            "description": "The sub-address tag of the recipient (`github` in `shop+github@example.com`)."
+          },
+          "from": {
+            "type": "string",
+            "description": "The From header, or the envelope sender without one."
+          },
+          "subject": {
+            "type": ["string", "null"]
+          },
+          "snippet": {
+            "type": ["string", "null"]
+          },
+          "receivedAt": {
+            "type": "integer",
+            "description": "Unix epoch milliseconds."
+          },
+          "date": {
+            "type": ["string", "null"],
+            "description": "The Date header as sent."
+          },
+          "size": {
+            "type": "integer",
+            "description": "Size of the raw message in bytes."
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "starred": {
+            "type": "boolean"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "trashed": {
+            "type": "boolean"
+          },
+          "hasAttachments": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "stored",
+              "parsed",
+              "parse_failed",
+              "sending",
+              "sent",
+              "delayed",
+              "delivered",
+              "bounced",
+              "complained",
+              "failed",
+              "suppressed",
+              "delivery_failed"
+            ]
+          },
+          "threadKey": {
+            "type": ["string", "null"]
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["in", "out"]
+          },
+          "to": {
+            "type": ["string", "null"]
+          },
+          "error": {
+            "type": ["string", "null"],
+            "description": "Outbound only: why the send failed."
+          },
+          "cc": {
+            "type": ["string", "null"]
+          },
+          "bcc": {
+            "type": ["string", "null"]
+          },
+          "idempotencyKey": {
+            "type": ["string", "null"]
+          },
+          "firstAttemptAt": {
+            "type": ["integer", "null"]
+          },
+          "maybeAccepted": {
+            "type": "integer",
+            "enum": [0, 1],
+            "description": "Outbound only: 1 when Resend may have accepted a failed send."
+          },
+          "envelopeFrom": {
+            "type": "string"
+          },
+          "envelopeTo": {
+            "type": "string"
+          },
+          "forwardFailed": {
+            "type": "integer",
+            "description": "Forwards that failed after the message was stored."
+          }
+        },
+        "additionalProperties": false
+      },
+      "MessagePage": {
+        "type": "object",
+        "required": ["messages", "nextCursor"],
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MessageItem"
+            }
+          },
+          "nextCursor": {
+            "type": ["string", "null"],
+            "description": "Null on the last page."
+          }
+        },
+        "additionalProperties": false
+      },
+      "Address": {
+        "type": "object",
+        "required": ["id", "address", "displayName", "enabled", "canSend"],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "address": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "canSend": {
+            "type": "boolean",
+            "description": "Whether its domain has sending turned on."
+          }
+        },
+        "additionalProperties": false
+      },
+      "Flags": {
+        "type": "object",
+        "description": "At least one flag.",
+        "properties": {
+          "read": {
+            "type": "boolean"
+          },
+          "starred": {
+            "type": "boolean"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "trashed": {
+            "type": "boolean"
+          }
+        },
+        "minProperties": 1
+      },
+      "SendRequest": {
+        "type": "object",
+        "required": ["from", "text"],
+        "properties": {
+          "from": {
+            "type": "integer",
+            "description": "An address id from `GET /addresses` with `canSend`."
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subject": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string",
+            "description": "The plain-text body."
+          },
+          "html": {
+            "type": "string",
+            "description": "Optional HTML body, sent as given."
+          },
+          "replyTo": {
+            "type": "string",
+            "description": "A message id: the new message is a reply in its thread."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "`bad_request` (with `path` for a field of the send body), or another validation code such as `too_many_ids`, `invalid_recipient` or `unknown_address`.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "`not_found`.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "`unauthorized` (no Bearer key), `invalid_key` or `key_expired`. Carries `WWW-Authenticate: Bearer`.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "`insufficient_scope`: the key lacks the operation's scope.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "`rate_limited`: over 120 requests a minute from this IP. Carries `Retry-After`.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  }
+}
