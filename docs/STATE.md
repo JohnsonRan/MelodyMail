@@ -3923,3 +3923,63 @@ gap Worker's listing on a bucket with more than 1,000 objects a month (it follow
   `wrangler d1 execute melodymail --file <out.sql> ...`; the cron re-enqueues the rows after 15
   minutes. An export id is read to the minute, so objects stored in the export's first minute are
   listed too and skipped when they have a row. Objects stored before M7 are reported, not rebuilt.
+
+### Re-review of `94a9501` (gap tool: two Mediums, Lows) and its fixes
+
+Commit `175bde2`. Each behaviour hunk was ablated one at a time (CPU load 1–5%) and turned its
+test red:
+
+- Empty envelope sender (`MAIL FROM:<>`) is rebuilt (was skipped as `bad_metadata`).
+- Listing starts 10 minutes before the restore point (`OVERLAP_MS`): an object 9 minutes before is
+  rebuilt, one 11 minutes before is not.
+- A NUL in an envelope value is skipped as `bad_metadata`; so are an undecodable value, an empty
+  recipient and a non-digit number (`""` passes `Number.isSafeInteger`, so the digit check is
+  tested with it); a key that is not `raw/YYYY/MM/<uuid>.eml` is `bad_key`.
+- A fake bucket of 1,005 objects over two cursor pages gives 1,005 rows.
+- `sent/` is listed; a sent copy without a row is reported (`sentNotRebuilt`), never rebuilt, and
+  the SQL holds no out row and triggers no fetch and no queue message.
+- `--local` without `--persist-to` is refused (exit 2); relative `--persist-to` and `--config`
+  resolve against the caller's directory (checked by a dry run with `--persist-to gap` from the
+  drill directory: 18 present, 0 to store, 1.4 s, load 5%).
+- `parseSince` (hypothesis b): an ISO time needs `Z` or an offset; `2026-11-18T03:00:00` is refused;
+  the report prints the restore point in UTC. `scripts/backup-gap.test.ts` (4 tests) covers it and
+  `gapConfig` (only DB and MAIL, `remote: true` only with `--remote`); removing the zone check
+  turns it red.
+- Not feasible: a test that tells `pruneExports(env, now, null)` with and without its guard apart
+  (`UPDATE ... WHERE id = NULL` changes nothing); the guard only saves a call.
+
+The sent-mail Medium is answered by stopping, not by a partial row (open question below).
+
+Hypothesis (a), read in `wrangler-dist/cli.js` 4.162 (not run): with `remote: true` bindings,
+`startRemoteProxySession` starts a remote-mode dev session whose entry is wrangler's bundled
+`ProxyServerWorker` (capnweb) with the remote bindings attached, named by a random UUID unless a
+name is given; remote mode uploads it through `POST /accounts/{id}/workers/scripts/{name}/edge-preview`
+after `GET /accounts/{id}/workers/subdomain/edge-preview` (a preview session, `workers_dev: true`,
+`minimal_mode: true`), not a deployment. So yes: `backup-gap --remote` uploads a temporary preview
+Worker to the owner's account. The code also refuses remote bindings under Bun's `fetch` (wrangler
+itself runs under Node here). Unverified: whether the preview needs an enabled workers.dev
+subdomain and whether it shows in the dashboard.
+
+### Open question (added)
+
+5. **Out rows for mail sent after the restore point.** The design (`docs/M7-ops.md`, "Mail after
+   the restore point") rebuilds `out` rows from `sent/` copies. The copy is written before the
+   Resend call and holds no status, no Resend id, no idempotency key and no thread key, and the
+   Resend events after T are lost with the restore. A rebuilt row would claim "sent" or "failed"
+   without knowing; "failed" also invites a manual resend of mail that may have gone out. The tool
+   reports these copies and stops. Options: (a) leave it at the report (the owner checks Resend's
+   dashboard); (b) rebuild with a new status meaning "unknown after restore" (needs a status,
+   reader copy in three locales and no retry path); (c) write the outcome into R2 after each send
+   (a second put per send). Recommended: (a) for M7, (c) later if wanted.
+
+### Notes for phase B (added by the re-review)
+
+- RUNBOOK, gap tool: rebuilt rows differ from what `email()` stored: rules are not applied again
+  (flags and `trashed_at` are lost; rule forwards already happened), `forward_failed` is 0,
+  `addresses.last_received_at` is not updated, the address row must exist (no foreign key), and
+  objects left by `forwardInstead` (mail forwarded or bounced while storage failed) come back as
+  messages. Sent mail after the restore point is reported only.
+- RUNBOOK, gap tool `--remote`: wrangler uploads a temporary preview Worker (its own proxy code)
+  to the account for the session; needs `wrangler login`.
+- README: must stop naming `bun run deploy` and `db:migrate:remote` before M7 merges (both
+  refuse now).
