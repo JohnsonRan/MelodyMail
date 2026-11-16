@@ -4,10 +4,13 @@
  * rows (JSON.parse) and evaluating them against crafted headers. workerd does not advance
  * performance.now() during computation, so the budget is measured here with the same code under
  * Bun. Inputs: 50 enabled rules of 10 conditions that never match (every condition runs, no
- * stop), mixing every field and operator, against the worst headers below and against plain
- * headers, and against 20 distinct header names (the HEADER_NAMES_MAX cap), each holding 2,000
- * characters dense with white space; and the same rules made to match. Exits 1 when the p95 of
- * any input reaches 1 ms.
+ * stop), mixing every field and operator, against the worst headers below (From, To and Cc of 100
+ * addresses each, an encoded 2,000-character subject, a header repeated 50 times), against plain
+ * headers, against 20 distinct header names (the HEADER_NAMES_MAX cap), each holding 2,000
+ * characters dense with white space, and against the worst headers and the 20 names together;
+ * and the same rules made to match. Each input has its own p95 budget: 2 ms for the adversarial
+ * worst headers, alone or with the 20 names, and 1 ms for every other input (owner ruling
+ * 2026-11-17). Exits 1 when the p95 of any input reaches its budget.
  *
  * Usage: bun bench/rules.ts [iterations]
  */
@@ -20,7 +23,9 @@ import {
 } from "../src/rules/evaluate";
 
 const ITERATIONS = Number(process.argv[2] ?? 200);
+/** p95 budgets (owner ruling 2026-11-17). */
 const BUDGET_MS = 1;
+const ADVERSARIAL_BUDGET_MS = 2;
 
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
 const qp = (bytes: Uint8Array) =>
@@ -47,15 +52,17 @@ function encodedSubject(): string {
 }
 
 /** Headers as Headers.get reads them: the worst case for every field. */
-function worstHeaders(): MailSource["headers"] {
+/** 100 addresses with display names; the 2,000-character cut keeps about 60, the cap reads 50. */
+const ADDRESS_LIST = Array.from(
+  { length: 100 },
+  (_, i) => `"Person ${i}" <person${i}@example${i}.org>`,
+).join(", ");
+
+function worstHeaders(): Headers {
   const h = new Headers();
   h.set("subject", encodedSubject());
-  h.set(
-    "to",
-    Array.from({ length: 100 }, (_, i) => `"Person ${i}" <person${i}@example${i}.org>`).join(", "),
-  );
+  for (const name of ["from", "to", "cc"]) h.set(name, ADDRESS_LIST);
   for (let i = 0; i < 50; i++) h.append("x-repeated", `value number ${i} of a repeated header`);
-  // No From header: the envelope sender is read instead.
   return h;
 }
 
@@ -112,7 +119,7 @@ function ruleRows(hit: boolean): RuleRow[] {
  * and white space, so each value costs its full normalization once. */
 const CAP_NAMES = Array.from({ length: 20 }, (_, i) => `x-cap-${i}`);
 
-function cappedHeaders(): MailSource["headers"] {
+function cappedHeaders(): Headers {
   const h = new Headers();
   const value = "ab 	 ".repeat(400).slice(0, 2000);
   for (const name of CAP_NAMES) h.set(name, value);
@@ -133,6 +140,26 @@ function cappedRows(hit: boolean): RuleRow[] {
   }));
 }
 
+/** The worst headers and the 20 capped header names together. */
+function combinedHeaders(): Headers {
+  const h = worstHeaders();
+  for (const [name, value] of cappedHeaders()) h.set(name, value);
+  return h;
+}
+
+/** The mixed rules with every header condition on one of the 20 capped names. */
+function combinedRows(hit: boolean): RuleRow[] {
+  let n = 0;
+  return ruleRows(hit).map((row) => ({
+    ...row,
+    conditions: JSON.stringify(
+      (JSON.parse(row.conditions) as Condition[]).map((c) =>
+        c.field === "header" ? { ...c, name: CAP_NAMES[n++ % CAP_NAMES.length] } : c,
+      ),
+    ),
+  }));
+}
+
 const source = (headers: MailSource["headers"]): MailSource => ({
   envelopeFrom: "bounce+123@mailer.example.org",
   headers,
@@ -140,17 +167,59 @@ const source = (headers: MailSource["headers"]): MailSource => ({
   tag: "github",
 });
 
-const inputs: [string, MailSource, RuleRow[]][] = [
-  ["50 x 10 conditions, worst headers, no match", source(worstHeaders()), ruleRows(false)],
-  ["50 x 10 conditions, plain headers, no match", source(plainHeaders()), ruleRows(false)],
-  ["50 x 10 conditions, worst headers, all match", source(worstHeaders()), ruleRows(true)],
-  ["50 x 10 conditions, plain headers, all match", source(plainHeaders()), ruleRows(true)],
-  ["50 x 10 conditions, 20 header names, no match", source(cappedHeaders()), cappedRows(false)],
-  ["50 x 10 conditions, 20 header names, all match", source(cappedHeaders()), cappedRows(true)],
+const inputs: [string, MailSource, RuleRow[], number][] = [
+  [
+    "50 x 10 conditions, worst headers, no match",
+    source(worstHeaders()),
+    ruleRows(false),
+    ADVERSARIAL_BUDGET_MS,
+  ],
+  [
+    "50 x 10 conditions, plain headers, no match",
+    source(plainHeaders()),
+    ruleRows(false),
+    BUDGET_MS,
+  ],
+  [
+    "50 x 10 conditions, worst headers, all match",
+    source(worstHeaders()),
+    ruleRows(true),
+    ADVERSARIAL_BUDGET_MS,
+  ],
+  [
+    "50 x 10 conditions, plain headers, all match",
+    source(plainHeaders()),
+    ruleRows(true),
+    BUDGET_MS,
+  ],
+  [
+    "50 x 10 conditions, 20 header names, no match",
+    source(cappedHeaders()),
+    cappedRows(false),
+    BUDGET_MS,
+  ],
+  [
+    "50 x 10 conditions, 20 header names, all match",
+    source(cappedHeaders()),
+    cappedRows(true),
+    BUDGET_MS,
+  ],
+  [
+    "50 x 10 conditions, worst + 20 names, no match",
+    source(combinedHeaders()),
+    combinedRows(false),
+    ADVERSARIAL_BUDGET_MS,
+  ],
+  [
+    "50 x 10 conditions, worst + 20 names, all match",
+    source(combinedHeaders()),
+    combinedRows(true),
+    ADVERSARIAL_BUDGET_MS,
+  ],
 ];
 
 let over = false;
-for (const [name, src, rows] of inputs) {
+for (const [name, src, rows, budget] of inputs) {
   const samples: number[] = [];
   let matched = false;
   for (let i = 0; i < ITERATIONS + 20; i++) {
@@ -163,12 +232,12 @@ for (const [name, src, rows] of inputs) {
   samples.sort((a, b) => a - b);
   const at = (q: number) =>
     samples[Math.min(samples.length - 1, Math.floor(q * samples.length))] ?? 0;
-  if (at(0.95) >= BUDGET_MS) over = true;
+  if (at(0.95) >= budget) over = true;
   console.log(
-    `${name.padEnd(46)} median ${at(0.5).toFixed(3)} ms, p95 ${at(0.95).toFixed(3)} ms, max ${at(1).toFixed(3)} ms, ${matched ? "matched" : "no match"}`,
+    `${name.padEnd(48)} median ${at(0.5).toFixed(3)} ms, p95 ${at(0.95).toFixed(3)} ms, max ${at(1).toFixed(3)} ms, ${matched ? "matched" : "no match"}, budget ${budget} ms`,
   );
 }
 if (over) {
-  console.error(`p95 at or over the ${BUDGET_MS} ms budget`);
+  console.error("p95 at or over an input's budget");
   process.exit(1);
 }

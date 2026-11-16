@@ -239,7 +239,10 @@ Benchmark `worker/bench/rules.ts` (`bun run bench:rules`), in the style of `benc
   matching;
 - it includes loading: `JSON.parse` of 50 rule rows;
 - 3 runs of 200 per input on the dev workstation, load recorded;
-- limit: 1 ms p95 per input, a new `REQUIREMENTS.md` "Numbers" row; the script exits 1 over it.
+- limit: 1 ms p95 per input, a `REQUIREMENTS.md` "Numbers" row; the adversarial worst headers
+  (100-address `From`, `To` and `Cc`, the encoded subject and the repeated header), alone or with
+  the 20 capped header names, have their own 2 ms p95 budget (owner ruling 2026-11-17). The
+  script exits 1 when any input reaches its own budget.
 
 1 ms in Bun leaves room for the 3 ms bounded parse budget's assumption of a production CPU about
 3 times slower, within the 10 ms of an `email()` invocation that also does the address lookup, the
@@ -548,8 +551,13 @@ paint does not grow; side navigation entries beside Forwarding.
    1 ms p95 budget stays. The benchmark's worst headers carry 100 addresses in each, and one input
    combines them with the 20 capped header names and the 2,000-character encoded subject.
 2. The Rules browser suite joins the Telegram tier, renamed `test:settings`
-   (`.github/workflows/settings.yml`); its limit stays 10 s.
+   (`.github/workflows/settings.yml`); its limit was to stay 10 s (raised to 13 s by ruling 5).
 3. The "Slowest test package" limit goes from 10.8 s to 13 s.
+
+4. The adversarial bench inputs (100-address From, To and Cc with the encoded subject and the
+   repeated header, alone or with the 20 capped header names) have a p95 budget of 2 ms; every
+   other input keeps 1 ms.
+5. `test:settings` has a 13 s limit.
 
 ## Open questions for the owner (asked 2026-11-16, answered above)
 
