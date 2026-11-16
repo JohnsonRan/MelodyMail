@@ -118,6 +118,13 @@ describe("rule conditions", () => {
     expect(cutAddressList("a@x, b@x", 50)).toBe("a@x, b@x");
   });
 
+  it("never lets a decoded line break split one value into two", () => {
+    const s = source({ Subject: "=?UTF-8?Q?x=0Aevil_y?=" });
+    expect(hits({ field: "subject", op: "equals", value: "evil" }, s)).toBe(false);
+    expect(hits({ field: "subject", op: "starts_with", value: "evil" }, s)).toBe(false);
+    expect(hits({ field: "subject", op: "equals", value: "x evil y" }, s)).toBe(true);
+  });
+
   it("reads each named header on its own", () => {
     const s = source({ "X-A": "alpha", "X-B": "beta" });
     const both: Condition[] = [
