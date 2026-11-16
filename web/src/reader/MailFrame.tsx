@@ -16,14 +16,19 @@ const FRAME_STYLE = {
 export function MailFrame({
   html,
   remoteImages,
+  darkReading,
   title,
 }: {
   /** Already sanitized by sanitizeMailHtml. */
   html: string;
   remoteImages: boolean;
+  darkReading: boolean;
   title: string;
 }) {
-  const srcdoc = useMemo(() => frameSrcdoc(html, remoteImages), [html, remoteImages]);
+  const srcdoc = useMemo(
+    () => frameSrcdoc(html, remoteImages, darkReading),
+    [html, remoteImages, darkReading],
+  );
   return (
     <iframe
       title={title}

@@ -1,5 +1,6 @@
 import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
+import { ToggleButton } from "@astryxdesign/core/ToggleButton";
 import { Toolbar } from "@astryxdesign/core/Toolbar";
 import {
   ArchiveBoxIcon,
@@ -7,6 +8,7 @@ import {
   ArrowUturnLeftIcon,
   EnvelopeIcon,
   InboxArrowDownIcon,
+  MoonIcon,
   PhotoIcon,
   StarIcon as StarOutline,
   TrashIcon,
@@ -36,6 +38,8 @@ export function ReaderToolbar({
   canShowRemote,
   onShowRemote,
   onDelete,
+  darkReading,
+  onDarkReading,
 }: {
   current: MessageDetail | undefined;
   inTrash: boolean;
@@ -47,6 +51,9 @@ export function ReaderToolbar({
   canShowRemote: boolean;
   onShowRemote: () => void;
   onDelete: () => void;
+  /** Whether dark reading is on; null hides the toggle (light theme, or no HTML body). */
+  darkReading: boolean | null;
+  onDarkReading: (on: boolean) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -110,6 +117,15 @@ export function ReaderToolbar({
               icon={<Icon icon={PhotoIcon} />}
               variant="ghost"
               onClick={onShowRemote}
+            />
+          )}
+          {current && darkReading !== null && (
+            <ToggleButton
+              label={t("mail.darkReading")}
+              icon={<Icon icon={MoonIcon} />}
+              isIconOnly
+              isPressed={darkReading}
+              onPressedChange={onDarkReading}
             />
           )}
         </>

@@ -134,11 +134,19 @@ export function sanitizeMailHtml(dirty: string, options: SanitizeOptions): Sanit
   return { html, hasRemoteContent, usedContentIds };
 }
 
+// Dark reading (owner, 2026-11-16): the whole page inverted, pictures inverted back so they look
+// normal. <picture> is left out because its <img> already matches, and a second filter on a
+// nested element would invert it again; <video> never reaches the frame (FORBID_TAGS).
+export const DARK_READING_STYLE =
+  "<style>html{filter:invert(1) hue-rotate(180deg)}" +
+  'img,svg image,[background],[style*="url(" i]{filter:invert(1) hue-rotate(180deg)}</style>';
+
 /**
  * The frame document: the CSP first, then no referrer, then a light page whatever the app
- * theme is, because senders design mail for a white background.
+ * theme is, because senders design mail for a white background. Dark reading adds one more
+ * inline style; it changes neither the CSP nor the sandbox.
  */
-export function frameSrcdoc(body: string, remoteImages: boolean): string {
+export function frameSrcdoc(body: string, remoteImages: boolean, darkReading = false): string {
   return [
     "<!doctype html><html><head>",
     `<meta http-equiv="Content-Security-Policy" content="${frameCsp(remoteImages)}">`,
@@ -146,6 +154,7 @@ export function frameSrcdoc(body: string, remoteImages: boolean): string {
     '<meta charset="utf-8">',
     "<style>:root{color-scheme:light}body{margin:0;padding:1em;background:white;color:black;",
     "font-family:system-ui,sans-serif;overflow-wrap:anywhere}img{max-width:100%;height:auto}</style>",
+    darkReading ? DARK_READING_STYLE : "",
     `</head><body>${body}</body></html>`,
   ].join("");
 }

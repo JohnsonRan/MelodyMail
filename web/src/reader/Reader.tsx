@@ -4,6 +4,7 @@ import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Layout";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { Heading, Text } from "@astryxdesign/core/Text";
+import { useTheme } from "@astryxdesign/core/theme";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -31,6 +32,15 @@ type Props = {
   isPadded: boolean;
 };
 
+/** The set with `id` added or removed; the same set when nothing changes. */
+function withMember(set: Set<string>, id: string, has: boolean): Set<string> {
+  if (set.has(id) === has) return set;
+  const next = new Set(set);
+  if (has) next.add(id);
+  else next.delete(id);
+  return next;
+}
+
 type Thread =
   | { state: "loading" }
   | { state: "failed" }
@@ -52,6 +62,10 @@ export default function Reader({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [remote, setRemote] = useState<Set<string>>(new Set());
   const [allowRemote, setAllowRemote] = useState<Set<string>>(new Set());
+  const [html, setHtml] = useState<Set<string>>(new Set());
+  // Dark reading is per message, off by default and not remembered (owner ruling 2026-11-16).
+  const [dark, setDark] = useState<Set<string>>(new Set());
+  const { mode } = useTheme();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
@@ -59,6 +73,8 @@ export default function Reader({
     setThread({ state: "loading" });
     setAllowRemote(new Set());
     setRemote(new Set());
+    setHtml(new Set());
+    setDark(new Set());
     getThread(id)
       .then(({ messages }) => {
         if (!live) return;
@@ -81,15 +97,11 @@ export default function Reader({
     }
   }, [current, onOpened]);
 
-  const reportRemote = useCallback(
-    (messageId: string, has: boolean) =>
-      setRemote((prev) => {
-        if (prev.has(messageId) === has) return prev;
-        const next = new Set(prev);
-        if (has) next.add(messageId);
-        else next.delete(messageId);
-        return next;
-      }),
+  const reportContent = useCallback(
+    (messageId: string, content: { remote: boolean; html: boolean }) => {
+      setRemote((prev) => withMember(prev, messageId, content.remote));
+      setHtml((prev) => withMember(prev, messageId, content.html));
+    },
     [],
   );
 
@@ -120,6 +132,8 @@ export default function Reader({
       canShowRemote={canShowRemote}
       onShowRemote={() => current && setAllowRemote((prev) => new Set(prev).add(current.id))}
       onDelete={() => setConfirmDelete(true)}
+      darkReading={current && mode === "dark" && html.has(current.id) ? dark.has(current.id) : null}
+      onDarkReading={(on) => current && setDark((prev) => withMember(prev, current.id, on))}
     />
   );
 
@@ -176,7 +190,8 @@ export default function Reader({
                 <MessageView
                   message={m}
                   remoteImages={allowRemote.has(m.id)}
-                  onRemoteContent={reportRemote}
+                  darkReading={mode === "dark" && dark.has(m.id)}
+                  onContent={reportContent}
                 />
               )}
             </Collapsible>

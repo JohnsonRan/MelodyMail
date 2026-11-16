@@ -200,9 +200,10 @@ afterAll(async () => {
   await server.stop(true);
 });
 
-async function open(path = "/", width = 1280): Promise<Session> {
+async function open(path = "/", width = 1280, mode = "light"): Promise<Session> {
   session = await openSession(origin, path);
   await session.page.setViewportSize({ width, height: 900 });
+  await session.page.addInitScript((m) => localStorage.setItem("melodymail.mode", m), mode);
   await session.page.addInitScript(() => {
     (window as unknown as { posted: string[] }).posted = [];
     window.addEventListener("message", (e) =>
@@ -256,6 +257,47 @@ describe("mailbox end to end", () => {
     await s.page.getByRole("button", { name: "Show remote images" }).click();
     await s.page.waitForTimeout(300);
     expect(s.remoteFromFrames).toContain(`${TRACKER}/pixel.gif`);
+  });
+
+  test("inverts an HTML message only on request, in the dark theme, with the frame unchanged", async () => {
+    const light = await open();
+    await row(light, "hostile").click();
+    await light.page.locator("iframe").waitFor();
+    expect(await light.page.getByRole("button", { name: "Dark reading" }).count()).toBe(0);
+    const s = await open("/", 1280, "dark");
+    await row(s, "hostile").click();
+    const frame = s.page.locator("iframe");
+    await frame.waitFor();
+    const before = (await frame.getAttribute("srcdoc")) ?? "";
+    expect(before).not.toContain("invert(");
+    const toggle = s.page.getByRole("button", { name: "Dark reading" });
+    expect(await toggle.getAttribute("aria-pressed")).toBe("false");
+    await toggle.click();
+    expect(await toggle.getAttribute("aria-pressed")).toBe("true");
+    await s.page.waitForFunction(() =>
+      document.querySelector("iframe")?.getAttribute("srcdoc")?.includes("invert("),
+    );
+    const after = (await frame.getAttribute("srcdoc")) ?? "";
+    expect(after.slice(0, before.indexOf("<style>"))).toBe(
+      before.slice(0, before.indexOf("<style>")),
+    );
+    expect(await frame.getAttribute("sandbox")).toBe("allow-popups allow-popups-to-escape-sandbox");
+    expect(await frame.getAttribute("referrerpolicy")).toBe("no-referrer");
+    expect(await s.page.frameLocator("iframe").locator("#greeting").textContent()).toBe("Hello");
+    await s.page.waitForTimeout(300);
+    expect(s.remote).toEqual([]);
+    expect(await s.page.evaluate(() => (window as unknown as { posted: string[] }).posted)).toEqual(
+      [],
+    );
+    // It combines with "Show remote images", and a plain-text message offers no toggle.
+    await s.page.getByRole("button", { name: "Show remote images" }).click();
+    await s.page.waitForFunction(() =>
+      document.querySelector("iframe")?.getAttribute("srcdoc")?.includes("img-src data: https:"),
+    );
+    expect((await frame.getAttribute("srcdoc")) ?? "").toContain("invert(");
+    await row(s, "note1").click();
+    await s.page.getByText("Plain note 1.").waitFor();
+    expect(await toggle.count()).toBe(0);
   });
 
   test("downloads an HTML attachment and never opens it", async () => {

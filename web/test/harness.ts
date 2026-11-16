@@ -13,6 +13,7 @@ export type RenderInput = {
   html?: string;
   eml?: string;
   remoteImages?: boolean;
+  darkReading?: boolean;
   layers?: Partial<Layers>;
 };
 
@@ -58,7 +59,7 @@ window.renderMail = async (input) => {
     : null;
   const body = clean ? clean.html : html;
   const srcdoc = layers.csp
-    ? frameSrcdoc(body, remoteImages)
+    ? frameSrcdoc(body, remoteImages, input.darkReading)
     : `<!doctype html><html><head></head><body>${body}</body></html>`;
   const frame = document.createElement("iframe");
   if (layers.sandbox) frame.setAttribute("sandbox", SANDBOX);
