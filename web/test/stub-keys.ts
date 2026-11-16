@@ -17,7 +17,13 @@ export class KeysStub {
   async handle(req: Request, url: URL): Promise<Response | null> {
     const path = url.pathname;
     const method = req.method;
-    if (path === "/api/openapi.json") return json({ openapi: "3.1.0" });
+    if (path === "/api/openapi.json") {
+      // As the Worker answers it: an attachment.
+      return Response.json(
+        { openapi: "3.1.0" },
+        { headers: { "content-disposition": 'attachment; filename="melodymail-openapi.json"' } },
+      );
+    }
     if (!path.startsWith("/api/keys")) return null;
     const body = method === "POST" ? await req.json() : null;
     this.calls.push({ method, path, body });

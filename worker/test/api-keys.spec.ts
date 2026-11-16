@@ -166,7 +166,13 @@ describe("API keys", () => {
 
   it("serves the OpenAPI document to a session", async () => {
     const client = await signedIn();
-    const doc = await client.json("GET", "/api/openapi.json");
-    expect(doc.openapi).toBe("3.1.0");
+    const res = await client.request("GET", "/api/openapi.json");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/^application\/json/);
+    expect(res.headers.get("content-disposition")).toBe(
+      'attachment; filename="melodymail-openapi.json"',
+    );
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(((await res.json()) as { openapi: string }).openapi).toBe("3.1.0");
   });
 });

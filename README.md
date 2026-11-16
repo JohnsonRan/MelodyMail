@@ -364,6 +364,6 @@ curl -X POST -H "Authorization: Bearer mmk_xxxxxxxx_<secret>" \
   nothing new and returns the first result.
 - Revoke a key in Settings > API keys; it stops working at once. A recovery revokes every key.
 
-The OpenAPI 3.1 document describes every operation: "Download the OpenAPI document" in Settings >
+The OpenAPI 3.1 document describes every operation: "Download OpenAPI document" in Settings >
 API keys, or `GET /api/openapi.json` while signed in. It is kept in
 `worker/src/api/openapi.json`.

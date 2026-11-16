@@ -499,6 +499,7 @@
     "create": "ルールを作成"
   },
   "apiKeysPage": {
-    "create": "キーを作成"
+    "create": "キーを作成",
+    "openapi": "OpenAPI ドキュメントをダウンロード"
   }
 }

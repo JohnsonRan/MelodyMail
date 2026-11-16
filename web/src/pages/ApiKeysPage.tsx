@@ -5,10 +5,9 @@ import { Center } from "@astryxdesign/core/Center";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Icon } from "@astryxdesign/core/Icon";
-import { VStack } from "@astryxdesign/core/Layout";
-import { Link } from "@astryxdesign/core/Link";
+import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
-import { KeyIcon } from "@heroicons/react/24/outline";
+import { ArrowDownTrayIcon, KeyIcon } from "@heroicons/react/24/outline";
 import { Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
@@ -49,7 +48,12 @@ export function ApiKeysPage() {
       fallback={
         <PageFrame
           title={t("nav.apiKeys")}
-          actions={<Button label={t("apiKeysPage.create")} variant="primary" isDisabled />}
+          actions={
+            <HStack gap={2} wrap="wrap" hAlign="end">
+              <DownloadButton label={t("apiKeysPage.openapi")} />
+              <Button label={t("apiKeysPage.create")} variant="primary" isDisabled />
+            </HStack>
+          }
         >
           <TableSkeleton />
         </PageFrame>
@@ -57,6 +61,18 @@ export function ApiKeysPage() {
     >
       <ApiKeysBody />
     </Suspense>
+  );
+}
+
+/** The OpenAPI document: a plain link to the Worker, which answers it as an attachment. */
+function DownloadButton({ label }: { label: string }) {
+  return (
+    <Button
+      label={label}
+      variant="secondary"
+      icon={<Icon icon={ArrowDownTrayIcon} />}
+      href="/api/openapi.json"
+    />
   );
 }
 
@@ -111,13 +127,16 @@ function ApiKeysBody() {
   );
 
   return (
-    <PageFrame title={t("title")} actions={createButton("primary")}>
-      <Text>
-        {t("intro")}{" "}
-        <Link href="/api/openapi.json" download="melodymail-openapi.json">
-          {t("openapi")}
-        </Link>
-      </Text>
+    <PageFrame
+      title={t("title")}
+      actions={
+        <HStack gap={2} wrap="wrap" hAlign="end">
+          <DownloadButton label={t("openapi")} />
+          {createButton("primary")}
+        </HStack>
+      }
+    >
+      <Text>{t("intro")}</Text>
       {loadError && <Banner status="error" title={t("loadFailed")} />}
       {!data && !loadError && <TableSkeleton />}
       {data && data.length === 0 && (

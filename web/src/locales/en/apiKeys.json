@@ -3,7 +3,7 @@
   "create": "Create key",
   "createTitle": "Create an API key",
   "intro": "Scripts and other programs use an API key to read, flag and send mail through the REST API. A key never reaches settings, rules or sign-in.",
-  "openapi": "Download the OpenAPI document",
+  "openapi": "Download OpenAPI document",
   "loadFailed": "This page could not be loaded. Reload the page to try again.",
   "emptyTitle": "No API keys yet",
   "emptyDescription": "Create a key for each program that should reach your mail, with only the access it needs.",

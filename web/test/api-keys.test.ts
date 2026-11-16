@@ -44,8 +44,8 @@ describe("Settings > API keys", () => {
     const page = await open();
     await passkey(page);
     await page.getByText("No API keys yet").first().waitFor();
-    const link = page.getByRole("link", { name: "Download the OpenAPI document" });
-    // A plain anchor: the router would cancel the click and show Not Found.
+    // A button beside Create key, rendered as a plain anchor: the router would cancel the click.
+    const link = page.getByRole("link", { name: "Download OpenAPI document" });
     const [download] = await Promise.all([page.waitForEvent("download"), link.click()]);
     expect(download.url()).toBe(`${app.origin}/api/openapi.json`);
     expect(download.suggestedFilename()).toBe("melodymail-openapi.json");
@@ -108,5 +108,8 @@ describe("Settings > API keys", () => {
     await page.getByText("2001:db8:1234:5678:9abc:def0:1234:5678").first().waitFor();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
     expect(await page.locator("table").count()).toBe(0);
+    // Both title actions fit at phone width.
+    await page.getByRole("link", { name: "下载 OpenAPI 文档" }).waitFor();
+    expect(await page.getByRole("link", { name: "下载 OpenAPI 文档" }).isVisible()).toBe(true);
   });
 });

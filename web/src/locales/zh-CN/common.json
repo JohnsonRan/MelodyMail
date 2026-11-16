@@ -499,6 +499,7 @@
     "create": "创建规则"
   },
   "apiKeysPage": {
-    "create": "创建密钥"
+    "create": "创建密钥",
+    "openapi": "下载 OpenAPI 文档"
   }
 }

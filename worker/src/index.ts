@@ -75,7 +75,13 @@ registerRuleRoutes(app.basePath("/rules"));
 
 // API keys and their document (docs/M6-rules-api.md): session routes; no API key reaches them.
 registerKeyRoutes(app.basePath("/keys"));
-app.get("/openapi.json", (c) => c.json(openapi));
+// An attachment, so the Settings link downloads it whether or not the browser honours `download`.
+app.get("/openapi.json", (c) =>
+  c.json(openapi, 200, {
+    "content-disposition": 'attachment; filename="melodymail-openapi.json"',
+    "x-content-type-options": "nosniff",
+  }),
+);
 
 // REST API v1: API keys only, never the session cookie (worker/src/routing.ts, apiRoute).
 registerApiV1(app.basePath("/v1"));

@@ -499,6 +499,7 @@
     "create": "Create rule"
   },
   "apiKeysPage": {
-    "create": "Create key"
+    "create": "Create key",
+    "openapi": "Download OpenAPI document"
   }
 }
