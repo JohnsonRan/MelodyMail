@@ -2854,3 +2854,107 @@ Deferred (owner decides after release):
 Not verified: the real iframe case in a headed browser (the review's repro scripts were not
 rerun; the browser test reproduces the missing top-level event with the focus stand-in); real
 sleep or network loss; the switch against the deployed Worker; CI.
+
+### Owner UI rulings after the re-review (2026-11-16)
+
+Commits: `569d432` the mail card; `fa152b3` the Telegram tier limit; `bd3f2bf` the app's mark in
+the header and on the sign-in page; `8114ff6` Figtree loaded from the app entry; and the docs
+commit after them.
+
+**The notice is a mail card.** The owner ruled that the new-mail notice must look different from
+the ordinary toasts ("Setting saved." and errors stay inverted).
+
+- The app now runs a local Astryx theme, `melody` (`web/src/themes/melody/melodyTheme.ts`), which
+  extends neutral and adds one toast type, `mail`: `--color-background-card`, the primary text
+  colour, a `--color-border-emphasized` border and `--shadow-high`. `astryx theme build`, `theme
+  add melody`, `theme use melody` and `theme remove neutral` regenerated `astryx-themes.ts`. The
+  toast measures its painted surface (MediaTheme auto), so the card's content takes the page's
+  light or dark tokens. Every other token and component renders as with neutral: 324 custom
+  properties and 80 sampled elements of the inbox compared equal in both palettes.
+- `notice.tsx` passes `type: "mail"` and Toast's `renderContent`: an envelope icon, the sender in
+  bold and the subject on one line (`maxLines={1}`, full value in its tooltip), then Open and a
+  Close button that calls `dismiss`. The viewport keeps the bottom-right position, auto-hide,
+  swipe and the polite announcement; with `renderContent` it announces the card's own text, so a
+  visually hidden "New mail" names it ("New mail Sender Subject"). Three slots as before; no
+  body; focus stays where it was.
+- Toast's `type` is a closed union and `theme build` emits no augmentation for it, so the code
+  casts `"mail"` and sets `isAutoHide: true` explicitly (Toast keeps errors open; a custom type is
+  neither).
+- Generated theme files are excluded from Biome, as `astryx-themes.ts` already was.
+- Found by the browser tier after the switch: the neutral module had been what imported Figtree
+  (`fonts.css`, aliased to the self-hosted `src/fonts.css`). `src/main.tsx` now imports
+  `src/fonts.css` itself; the alias stays as a guard. The token comparison above could not see
+  this, because the computed font-family string does not change when the font is missing.
+
+Contrast (WCAG 2.2, measured in Chromium from computed colours, 2026-11-16):
+
+| Pair | Light | Dark | Needed |
+| --- | --- | --- | --- |
+| Sender on the card | 21.0 | 17.2 | 4.5 |
+| Subject (supporting) on the card | 9.29 | 6.43 | 4.5 |
+| Envelope icon on the card | 5.41 | 6.43 | 3 |
+| Close icon on the card | 21.0 | 17.2 | 3 |
+| Open label on its button | 18.4 | 12.9 | 4.5 |
+| Card border against the page under it | 1.31 | 2.20 | see below |
+
+The card's edge does not reach 3:1 against the page (card `#fff` on `#f1f1f1` in light, `#1b1b1b`
+on `#1b1b1b` in dark; the border and the high shadow mark it). WCAG 1.4.11 asks 3:1 for what is
+needed to identify a control; the card's controls (Open, Close) and its text each pass on their
+own, so the edge is not counted as required. Listed for the owner below.
+
+**Telegram tier limit.** The owner approved 10 s for `bun run test:telegram`
+(`REQUIREMENTS.md`); open question 1 above records it.
+
+**The header mark is the app's logo.** The header and the sign-in frame drew Astryx's generic
+envelope since M0, while the favicon and the PWA icons come from `web/public/logo.svg` (M4b).
+`AppLogo` renders that file as a decorative `img` (`alt=""`; the app name stands beside it) at
+`--size-element-md` (32 px, the size the `NavIcon` took) in the header and `--size-element-lg`
+(36 px) above the sign-in card. In dark mode the logo's own dark tile merges with the header and
+the white mark stands alone, as the favicon does on a dark tab strip.
+
+Proof: `notice.test.ts` checks the card's type and its two lines (sender, subject), the
+announcement "New mail Sender Lunch on Friday?" in the polite region and nothing in the assertive
+one, Open, the Close button, the three-slot cap, the "(no subject)" fallback, and that the mail
+card is light while "Setting saved." beside it stays dark. The browser tier's existing font check
+found the Figtree regression.
+
+Ablation (`ablate-card.ts`, scratchpad): 9 hunks, 9 red: the theme rule for `mail`, the `mail`
+type, Close's dismiss, the hidden "New mail", the sender, the no-subject copy, Open's dismiss,
+Open's navigation, the three slots. Not ablated: `isAutoHide: true` (the 5 s auto-hide is not
+waited for in the suite), the `StackItem` that keeps Open and Close from shrinking (checked in
+the screenshots: the first try cut Open to "O.." beside a long subject), `AppLogo` (visual,
+checked in the screenshots; no test asserts the mark), the Figtree import (one hunk; the existing
+font check fails without it).
+
+Numbers (dev workstation, Ryzen 9 9950X3D, Bun 1.4.4):
+
+- Bundle (gzip -6, the scratchpad's `bundle-entry.ts`, each commit built on this host): entry plus
+  preloaded JS 263.1 → 266.4 kB (limit 270), first paint 311.8 → 315.2 kB (limit 370), total 720.9
+  → 724.7 kB (limit 770); `logo.svg` adds one 413-byte (gzip) request. The 3.3 kB on the entry
+  is the generated theme module, which imports neutral for its icons and carries its own token
+  map; the same build with the neutral module measured 263.0 kB. 3.6 kB of entry headroom is
+  left.
+- `bun run check`: 12.85, 12.26, 12.01 s at 6–17% load (limit 15 s). `bun run test:browser`: 28.28,
+  26.31, 27.46 s at 3–24% load, 58 tests (limit 30 s). `test:pwa` 12.65 s, `test:telegram` 6.56 s,
+  `test:send` 14.46 s, one run each at 0–2% load.
+
+Screenshots (`shots-m5c`): `notice-<locale>-<mode>-<width>.png` replaced (18: 390, 1280 and 1920
+px, light and dark, three locales; two mail cards, one with a long subject);
+`notice-with-toast-en-<mode>-1280.png` (2: "Setting saved." above a mail card);
+`header-en-<mode>-<width>.png` and `signin-en-<mode>-<width>.png` (8: 390 and 1280 px, light and
+dark). `scrollWidth` equalled the viewport width in all of them. Every shot listed here was taken
+after the Figtree fix.
+
+Deferred (owner decides after release):
+
+- The card's edge against the page is 1.31:1 (light) and 2.20:1 (dark), under 3:1; the text and
+  the controls pass. A stronger border token (text-secondary) would pass at the cost of a heavier
+  outline. Source: this round's measurement.
+- The generated theme module duplicates neutral's token map (+3.3 kB gzip on the entry). Source:
+  this round. Waits: an Astryx build option or a slimmer theme; within the limit today.
+- The truncated subject shows its full value in the Text tooltip on hover only; the Open button
+  gives the full message on touch. Source: web/AGENTS.md "Values never break". Waits: the notice
+  is transient and Open covers it.
+
+Not verified: the card with a screen reader (only the live region's text was read); the notice
+in Safari and Firefox; the logo's 32 px rendering on a high-density display (headless at 1x).
