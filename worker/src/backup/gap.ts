@@ -3,7 +3,8 @@ import { parseRecipient } from "../mail/inbound";
 // The gap tool's core (docs/M7-ops.md, "Mail after the restore point"; owner ruling 2,
 // 2026-11-17). After a restore to time T, raw objects received after T exist in R2 without a
 // row. findGap lists them and reads the metadata email() wrote; gapSql turns them into `stored`
-// rows, which the cron re-enqueues and the consumer parses. It only reads; the owner applies the
+// rows, which the cron re-enqueues and the consumer parses. Sent copies without a row are
+// reported, not rebuilt (GapReport.sentNotRebuilt). It only reads; the owner applies the
 // SQL. It runs in worker/scripts/gap-worker.ts under `wrangler dev`, never in the deployed Worker.
 
 export type GapRow = {
@@ -19,21 +20,31 @@ export type GapRow = {
 
 export type GapReport = {
   since: number;
-  /** Raw objects listed in the months searched. */
+  /** Objects listed under raw/ and sent/ in the months searched. */
   listed: number;
-  /** Of those, uploaded after `since`. */
+  /** Of those, uploaded after `since` minus OVERLAP_MS. */
   after: number;
   /** Of those, with a row already. */
   present: number;
   rows: GapRow[];
   skipped: { key: string; reason: "no_metadata" | "bad_metadata" | "bad_key" }[];
+  /**
+   * Mail sent after the restore point, without a row. Not rebuilt: the sent/ copy is written
+   * before the Resend call and holds no outcome, so a row could not say whether it went out.
+   */
+  sentNotRebuilt: { key: string; uploaded: number }[];
 };
 
 const KEY = /^raw\/\d{4}\/\d{2}\/([0-9a-f-]{36})\.eml$/;
 const LOOKUP_MAX = 100;
+/**
+ * Listed from this long before the restore point: a Time Travel point can fall between an R2 put
+ * and its D1 commit. The present-row check and INSERT OR IGNORE make the overlap harmless.
+ */
+export const OVERLAP_MS = 10 * 60 * 1000;
 
-/** raw/YYYY/MM/ from the month before `since` (keys carry the receive month) to `now`'s. */
-export function monthPrefixes(since: number, now: number): string[] {
+/** {root}/YYYY/MM/ from the month before `since` (keys carry the receive month) to `now`'s. */
+export function monthPrefixes(since: number, now: number, root = "raw"): string[] {
   const start = new Date(since);
   let year = start.getUTCFullYear();
   let month = start.getUTCMonth() - 1;
@@ -54,35 +65,49 @@ export function monthPrefixes(since: number, now: number): string[] {
     ) {
       return out;
     }
-    out.push(`raw/${year}/${String(month + 1).padStart(2, "0")}/`);
+    out.push(`${root}/${year}/${String(month + 1).padStart(2, "0")}/`);
     month++;
   }
 }
 
+/** A metadata value as email() wrote it; null when it is absent, undecodable or holds a NUL. */
 function decoded(value: string | undefined): string | null {
-  if (!value) return null;
+  if (value === undefined) return null;
   try {
-    return decodeURIComponent(value);
+    const text = decodeURIComponent(value);
+    return text.includes("\0") ? null : text;
   } catch {
     return null;
   }
 }
 
-/** The raw objects uploaded after `since` that have no messages row, as rows to insert. */
+/**
+ * The raw objects uploaded after `since` that have no messages row, as rows to insert, and the
+ * sent copies without a row, reported only.
+ */
 export async function findGap(
   env: { MAIL: R2Bucket; DB: D1Database },
   since: number,
   now = Date.now(),
 ): Promise<GapReport> {
-  const report: GapReport = { since, listed: 0, after: 0, present: 0, rows: [], skipped: [] };
+  const report: GapReport = {
+    since,
+    listed: 0,
+    after: 0,
+    present: 0,
+    rows: [],
+    skipped: [],
+    sentNotRebuilt: [],
+  };
   const candidates: R2Object[] = [];
-  for (const prefix of monthPrefixes(since, now)) {
+  const prefixes = [...monthPrefixes(since, now), ...monthPrefixes(since, now, "sent")];
+  for (const prefix of prefixes) {
     let cursor: string | undefined;
     do {
       const page = await env.MAIL.list({ prefix, cursor, include: ["customMetadata"] });
       report.listed += page.objects.length;
       for (const object of page.objects) {
-        if (object.uploaded.getTime() > since) candidates.push(object);
+        if (object.uploaded.getTime() > since - OVERLAP_MS) candidates.push(object);
       }
       cursor = page.truncated ? page.cursor : undefined;
     } while (cursor);
@@ -98,7 +123,12 @@ export async function findGap(
     const present = new Set(results.map((r) => r.key));
     report.present += present.size;
     for (const object of chunk) {
-      if (!present.has(object.key)) addRow(report, object);
+      if (present.has(object.key)) continue;
+      if (object.key.startsWith("sent/")) {
+        report.sentNotRebuilt.push({ key: object.key, uploaded: object.uploaded.getTime() });
+      } else {
+        addRow(report, object);
+      }
     }
   }
   return report;
@@ -111,16 +141,19 @@ function addRow(report: GapReport, object: R2Object): void {
     return;
   }
   const meta = object.customMetadata ?? {};
-  if (!meta.addressId && !meta.envelopeTo) {
+  if (meta.addressId === undefined && meta.envelopeTo === undefined) {
     // Stored before the metadata existed (M7).
     report.skipped.push({ key: object.key, reason: "no_metadata" });
     return;
   }
   const addressId = Number(meta.addressId);
   const receivedAt = Number(meta.receivedAt);
+  // An empty sender is valid: a bounce or an auto-reply has the null reverse-path.
   const envelopeFrom = decoded(meta.envelopeFrom);
   const envelopeTo = decoded(meta.envelopeTo);
   if (
+    !/^\d+$/.test(meta.addressId ?? "") ||
+    !/^\d+$/.test(meta.receivedAt ?? "") ||
     !Number.isSafeInteger(addressId) ||
     !Number.isSafeInteger(receivedAt) ||
     envelopeFrom === null ||
@@ -140,7 +173,6 @@ function addRow(report: GapReport, object: R2Object): void {
     receivedAt,
   });
 }
-
 const text = (value: string | null) =>
   value === null ? "NULL" : `'${value.replaceAll("'", "''")}'`;
 

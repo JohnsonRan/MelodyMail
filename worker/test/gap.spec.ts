@@ -42,7 +42,8 @@ describe("gap tool", () => {
     await env.MAIL.put(`raw/2026/11/${crypto.randomUUID()}.eml`, "Subject: old\r\n\r\nx\r\n");
 
     const report = await findGap(env, since);
-    expect(report).toMatchObject({ listed: 4, after: 3, present: 1 });
+    // The overlap lists the earlier message too; it has a row.
+    expect(report).toMatchObject({ listed: 4, after: 4, present: 2 });
     expect(report.skipped).toEqual([
       { key: expect.stringMatching(/^raw\//), reason: "no_metadata" },
     ]);
@@ -86,5 +87,96 @@ describe("gap tool", () => {
       },
       { timeout: 4000, interval: 25 },
     );
+  });
+
+  const put = (key: string, meta?: Record<string, string>) =>
+    env.MAIL.put(key, "Subject: x\r\n\r\nx\r\n", meta ? { customMetadata: meta } : {});
+  const meta = (fields: Record<string, string> = {}) => ({
+    addressId: "1",
+    envelopeFrom: "a%40example.org",
+    envelopeTo: "shop%40example.com",
+    receivedAt: "1794800000000",
+    ...fields,
+  });
+  const month = () => {
+    const d = new Date();
+    return `${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  };
+
+  it("rebuilds an empty sender, and skips bad keys, bad numbers, undecodable values and NULs", async () => {
+    const since = Date.now() - 1000;
+    const id = () => crypto.randomUUID();
+    const good = `raw/${month()}/${id()}.eml`;
+    await put(good, meta({ envelopeFrom: "" }));
+    const bad = {
+      key: `raw/${month()}/not-a-uuid.eml`,
+      number: `raw/${month()}/${id()}.eml`,
+      decode: `raw/${month()}/${id()}.eml`,
+      nul: `raw/${month()}/${id()}.eml`,
+      to: `raw/${month()}/${id()}.eml`,
+    };
+    await put(bad.key, meta());
+    // Number("") is 0, a safe integer: only the digit check refuses it.
+    await put(bad.number, meta({ addressId: "" }));
+    await put(bad.decode, meta({ envelopeTo: "%E0%A4%A" }));
+    await put(bad.nul, meta({ envelopeFrom: "a%00b" }));
+    await put(bad.to, meta({ envelopeTo: "" }));
+    const report = await findGap(env, since);
+    expect(report.rows.map((r) => [r.key, r.envelopeFrom])).toEqual([[good, ""]]);
+    const reasons = Object.fromEntries(report.skipped.map((s) => [s.key, s.reason]));
+    expect(reasons).toEqual({
+      [bad.key]: "bad_key",
+      [bad.number]: "bad_metadata",
+      [bad.decode]: "bad_metadata",
+      [bad.nul]: "bad_metadata",
+      [bad.to]: "bad_metadata",
+    });
+    await apply(gapSql(report.rows));
+    expect((await messageRows())[0]).toMatchObject({ envelope_from: "", status: "stored" });
+  });
+
+  it("lists from 10 minutes before the restore point", async () => {
+    const key = `raw/${month()}/${crypto.randomUUID()}.eml`;
+    await put(key, meta());
+    const now = Date.now();
+    expect((await findGap(env, now + 9 * 60 * 1000, now)).rows.map((r) => r.key)).toEqual([key]);
+    expect((await findGap(env, now + 11 * 60 * 1000, now)).rows).toEqual([]);
+  });
+
+  it("follows the list cursor past 1,000 objects", async () => {
+    const objects = Array.from({ length: 1005 }, () => ({
+      key: `raw/${month()}/${crypto.randomUUID()}.eml`,
+      uploaded: new Date(),
+      size: 1,
+      customMetadata: meta(),
+    }));
+    const list = vi.fn(async (options?: R2ListOptions) => {
+      if (options?.prefix !== `raw/${month()}/`) return { objects: [], truncated: false };
+      return options.cursor === "c1"
+        ? { objects: objects.slice(1000), truncated: false }
+        : { objects: objects.slice(0, 1000), truncated: true, cursor: "c1" };
+    });
+    const MAIL = { list } as unknown as R2Bucket;
+    const report = await findGap({ MAIL, DB: env.DB }, Date.now() - 1000);
+    expect(report.rows).toHaveLength(1005);
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ cursor: "c1" }));
+  });
+
+  it("reports sent mail without a row and writes nothing that sends or notifies", async () => {
+    const since = Date.now() - 1000;
+    const sent = `sent/${month()}/${crypto.randomUUID()}.json`;
+    await env.MAIL.put(sent, "{}");
+    const inboundKey = `raw/${month()}/${crypto.randomUUID()}.eml`;
+    await put(inboundKey, meta());
+    const send = vi.spyOn(env.INBOUND, "send");
+    const report = await findGap(env, since);
+    expect(report.sentNotRebuilt).toEqual([{ key: sent, uploaded: expect.any(Number) }]);
+    expect(report.rows.map((r) => r.key)).toEqual([inboundKey]);
+    const sql = gapSql(report.rows);
+    expect(sql).not.toContain("'out'");
+    await apply(sql);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect((await messageRows()).map((r) => r.direction)).toEqual(["in"]);
   });
 });
