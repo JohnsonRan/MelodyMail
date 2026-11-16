@@ -138,7 +138,6 @@ export function registerRuleRoutes(rules: Hono<AppEnv>): void {
     if (!Array.isArray(ids) || !ids.every((v) => Number.isSafeInteger(v) && v > 0)) {
       return fail(c, 400, "bad_request");
     }
-    if (new Set(ids).size !== ids.length) return fail(c, 409, "order_mismatch");
     const list = JSON.stringify(ids);
     const { meta } = await c.env.DB.prepare(
       `UPDATE rules SET position = (SELECT key + 1 FROM json_each(?1) WHERE value = rules.id)

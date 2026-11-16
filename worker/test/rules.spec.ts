@@ -58,6 +58,8 @@ describe("rule conditions", () => {
       [{ field: "from", op: "equals", value: "github" }, true],
       [{ field: "from", op: "equals", value: "notifications@github.com" }, true],
       [{ field: "from", op: "starts_with", value: "notif" }, true],
+      [{ field: "from", op: "starts_with", value: "github.com" }, false],
+      [{ field: "from", op: "ends_with", value: "notifications" }, false],
       [{ field: "from", op: "ends_with", value: "@github.com" }, true],
       [{ field: "from", op: "ends_with", value: "hub.com" }, true],
       [{ field: "from", op: "ends_with", value: "@gitlab.com" }, false],
@@ -95,6 +97,15 @@ describe("rule conditions", () => {
     expect(hits({ field: "subject", op: "contains", value: "构建失败" }, s)).toBe(true);
     expect(hits({ field: "subject", op: "contains", value: "テスト" }, s)).toBe(true);
     expect(hits({ field: "from", op: "equals", value: "jürgen" }, s)).toBe(true);
+  });
+
+  it("reads each named header on its own", () => {
+    const s = source({ "X-A": "alpha", "X-B": "beta" });
+    const both: Condition[] = [
+      { field: "header", name: "X-A", op: "equals", value: "alpha" },
+      { field: "header", name: "X-B", op: "equals", value: "beta" },
+    ];
+    expect(evaluateRules([rule(both)], s).read).toBe(true);
   });
 
   it("unfolds a folded header and joins a repeated one", () => {
@@ -306,7 +317,12 @@ describe("rule routes", () => {
     )
       .bind(JSON.stringify(Array.from({ length: 48 }, (_, i) => i)))
       .run();
-    expect(await client.json("POST", "/api/rules", BODY, 409)).toEqual({ error: "too_many_rules" });
+    const t = await addTarget(client, "a@out.test");
+    expect(await client.json("POST", "/api/rules", { ...BODY, targetIds: [t] }, 409)).toEqual({
+      error: "too_many_rules",
+    });
+    // The refused rule links nothing, not even to a rule that exists.
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM rule_forwards").first("n")).toBe(0);
     expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM rules").first("n")).toBe(50);
   });
 

@@ -412,8 +412,10 @@ describe("email() with rules", () => {
 
   it("uses the rules as they are when each message arrives", async () => {
     await addAddress("shop");
-    const id = await addRule({ conditions: fromGithub, trash: true });
-    await handleEmail(asMessage(github()), env);
+    // The recipient condition reads the address without its sub-address tag.
+    const recipient = { field: "recipient", op: "equals", value: "shop@example.com" };
+    const id = await addRule({ conditions: [...fromGithub, recipient], trash: true });
+    await handleEmail(asMessage(github("shop+news@example.com")), env);
     await env.DB.prepare("UPDATE rules SET enabled = 0 WHERE id = ?").bind(id).run();
     await handleEmail(asMessage(github()), env);
     expect((await flags()).map((f) => f[3])).toEqual([1, 0]);
