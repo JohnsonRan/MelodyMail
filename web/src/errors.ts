@@ -44,6 +44,7 @@ const KNOWN = new Set([
   "file_too_large",
   "unknown_source",
   "send_in_progress",
+  "send_status_unknown",
   "daily_quota_exceeded",
   "monthly_quota_exceeded",
   "send_rejected",

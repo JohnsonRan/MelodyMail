@@ -7,7 +7,7 @@ import { Heading, Text } from "@astryxdesign/core/Text";
 import { useTheme } from "@astryxdesign/core/theme";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { SourceKind } from "../compose/api";
+import type { ComposeKind } from "../compose/api";
 import {
   type Folder,
   getThread,
@@ -29,8 +29,8 @@ type Props = {
   onAction: (action: ReaderAction, message: MessageDetail) => Promise<boolean>;
   /** Called once the open message is shown, so the page can mark it read. */
   onOpened: (message: MessageDetail) => void;
-  /** Reply, reply all or forward the open message. */
-  onCompose: (kind: SourceKind, message: MessageDetail) => void;
+  /** Reply, reply all or forward the open message, or send it again as a new one. */
+  onCompose: (kind: ComposeKind, message: MessageDetail) => void;
   busy: string | null;
   /** Side by side the pane pads itself; alone, the page frame already does. */
   isPadded: boolean;
@@ -168,7 +168,11 @@ export default function Reader({
         <>
           <Heading level={2}>{current?.subject || t("mail.noSubject")}</Heading>
           {current?.direction === "out" && (
-            <SentStatus message={current} onRetried={(status) => setStatus(current.id, status)} />
+            <SentStatus
+              message={current}
+              onRetried={(status) => setStatus(current.id, status)}
+              onSendAsNew={() => onCompose("again", current)}
+            />
           )}
           {canShowRemote && (
             <Text type="supporting" color="secondary">

@@ -20,7 +20,7 @@ import { useMailbox } from "../mailbox/MailboxContext";
 import { MailFrame } from "../reader/MailFrame";
 import { sanitizeMailHtml } from "../reader/sanitize";
 import { AttachmentField } from "./AttachmentField";
-import type { SourceKind } from "./api";
+import type { ComposeKind } from "./api";
 import { ComposeActions } from "./ComposeActions";
 import { emailHtml } from "./markdown";
 import { QuotaLine, quotaLevel } from "./QuotaLine";
@@ -29,7 +29,7 @@ import { useCompose } from "./useCompose";
 
 type Props = {
   draftId: string;
-  source: { id: string; kind: SourceKind } | null;
+  source: { id: string; kind: ComposeKind } | null;
   onClose: () => void;
   /** Beside the list the panel draws its own heading; as a page the frame draws the title. */
   isPanel: boolean;
@@ -129,6 +129,9 @@ export default function ComposeView({ draftId, source, onClose, isPanel }: Props
   return (
     <VStack gap={4} hAlign="stretch" padding={isPanel ? 4 : 0} data-compose="">
       {heading}
+      {source?.kind === "again" && (
+        <Banner status="warning" title={t("again.title")} description={t("again.description")} />
+      )}
       {!setup.configured && (
         <Banner status="info" title={t("notConfigured")} description={t("notConfiguredHelp")} />
       )}

@@ -6,29 +6,36 @@ import { useTranslation } from "react-i18next";
 import { ApiError } from "../api";
 import { retrySend } from "../compose/api";
 import { errorMessage } from "../errors";
-import type { MessageItem } from "../mailbox/api";
+import type { MessageDetail } from "../mailbox/api";
 import { SendStatusLabel } from "../mailbox/SendStatusLabel";
 
-/** The Worker's window for retrying a row still "sending" (worker/src/send/send.ts). */
+/** The Worker's retry limits (worker/src/send/send.ts). */
 const SENDING_STALE_MS = 60_000;
-const SENDING_RETRY_MAX_MS = 24 * 3600_000;
+const RETRY_WINDOW_MS = 24 * 3600_000 - 5 * 60_000;
 
 /**
  * The status line of an open sent message, with Retry for a failed send and for one that stopped
- * mid-send within Resend's 24-hour idempotency window. A delivery failure that Resend reported and
- * a rejection are final and offer no Retry; so is a send unfinished after 24 hours, whose outcome
- * only Resend knows.
+ * mid-send, inside Resend's idempotency window from the first attempt. A delivery failure that
+ * Resend reported and a rejection are final and offer no Retry. Past the window, a message whose
+ * outcome is unknown can only be sent as a new message (owner ruling 13).
  */
 export function SentStatus({
   message,
   onRetried,
+  onSendAsNew,
 }: {
-  message: Pick<MessageItem, "status" | "error" | "receivedAt"> & { idempotencyKey: string | null };
+  message: Pick<
+    MessageDetail,
+    "id" | "status" | "error" | "receivedAt" | "idempotencyKey" | "firstAttemptAt" | "maybeAccepted"
+  >;
   onRetried: (status: string) => void;
+  onSendAsNew: () => void;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  // The Worker answered that the window has passed, whatever this clock says.
+  const [unknownFor, setUnknownFor] = useState<string | null>(null);
   if (message.status === "delivery_failed") {
     return (
       <Banner
@@ -38,14 +45,21 @@ export function SentStatus({
       />
     );
   }
-  const age = Date.now() - message.receivedAt;
-  const stalled = message.status === "sending" && age > SENDING_STALE_MS;
-  if (stalled && age >= SENDING_RETRY_MAX_MS) {
+  const now = Date.now();
+  const stalled = message.status === "sending" && now - message.receivedAt > SENDING_STALE_MS;
+  const rejected = message.status === "failed" && message.error === "send_rejected";
+  const outcomeUnknown =
+    message.status === "sending" || (message.status === "failed" && message.maybeAccepted === 1);
+  const pastWindow = now - (message.firstAttemptAt ?? message.receivedAt) >= RETRY_WINDOW_MS;
+  if (unknownFor === message.id || (outcomeUnknown && !rejected && pastWindow)) {
     return (
       <Banner
         status="warning"
         title={t("mail.sendUnknown")}
         description={t("mail.sendUnknownHelp")}
+        endContent={
+          <Button label={t("mail.sendAsNew")} variant="secondary" size="sm" onClick={onSendAsNew} />
+        }
       />
     );
   }
@@ -60,8 +74,14 @@ export function SentStatus({
       toast({ body: t("mail.retried") });
       onRetried(sent.status);
     } catch (err) {
+      const code = err instanceof ApiError ? err.code : "network";
+      if (code === "send_status_unknown") {
+        setUnknownFor(message.id);
+        return;
+      }
       toast({ body: errorMessage(t, err), type: "error" });
-      if (err instanceof ApiError && err.code !== "network") onRetried("failed");
+      // Another attempt holds the row: its status is left as it is until that attempt ends.
+      if (code !== "network" && code !== "send_in_progress") onRetried("failed");
     } finally {
       setBusy(false);
     }
@@ -78,7 +98,7 @@ export function SentStatus({
       endContent={
         // A rejection is final: the corrected message is a new send, from compose.
         message.idempotencyKey &&
-        message.error !== "send_rejected" && (
+        !rejected && (
           <Button
             label={t("mail.retrySend")}
             variant="secondary"

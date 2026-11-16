@@ -5,6 +5,12 @@ import { reportNetwork } from "../network";
 
 export type SourceKind = "reply" | "replyAll" | "forward";
 
+/**
+ * How compose starts from a message: a reply source, or "again", a sent message whose outcome is
+ * unknown, sent as a new message under a new key (owner ruling 13). "again" is not a reply source.
+ */
+export type ComposeKind = SourceKind | "again";
+
 export type FromAddress = { id: number; address: string; displayName: string };
 
 export type SendSetup = { configured: boolean; attachments: boolean; addresses: FromAddress[] };

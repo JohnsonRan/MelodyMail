@@ -117,8 +117,9 @@
     "deliveryFailedHelp": "Resend 报告这封邮件未能送达。如需再次发送，请转发这封邮件或写一封新邮件。",
     "sendStalled": "未完成发送",
     "sendStalledHelp": "这封邮件已开始发送，但没有完成。请重新发送，邮件仍只会发出一次。",
-    "sendUnknown": "状态未知",
-    "sendUnknownHelp": "这封邮件在一天内没有完成发送。请在 Resend 仪表板中查看它的状态。",
+    "sendUnknown": "状态未知，请在 Resend 中查看",
+    "sendUnknownHelp": "无法确定这封邮件是否已发出，也无法再安全地重新发送。请在 Resend 仪表板中查看它的状态。如果没有送达，请作为新邮件发送。",
+    "sendAsNew": "作为新邮件发送",
     "closeCompose": "关闭"
   },
   "settings": {
@@ -269,6 +270,7 @@
     "file_too_large": "文件超过 25 MB。",
     "unknown_source": "要回复的邮件已不存在。",
     "send_in_progress": "这封邮件正在发送。请稍候，然后查看“已发送”。",
+    "send_status_unknown": "无法确定这封邮件是否已发出。请在 Resend 仪表板中查看它的状态，或作为新邮件发送。",
     "daily_quota_exceeded": "今日发信额度已用完。请在 UTC 00:00 之后重试。",
     "monthly_quota_exceeded": "本月发信额度已用完。",
     "send_rejected": "邮件服务拒绝了这封邮件。请检查收件人和发件地址。",

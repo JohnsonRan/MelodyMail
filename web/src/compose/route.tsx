@@ -1,7 +1,7 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { lazy, Suspense, useCallback } from "react";
 import { ListSkeleton } from "../mailbox/ListBody";
-import type { SourceKind } from "./api";
+import type { ComposeKind } from "./api";
 
 // Compose lives in the URL of the mailbox page it opens on: `compose` names the draft, `src` and
 // `kind` the message replied to or forwarded. Back closes it; a reload reopens the same draft.
@@ -9,9 +9,9 @@ import type { SourceKind } from "./api";
 // The compose chunk carries the Markdown renderer; first paint does not load it.
 const ComposeView = lazy(() => import("./ComposeView"));
 
-const KINDS: SourceKind[] = ["reply", "replyAll", "forward"];
+const KINDS: ComposeKind[] = ["reply", "replyAll", "forward", "again"];
 
-export type ComposeSource = { id: string; kind: SourceKind };
+export type ComposeSource = { id: string; kind: ComposeKind };
 
 export function useComposeRoute() {
   const navigate = useNavigate();

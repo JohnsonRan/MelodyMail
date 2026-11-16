@@ -3,7 +3,12 @@
     "new": "New message",
     "reply": "Reply",
     "replyAll": "Reply all",
-    "forward": "Forward"
+    "forward": "Forward",
+    "again": "Send as a new message"
+  },
+  "again": {
+    "title": "The earlier message may already have been delivered",
+    "description": "This is sent as a new message. If the earlier one went out, the recipients get it twice."
   },
   "loadFailed": "Compose could not be opened. Close it and try again.",
   "notConfigured": "Sending is not set up",

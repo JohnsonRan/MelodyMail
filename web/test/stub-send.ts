@@ -42,6 +42,8 @@ export function sentMessage(id: string, body: Record<string, unknown>, status = 
       cc: null,
       bcc: null,
       idempotencyKey: body.idempotencyKey,
+      firstAttemptAt: Date.now(),
+      maybeAccepted: 0,
       envelopeFrom: "shop@example.com",
       envelopeTo: to.join(", "),
       forwardFailed: 0,
@@ -70,7 +72,7 @@ export class SendStub {
   uploads = new Map<string, Upload>();
   sends: Record<string, unknown>[] = [];
   /** Answers for the next sends, in order; "ok" when empty. */
-  answers: ("ok" | "fail" | "quota" | "rejected")[] = [];
+  answers: ("ok" | "fail" | "quota" | "rejected" | "inProgress" | "unknown")[] = [];
   /** Milliseconds each send waits before it answers. */
   sendDelay = 0;
 
@@ -107,6 +109,9 @@ export class SendStub {
       this.uploads.delete(upload[1] ?? "");
       return json({ ok: true });
     }
+    // A sent message's attachment, as the owner downloads it.
+    if (upload && method === "GET")
+      return new Response("hello", { headers: { "content-type": "text/plain" } });
     if (path === "/api/messages/send" && method === "POST") return this.send(req, store);
     return null;
   }
@@ -136,6 +141,8 @@ export class SendStub {
     if (answer === "fail") return json({ error: "send_failed", id: "failed-1" }, 502);
     if (answer === "quota") return json({ error: "daily_quota_exceeded", id: "failed-1" }, 429);
     if (answer === "rejected") return json({ error: "send_rejected", id: "failed-1" }, 422);
+    if (answer === "inProgress") return json({ error: "send_in_progress" }, 409);
+    if (answer === "unknown") return json({ error: "send_status_unknown", id: "failed-1" }, 409);
     const id = `sent-${this.sends.length}`;
     store.set(id, sentMessage(id, body));
     for (const [key, d] of this.drafts) {

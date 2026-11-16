@@ -44,6 +44,10 @@ export type MessageDetail = MessageItem & {
   bcc: string | null;
   /** Outbound only: the key a Retry sends again under. */
   idempotencyKey: string | null;
+  /** Outbound only: when the first attempt that Resend may have accepted was made. */
+  firstAttemptAt: number | null;
+  /** Outbound only: 1 when an attempt's outcome is unknown, so Resend may have sent it. */
+  maybeAccepted: number;
   envelopeFrom: string;
   envelopeTo: string;
   forwardFailed: number;

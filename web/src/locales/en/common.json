@@ -117,8 +117,9 @@
     "deliveryFailedHelp": "Resend reported that this message could not be delivered. To send it again, forward it or write a new message.",
     "sendStalled": "Not finished sending",
     "sendStalledHelp": "This message started sending but did not finish. Send it again; it still goes out only once.",
-    "sendUnknown": "Status unknown",
-    "sendUnknownHelp": "This message did not finish sending within a day. Check its status in the Resend dashboard.",
+    "sendUnknown": "Status unknown, check Resend",
+    "sendUnknownHelp": "Whether this message went out is unknown, and it can no longer be sent again safely. Check its status in the Resend dashboard. If it was not delivered, send it as a new message.",
+    "sendAsNew": "Send as a new message",
     "closeCompose": "Close"
   },
   "settings": {
@@ -269,6 +270,7 @@
     "file_too_large": "The file is larger than 25 MB.",
     "unknown_source": "The message you replied to no longer exists.",
     "send_in_progress": "This message is being sent. Wait a moment, then check Sent.",
+    "send_status_unknown": "Whether this message went out is unknown. Check its status in the Resend dashboard, or send it as a new message.",
     "daily_quota_exceeded": "Today's sending quota is used up. Try again after 00:00 UTC.",
     "monthly_quota_exceeded": "This month's sending quota is used up.",
     "send_rejected": "The mail service refused this message. Check the recipients and the From address.",

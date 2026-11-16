@@ -3,7 +3,12 @@
     "new": "新邮件",
     "reply": "回复",
     "replyAll": "全部回复",
-    "forward": "转发"
+    "forward": "转发",
+    "again": "作为新邮件发送"
+  },
+  "again": {
+    "title": "之前的邮件可能已经送达",
+    "description": "这封邮件将作为新邮件发送。如果之前的邮件已经发出，收件人会收到两封。"
   },
   "loadFailed": "无法打开写邮件。请关闭后重试。",
   "notConfigured": "尚未设置发信",

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ApiError } from "../api";
 import {
   type Attachment,
+  type ComposeKind,
   deleteDraft,
   deleteUpload,
   getDraft,
@@ -49,7 +50,7 @@ export type Entry = {
 
 export type SaveState = "idle" | "saving" | "saved" | "error";
 
-type Source = { id: string; kind: SourceKind };
+type Source = { id: string; kind: ComposeKind };
 
 const EMPTY: Fields = { addressId: null, to: [], cc: [], bcc: [], subject: "", text: "" };
 
@@ -79,7 +80,8 @@ export function useCompose(options: {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<unknown>(null);
   const key = useRef("");
-  const kind = useRef<Source | null>(null);
+  /** The reply or forward source sent with the message; none for a new one. */
+  const kind = useRef<{ id: string; kind: SourceKind } | null>(null);
   const dirty = useRef(false);
   const closed = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -174,7 +176,9 @@ export function useCompose(options: {
           setEntries(draft.attachments.map(doneEntry));
         } else {
           key.current = crypto.randomUUID();
-          kind.current = source;
+          // Sent again as new, the message is an ordinary send without a reply source.
+          kind.current =
+            source && source.kind !== "again" ? { ...source, kind: source.kind } : null;
           const start: Fields = { ...EMPTY, addressId: sendSetup.addresses[0]?.id ?? null };
           if (source) {
             const started = await startFromSource({
