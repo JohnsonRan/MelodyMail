@@ -9,8 +9,15 @@ import type { AstryxMessages, Locale } from "./i18n";
 import { PreferencesProvider } from "./preferences";
 import { disableChromeSelection } from "./selection";
 
-/** Every Astryx link navigates through the router instead of reloading the page. */
+/**
+ * Every Astryx link to a page navigates through the router instead of reloading the page. A
+ * download or a Worker URL (/api/...) stays a plain anchor: the router would cancel the click and
+ * look for a page of that name.
+ */
 function RouterLink({ href, ...props }: AnchorHTMLAttributes<HTMLAnchorElement>) {
+  if (props.download !== undefined || href?.startsWith("/api/")) {
+    return <a href={href} {...props} />;
+  }
   return <Link to={href ?? "/"} {...props} />;
 }
 

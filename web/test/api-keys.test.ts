@@ -45,7 +45,10 @@ describe("Settings > API keys", () => {
     await passkey(page);
     await page.getByText("No API keys yet").first().waitFor();
     const link = page.getByRole("link", { name: "Download the OpenAPI document" });
-    expect(await link.getAttribute("href")).toBe("/api/openapi.json");
+    // A plain anchor: the router would cancel the click and show Not Found.
+    const [download] = await Promise.all([page.waitForEvent("download"), link.click()]);
+    expect(download.url()).toBe(`${app.origin}/api/openapi.json`);
+    expect(download.suggestedFilename()).toBe("melodymail-openapi.json");
 
     await page.getByRole("button", { name: "Create key" }).first().click();
     const dialog = page.getByRole("dialog");
