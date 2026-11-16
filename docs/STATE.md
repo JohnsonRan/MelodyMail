@@ -1888,11 +1888,13 @@ the 9 runs in a row, `time.ts` in the session scratchpad, CPU load read before e
   identical: entry plus preloaded JS 263.1 kB, first paint 311.8 kB (7 assets), total 716.7 kB,
   compose chunk 51.5 kB.
 
-### Owner rulings 15 and 16 (2026-11-16)
+### Owner rulings 15 to 17 (2026-11-16)
 
 15. **`bun run test:send` limit** 14 s → 18 s (owner approval 2026-11-16; open question 7).
 16. **`bun run check` limit** 10 s → 12 s (owner approval 2026-11-16). The gate runs before each
     commit and in CI ("Merge gate" row).
+17. **"Slowest test package" limit** 9 s → 10.8 s (9.0 s plus 20%; owner approval 2026-11-16;
+    open question 8).
 
 REQUIREMENTS carries both in the "Commands" rows. No script enforces either limit:
 `scripts/check.ts` prints `check passed in N s` and exits on the steps' results only, and no hook
@@ -1960,7 +1962,7 @@ changed, CPU load read before each run):
 
 - `bun run check`: 9.51, 9.40, 10.19, 9.83, 9.77 s wall, all green, CPU load 1–5% (limit 12 s
   by ruling 16); worker suite (vitest Duration) 8.25, 8.21, 9.03, 8.64, 8.60 s, 335 tests:
-  **one run over the 9 s "Slowest test package" limit** (open question 8). Green before each
+  **one run over the 9 s "Slowest test package" limit then** (open question 8, settled by ruling 17: 10.8 s). Green before each
   commit of this round (9.4–10.4 s).
 - `bun run test:send`: 13.96, 13.86, 14.45 s wall including the build (bun test 12.34–12.91 s),
   9 tests in 3 files, CPU load 1–10% (limit 18 s by ruling 15).
@@ -2036,7 +2038,7 @@ changed, CPU load read before each run):
 7. Settled by ruling 15 (limit 18 s). **`bun run test:send` is over its 14 s limit** in two of three runs after the third round
    (13.96–14.67 s wall, CPU load 0–1%). Options: raise it to 18 s (14.7 s plus 20%, the method
    of "Commands"), or move the reader send states into their own suite with its own build.
-8. **The worker suite reached 9.03 s** (vitest Duration) in one of five gate runs after the
+8. Settled by ruling 17 (limit 10.8 s). **The worker suite reached 9.03 s** (vitest Duration) in one of five gate runs after the
    fourth round, against the 9 s "Slowest test package" limit (8.21–8.64 s in the other four,
    CPU load 1–5%). The round added no test; the third round measured 8.09–8.55 s. Options: raise
    the limit to 10.8 s (9.0 s plus 20%), or split the slowest worker specs across vitest pools.
