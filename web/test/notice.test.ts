@@ -72,7 +72,8 @@ function newMail(id: string, subject: string) {
   for (const ws of app.sockets) ws.send(JSON.stringify({ type: "message", id }));
 }
 
-const notices = (page: Page) => page.locator(".astryx-toast");
+/** The mail cards: toasts of the theme's "mail" type (src/themes/melody/melodyTheme.ts). */
+const notices = (page: Page) => page.locator('.astryx-toast[data-type="mail"]');
 
 describe("foreground reports", () => {
   test("follow visibility and focus, once per change, and start again on a new socket", async () => {
@@ -132,8 +133,11 @@ describe("new mail notice", () => {
     newMail("fresh", "Lunch on Friday?");
     const notice = notices(page).filter({ hasText: "Lunch on Friday?" });
     await notice.waitFor();
+    expect(await notice.locator(".astryx-text").allTextContents()).toEqual([
+      "Sender",
+      "Lunch on Friday?",
+    ]);
     const text = (await notice.textContent()) ?? "";
-    expect(text).toContain("New mail from Sender: Lunch on Friday?");
     expect(text).not.toContain("snippet");
     expect(text).not.toContain("Plain note");
     // Announced through a polite live region, never the assertive one.
@@ -143,7 +147,7 @@ describe("new mail notice", () => {
         .evaluateAll((els) => els.map((e) => e.textContent ?? "").join("|"));
     await page.waitForFunction(() =>
       [...document.querySelectorAll('[aria-live="polite"]')].some((e) =>
-        e.textContent?.includes("Lunch on Friday?"),
+        /New mail\s*Sender\s*Lunch on Friday\?/.test(e.textContent ?? ""),
       ),
     );
     expect(await live("assertive")).not.toContain("Lunch on Friday?");
@@ -163,12 +167,12 @@ describe("new mail notice", () => {
     expect(await notices(page).count()).toBe(0);
     await switchTo(page, { visible: true, focused: true }, "focus");
     newMail("bare", "");
-    await notices(page).filter({ hasText: "New mail from Sender: (no subject)" }).waitFor();
+    await notices(page).filter({ hasText: "(no subject)" }).waitFor();
     for (const n of [1, 2, 3, 4]) newMail(`burst${n}`, `Burst ${n}`);
     // The four fetches finish in any order; whichever notice came first leaves.
     await page.waitForFunction(
       () =>
-        [...document.querySelectorAll(".astryx-toast")].filter((e) =>
+        [...document.querySelectorAll('.astryx-toast[data-type="mail"]')].filter((e) =>
           e.textContent?.includes("Burst"),
         ).length === 3,
       undefined,
@@ -176,6 +180,13 @@ describe("new mail notice", () => {
     );
     await page.waitForTimeout(300);
     expect(await notices(page).count()).toBe(3);
+    // The card draws its own close control, which dismisses it.
+    await notices(page).first().getByRole("button", { name: "Close" }).click();
+    await page.waitForFunction(
+      () => document.querySelectorAll('.astryx-toast[data-type="mail"]').length === 2,
+      undefined,
+      { timeout: 2000 },
+    );
   });
 });
 
@@ -189,7 +200,19 @@ describe("quiet setting", () => {
       .getByText("No system notification and no Telegram message is sent while")
       .waitFor();
     await toggle.click();
-    await session.page.getByText("Setting saved.").first().waitFor();
+    const saved = session.page.locator(".astryx-toast").filter({ hasText: "Setting saved." });
+    await saved.waitFor();
+    // The mail card sits on the page's light surface; the ordinary toast stays inverted (dark).
+    newMail("beside", "Next to a saved toast");
+    const card = notices(session.page).filter({ hasText: "Next to a saved toast" });
+    await card.waitFor();
+    const lightness = (bg: string) => {
+      const [r = 0, g = 0, b = 0] = bg.match(/\d+/g)?.map(Number) ?? [];
+      return (r + g + b) / 3;
+    };
+    const bgOf = (l: typeof card) => l.evaluate((e) => getComputedStyle(e).backgroundColor);
+    expect(lightness(await bgOf(card))).toBeGreaterThan(200);
+    expect(lightness(await bgOf(saved))).toBeLessThan(60);
     expect(app.quiet).toBe(true);
     expect(await toggle.isChecked()).toBe(true);
     await session.page.reload();

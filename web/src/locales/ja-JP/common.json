@@ -403,6 +403,7 @@
     "reload": "再読み込み"
   },
   "notification": {
+    "close": "閉じる",
     "newMail": "新着メール",
     "notice": "{{from}} からの新着メール：{{subject}}",
     "open": "開く",

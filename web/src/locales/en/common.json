@@ -403,6 +403,7 @@
     "reload": "Reload"
   },
   "notification": {
+    "close": "Close",
     "newMail": "New mail",
     "notice": "New mail from {{from}}: {{subject}}",
     "open": "Open",

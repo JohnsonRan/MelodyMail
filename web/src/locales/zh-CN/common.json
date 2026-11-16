@@ -403,6 +403,7 @@
     "reload": "重新加载"
   },
   "notification": {
+    "close": "关闭",
     "newMail": "新邮件",
     "notice": "来自 {{from}} 的新邮件：{{subject}}",
     "open": "打开",
