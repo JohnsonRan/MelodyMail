@@ -797,9 +797,9 @@ origin, permanent delete, migration 0007). Merged as PR #4 (`1f713f5`) after rev
 - The white mail background in dark mode stays (sender HTML is designed for white). A per-message
   dark-reading toggle is deferred to M4b, below.
 - UI checked by the owner; merge approved.
-- Still open: the bundle total limit (643.0 kB against 610 kB). Recommendation: raise it to
-  about 770 kB and keep first paint (370 kB) as the main gate. The postal-mime and DOMPurify
-  chunks are the libraries themselves; smaller replacements would parse or sanitize less.
+- Bundle total limit raised from 610 kB to 770 kB (reply "同意并开始"); first paint (370 kB)
+  stays the main gate. The postal-mime and DOMPurify chunks are the libraries themselves;
+  smaller replacements would parse or sanitize less.
 
 ### Done
 
