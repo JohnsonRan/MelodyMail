@@ -2132,9 +2132,9 @@ to an ellipsis (it keeps its width now; the recipients are cut instead).
 
 Design: `docs/M5b-telegram.md`, with the owner's rulings of 2026-11-16 at its end. Risk class
 High (a public webhook that changes flags, the bot token, a table linking the mailbox to a chat,
-Worker requests to the Bot API carrying sender, subject and address). Waits for the independent
-review passed (see "Review"); waits for the real-bot tunnel test (ruling 1, run by the
-coordinator with the owner, when the owner is ready). Screenshots were sent to the owner.
+Worker requests to the Bot API carrying sender, subject and address). Both reviews passed, both
+real-bot tunnel tests ran (see "Real-bot tunnel tests"), and screenshots were sent to the owner.
+Waits for the pull request's CI and the owner's go to merge.
 
 Commits on `339d865`: `36cab01` migration 0011; `97e7c95` Worker: Connect, webhook, cards;
 `952436d` recovery disconnects Telegram; `b07dc98` widget size check; `7dab8d5` benchmark;
@@ -2522,6 +2522,35 @@ Owner rulings (2026-11-16):
 Not verified: a real tap on the plain message's buttons and the real `answerCallbackQuery` in a
 webhook response (the real-bot tunnel test again, ruling 1); how each client draws the 2 × 2
 keyboard at phone width.
+
+### Real-bot tunnel tests (2026-11-16, owner's bot, local `wrangler dev`)
+
+Allowed by ruling 1. Setup: a fresh `--persist-to` state in the scratchpad (the passkey's RP ID is
+the request host, so the owner ran `/setup` on the tunnel host), `wrangler dev --local-protocol
+https`, `cloudflared tunnel --url https://localhost:8787 --no-tls-verify`; mail posted to
+`/cdn-cgi/local/email`. The tunnel and `wrangler dev` were stopped after each test.
+
+1. **First test.** The tunnel origin read as `https`, Connect registered the webhook, the deep
+   link bound the chat, and the webhook's `sendMessage` reply arrived. Every `sendWidget` answered
+   `400 INPUT_MEDIA_WIDGET_NOT_ALLOWED`: Telegram stopped general bots from sending widgets on
+   2026-11-13 (tdlib/telegram-bot-api issue 947). The plain fallback arrived and its Open button
+   opened the mail. This led to ruling 7 and the plain-message buttons.
+2. **Second test, after ruling 7.** The fallback carried the 2 x 2 keyboard. The owner tapped
+   read, archive and star both ways: each answered a notice, the labels toggled, and the panel
+   followed. So Telegram accepts `answerCallbackQuery` as a webhook reply.
+
+Still unverified: a widget in a real Telegram client (Telegram refuses to send them), taps on an
+`InaccessibleMessage`.
+
+### Owner requests after the tunnel test (2026-11-16, for a change after M5b)
+
+1. An in-page notice for new mail while a MelodyMail page is in the foreground (a toast with the
+   sender, the subject and an Open button that hides after a few seconds).
+2. While a page is in the foreground, send neither the system notification (Web Push) nor the
+   Telegram message. This supersedes M5b ruling 3 ("a card is sent even while a page is open")
+   once that change lands; M5b ships with ruling 3 as built. It needs the Hub to know which pages
+   are visible (the page reports visibility over its WebSocket).
+3. Fix the `build`/`test` race on `web/dist` in `scripts/check.ts` (ruling 2 above).
 
 ### Deferred
 
