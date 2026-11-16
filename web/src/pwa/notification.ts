@@ -54,8 +54,18 @@ export function notificationFor(data: unknown, copy: NotificationCopy, appName: 
   } satisfies NotificationSpec;
 }
 
-/** Where a click on a notification goes: a path inside the app, never another origin. */
-export function clickTarget(data: unknown): string {
+/** Where a click on a notification goes: an absolute URL on the app's origin, never another. */
+export function clickTarget(data: unknown, origin: string): string {
   const url = data !== null && typeof data === "object" ? (data as { url?: unknown }).url : null;
-  return typeof url === "string" && url.startsWith("/") && !url.startsWith("//") ? url : "/";
+  const home = `${origin}/`;
+  if (typeof url !== "string") return home;
+  // Resolved here and returned absolute: a relative result such as "//evil.example" (from
+  // "/.//evil.example") would be resolved again by openWindow() and could leave the origin.
+  let target: URL;
+  try {
+    target = new URL(url, origin);
+  } catch {
+    return home;
+  }
+  return target.origin === origin ? target.href : home;
 }

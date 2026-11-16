@@ -4,6 +4,7 @@ import { clickTarget, messageUrl, notificationFor } from "../src/pwa/notificatio
 // The push and click handlers as functions (docs/M4b-pwa.md, "Proof the change needs"): a real
 // push cannot be delivered in a test, so the service worker's logic is checked here.
 
+const ORIGIN = "https://mail.test";
 const COPY = { newMail: "New mail", noSubject: "(no subject)", testBody: "It works." };
 
 describe("notification for a push", () => {
@@ -47,14 +48,27 @@ describe("notification for a push", () => {
 
 describe("notification click", () => {
   test("opens the message inside the app", () => {
-    expect(clickTarget({ url: messageUrl("m1") })).toBe("/?m=m1");
+    expect(clickTarget({ url: messageUrl("m1") }, ORIGIN)).toBe(`${ORIGIN}/?m=m1`);
   });
 
   test("never leaves the app's origin", () => {
-    for (const url of ["https://evil.example/", "//evil.example/x", "javascript:alert(1)", 7]) {
-      expect(clickTarget({ url })).toBe("/");
+    const escapes = [
+      "https://evil.example/",
+      "//evil.example/x",
+      "/\t/evil.example",
+      "/\\evil.example",
+      "\\\\evil.example",
+      "javascript:alert(1)",
+      7,
+    ];
+    for (const url of escapes) expect(clickTarget({ url }, ORIGIN), String(url)).toBe(`${ORIGIN}/`);
+    expect(clickTarget(null, ORIGIN)).toBe(`${ORIGIN}/`);
+    expect(clickTarget(undefined, ORIGIN)).toBe(`${ORIGIN}/`);
+    // Paths that normalize to "//host" stay absolute on the origin, so the window cannot
+    // resolve them a second time against another host.
+    for (const url of ["/.//evil.example", `${ORIGIN}//evil.example/x`]) {
+      const target = clickTarget({ url }, ORIGIN);
+      expect(new URL(target, "https://other.example").origin, url).toBe(ORIGIN);
     }
-    expect(clickTarget(null)).toBe("/");
-    expect(clickTarget(undefined)).toBe("/");
   });
 });
