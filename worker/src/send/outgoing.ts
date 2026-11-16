@@ -33,7 +33,11 @@ export type SentCopy = {
   html: string | null;
   headers: Record<string, string>;
   attachments: { uploadId: string; filename: string; contentType: string; size: number }[];
-  /** Expiry (Unix seconds) of the signed attachment URLs, the same on every attempt. */
+  /**
+   * Origin and expiry (Unix seconds) of the signed attachment URLs, kept so that every attempt
+   * sends the same body, even a retry made through another hostname.
+   */
+  attachmentsOrigin: string;
   attachmentsExpireAt: number;
 };
 
@@ -149,6 +153,7 @@ export async function prepare(
       html: html as string | null,
       headers,
       attachments,
+      attachmentsOrigin: new URL(c.req.url).origin,
       attachmentsExpireAt: Math.floor(Date.now() / 1000) + SIGNED_URL_TTL_S,
     },
     threadKey,

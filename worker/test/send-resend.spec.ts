@@ -56,6 +56,30 @@ describe("retrying a send", () => {
   });
 });
 
+describe("retrying through another hostname", () => {
+  it("signs attachment URLs with the origin of the first attempt", async () => {
+    const client = await signedIn();
+    const from = await sender();
+    const fileId = await uploaded(client);
+    const calls = stubResend((n) => (n === 0 ? resendError(500, "application_error") : resendOk()));
+    const body = sendBody(from, { uploadIds: [fileId] });
+    expect((await send(client, body)).status).toBe(502);
+
+    const other = "https://mail.other.test";
+    const retry = await exports.default.fetch(`${other}/api/messages/send`, {
+      method: "POST",
+      headers: {
+        origin: other,
+        "content-type": "application/json",
+        cookie: [...client.cookies].map(([k, v]) => `${k}=${v}`).join("; "),
+      },
+      body: JSON.stringify({ idempotencyKey: body.idempotencyKey }),
+    });
+    expect(retry.status).toBe(200);
+    expect(JSON.stringify(calls[1]?.body)).toBe(JSON.stringify(calls[0]?.body));
+  });
+});
+
 describe("Resend's idempotency conflicts", () => {
   it.each(["concurrent_idempotent_requests", "invalid_idempotent_request"])(
     "leaves the row sending on 409 %s, so a concurrent success lands",
