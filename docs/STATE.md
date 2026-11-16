@@ -3643,3 +3643,18 @@ Not verified (added, the reviewer's hypotheses):
 - Next: M7 (operations, backups, deployment docs, three-language README, first deploy; needs the
   owner's `wrangler login` and an explicit go for every production step).
 
+
+## Settings navigation (owner request 2026-11-17)
+
+- The side navigation is split by view. The mailbox view shows the folders, "Receiving addresses"
+  (the per-address filters, renamed from "Addresses"; zh-CN 收件地址, ja-JP 受信アドレス) and one
+  "Settings" entry (gear) at the foot. Every `/settings/...` page replaces it with a settings
+  navigation: "Back to mailbox", then Mail (Domains, Addresses, Forwarding, Rules), Notifications
+  and Account (Security, API keys). The phone menu shows the navigation of the current view.
+- `/settings` redirects to `/settings/domains`. No URL changed. The search field stays in the app
+  bar on settings pages: removing it would change the app bar, and a search from there opens
+  `/search` as before.
+- Tests: two cases in `web/test/mailbox.test.ts` (the two navigations, the redirect, the phone
+  menu). Ablation: dropping the Settings entry, the view switch, the redirect or the Back target
+  turns them red; the English section title turns one assertion red.
+- Not verified: the layout by screenshot (the owner checks on local `wrangler dev`).

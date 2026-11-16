@@ -6,9 +6,11 @@ import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 import {
   ArchiveBoxIcon,
+  ArrowLeftIcon,
   ArrowUturnRightIcon,
   AtSymbolIcon,
   BellIcon,
+  Cog6ToothIcon,
   DocumentTextIcon,
   FunnelIcon,
   GlobeAltIcon,
@@ -90,7 +92,16 @@ function MailNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { counts, addresses } = useMailbox();
   return (
-    <SideNav>
+    <SideNav
+      footer={
+        <SideNavItem
+          label={t("nav.settings")}
+          icon={Cog6ToothIcon}
+          isSelected={false}
+          href="/settings/domains"
+        />
+      }
+    >
       <SideNavSection title={t("nav.mail")} isHeaderHidden>
         {FOLDER_NAV.map(({ folder, path, icon }) => (
           <SideNavItem
@@ -104,7 +115,7 @@ function MailNav() {
         ))}
       </SideNavSection>
       {addresses.length > 0 && (
-        <SideNavSection title={t("nav.addresses")}>
+        <SideNavSection title={t("nav.receivingAddresses")}>
           {addresses.map((a) => (
             <SideNavItem
               key={a.id}
@@ -117,62 +128,71 @@ function MailNav() {
           ))}
         </SideNavSection>
       )}
-      <SideNavSection title={t("nav.manage")}>
-        <SideNavItem
-          label={t("nav.domains")}
-          icon={GlobeAltIcon}
-          isSelected={pathname.startsWith("/settings/domains")}
-          href="/settings/domains"
-        />
-        <SideNavItem
-          label={t("nav.addresses")}
-          icon={AtSymbolIcon}
-          isSelected={pathname === "/settings/addresses"}
-          href="/settings/addresses"
-        />
-        <SideNavItem
-          label={t("nav.forwarding")}
-          icon={ArrowUturnRightIcon}
-          isSelected={pathname === "/settings/forwarding"}
-          href="/settings/forwarding"
-        />
-        <SideNavItem
-          label={t("nav.rules")}
-          icon={FunnelIcon}
-          isSelected={pathname === "/settings/rules"}
-          href="/settings/rules"
-        />
-        <SideNavItem
-          label={t("nav.apiKeys")}
-          icon={KeyIcon}
-          isSelected={pathname === "/settings/api-keys"}
-          href="/settings/api-keys"
-        />
-        <SideNavItem
-          label={t("nav.notifications")}
-          icon={BellIcon}
-          isSelected={pathname === "/settings/notifications"}
-          href="/settings/notifications"
-        />
-        <SideNavItem
-          label={t("nav.security")}
-          icon={ShieldCheckIcon}
-          isSelected={pathname === "/settings/security"}
-          href="/settings/security"
-        />
+    </SideNav>
+  );
+}
+
+const SETTINGS_NAV: {
+  title: string;
+  items: { key: string; path: string; icon: typeof InboxIcon }[];
+}[] = [
+  {
+    title: "nav.mail",
+    items: [
+      { key: "domains", path: "/settings/domains", icon: GlobeAltIcon },
+      { key: "addresses", path: "/settings/addresses", icon: AtSymbolIcon },
+      { key: "forwarding", path: "/settings/forwarding", icon: ArrowUturnRightIcon },
+      { key: "rules", path: "/settings/rules", icon: FunnelIcon },
+    ],
+  },
+  {
+    title: "nav.notifications",
+    items: [{ key: "notifications", path: "/settings/notifications", icon: BellIcon }],
+  },
+  {
+    title: "nav.account",
+    items: [
+      { key: "security", path: "/settings/security", icon: ShieldCheckIcon },
+      { key: "apiKeys", path: "/settings/api-keys", icon: KeyIcon },
+    ],
+  },
+];
+
+/** The side navigation of every /settings page: a way back, then the settings in groups. */
+function SettingsNav() {
+  const { t } = useTranslation();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  return (
+    <SideNav>
+      <SideNavSection title={t("nav.backToMailbox")} isHeaderHidden>
+        <SideNavItem label={t("nav.backToMailbox")} icon={ArrowLeftIcon} href="/" />
       </SideNavSection>
+      {SETTINGS_NAV.map(({ title, items }) => (
+        <SideNavSection key={title} title={t(title)}>
+          {items.map(({ key, path, icon }) => (
+            <SideNavItem
+              key={key}
+              label={t(`nav.${key}`)}
+              icon={icon}
+              isSelected={pathname === path || pathname.startsWith(`${path}/`)}
+              href={path}
+            />
+          ))}
+        </SideNavSection>
+      ))}
     </SideNav>
   );
 }
 
 /**
- * The signed-in frame: app bar with search, folder and address navigation, the page outlet.
+ * The signed-in frame: app bar with search, the mailbox navigation or, under /settings, the settings navigation, the page outlet.
  * When the network comes back the route guard runs again and the mailbox state is rebuilt, so
  * the counts, the socket and the open page load afresh.
  */
 export function MailShell() {
   const { t } = useTranslation();
   const router = useRouter();
+  const inSettings = useRouterState({ select: (s) => s.location.pathname.startsWith("/settings") });
   const { epoch } = useNetwork();
   useEffect(() => {
     if (epoch > 0) void router.invalidate();
@@ -191,7 +211,7 @@ export function MailShell() {
             endContent={<PreferenceSelectors />}
           />
         }
-        sideNav={<MailNav />}
+        sideNav={inSettings ? <SettingsNav /> : <MailNav />}
       >
         <Outlet />
       </AppShell>

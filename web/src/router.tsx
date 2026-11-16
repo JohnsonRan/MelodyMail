@@ -53,6 +53,13 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
     mailbox("/address/$id", "AddressPage"),
     mailbox("/search", "SearchPage"),
   ];
+  const settingsIndexRoute = createRoute({
+    getParentRoute: () => shellRoute,
+    path: "/settings",
+    beforeLoad: () => {
+      throw redirect({ to: "/settings/domains", replace: true });
+    },
+  });
   const securityRoute = createRoute({
     getParentRoute: () => shellRoute,
     path: "/settings/security",
@@ -130,6 +137,7 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
   const routeTree = rootRoute.addChildren([
     shellRoute.addChildren([
       ...mailboxRoutes,
+      settingsIndexRoute,
       securityRoute,
       notificationsRoute,
       domainsRoute,
