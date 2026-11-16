@@ -69,7 +69,8 @@ function headerValue(source: MailSource, name: string): string | null {
  * of them; cutting before the `max`-th leaves at most `max` addresses, whatever the tokenizer
  * makes of the rest. The cut never mirrors the tokenizer's quoting rules, which earlier attempts
  * got wrong on groups and domain literals. A display name holding "," or ";" makes the header
- * keep fewer than `max` addresses, always a prefix of them (accepted, docs/M6-rules-api.md).
+ * keep fewer than `max` addresses; the last one may be a fragment of the entry the cut splits
+ * (accepted, docs/M6-rules-api.md).
  */
 export function cutAddressList(raw: string, max: number): string {
   let separators = 0;

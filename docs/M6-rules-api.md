@@ -110,7 +110,9 @@ Matching rules:
   characters, so the cut can never come later than the tokenizer's 50th address, whatever its
   quoting rules make of the rest; two attempts to mirror those rules missed cases (a group's
   unclosed `<`, a domain literal inside `<>`). A display name or group holding `,` or `;` makes
-  the header keep fewer than 50 addresses, always a prefix of them (accepted). This bounds both the
+  the header keep fewer than 50 addresses (accepted): the entries before the cut match the full
+  parse, and the last one may be a fragment of the entry the cut splits (harmless: the sender
+  writes these headers and could put any address there directly). This bounds both the
   parse and the comparisons per header. The first 50 parsed addresses are kept as a backstop.
 - `subject` and display names are decoded with postal-mime's `decodeWords`; addresses are split
   with its `addressParser`. postal-mime 4.2.1, already a Worker dependency, exports both

@@ -3378,7 +3378,9 @@ read about 300 addresses (the backstop slice kept the rule result right; the har
   address (stated in the code comment and the design). The scanner state and its quoting tests
   are gone; a raw-count test replaces them. The `.slice(0, 50)` backstop stays.
 - **Accepted:** a display name or group holding `,` or `;` makes a header keep fewer than 50
-  addresses, always a prefix of them. This replaces the narrower "RFC-form groups" note above.
+  addresses; the entries before the cut match the full parse, and the last one may be a fragment
+  of the entry the cut splits (sixth review, Low, wording corrected). This replaces the narrower
+  "RFC-form groups" note above.
 - Red before (`7c1fe84`), green after:
   - the seeded fuzz in `rules.spec.ts` with the added tokens `@[`, `@ [`, `@ [`, `@\r[`,
     `@(c)[`, `@"q"[`, `<a@[`: red before (6 addresses where at most 5 were allowed), green after
