@@ -4,9 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../src/env";
 
 import { handleQueue } from "../src/mail/consumer";
-import { Hub, SESSION_ENDED } from "../src/mail/hub";
+import { FOREGROUND_TTL_MS, Hub, SESSION_ENDED } from "../src/mail/hub";
 import { Client, login, ORIGIN, setupOwner, totpCode } from "./helpers";
-import { attachments, report } from "./hub-helpers";
+import { ageReports, attachments, report } from "./hub-helpers";
 import { messageRows } from "./mail-helpers";
 import { fetchWith } from "./mailbox-helpers";
 
@@ -152,15 +152,16 @@ describe("foreground reports", () => {
     const socket = await connect(client);
     expect(await attachments()).toEqual([null]);
     await report(socket.ws, "fg");
-    expect(await attachments()).toEqual([{ foreground: true }]);
+    const [first] = await attachments();
+    expect(first).toEqual({ foreground: true, at: expect.any(Number) });
     for (const other of ["FG", "fg ", '"bg"', "foreground", new Uint8Array([98, 103])]) {
       socket.ws.send(other);
     }
     socket.ws.send("ping");
     await within(() => expect(socket.messages).toEqual(["pong"]));
-    expect(await attachments()).toEqual([{ foreground: true }]);
+    expect(await attachments()).toEqual([first]);
     await report(socket.ws, "bg");
-    expect(await attachments()).toEqual([{ foreground: false }]);
+    expect(await attachments()).toEqual([{ foreground: false, at: expect.any(Number) }]);
   });
 
   it("marks new mail quiet while a page is in the foreground, read by a fresh Hub", async () => {
@@ -181,6 +182,23 @@ describe("foreground reports", () => {
         ]),
       );
     }
+  });
+
+  it("counts an fg older than 75 s as background until the page repeats it", async () => {
+    const { client } = await setupOwner();
+    const socket = await connect(client);
+    const quiet = async (id: string) => {
+      await env.HUB.getByName("hub").notify({ type: "message", id });
+      await within(() => expect(socket.messages.at(-1)).toContain(`"${id}"`));
+      return JSON.parse(socket.messages.at(-1) ?? "{}").quiet === true;
+    };
+    await report(socket.ws, "fg");
+    await ageReports(FOREGROUND_TTL_MS - 1000);
+    expect(await quiet("t1")).toBe(true);
+    await ageReports(2000);
+    expect(await quiet("t2")).toBe(false);
+    await report(socket.ws, "fg");
+    expect(await quiet("t3")).toBe(true);
   });
 
   it("does not mark new mail quiet when every page is in the background", async () => {

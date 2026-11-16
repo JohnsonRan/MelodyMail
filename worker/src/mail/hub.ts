@@ -25,11 +25,19 @@ export const SESSION_ENDED = 4001;
  * its delivery status changed; pages refetch, nothing is pushed. */
 export type HubEvent = { type: "message" | "changed"; id: string };
 
-/** What a page last reported; a socket without a report counts as background. */
-type Attachment = { foreground: boolean };
+/**
+ * A page in the foreground repeats "fg" every 30 s (web/src/mailbox/MailboxContext.tsx). A report
+ * older than this counts as background, so a page that slept or lost its network without closing
+ * the socket stops holding back push and Telegram.
+ */
+export const FOREGROUND_TTL_MS = 75_000;
 
-function inForeground(ws: WebSocket): boolean {
-  return (ws.deserializeAttachment() as Attachment | null)?.foreground === true;
+/** What a page last reported and when; a socket without a report counts as background. */
+type Attachment = { foreground: boolean; at: number };
+
+function inForeground(ws: WebSocket, now: number): boolean {
+  const report = ws.deserializeAttachment() as Partial<Attachment> | null;
+  return report?.foreground === true && now - (report.at ?? 0) < FOREGROUND_TTL_MS;
 }
 
 export class Hub extends DurableObject<Env> {
@@ -58,7 +66,8 @@ export class Hub extends DurableObject<Env> {
    */
   async notify(event: HubEvent): Promise<number> {
     const sockets = this.ctx.getWebSockets();
-    const quiet = event.type === "message" && sockets.some(inForeground);
+    const now = Date.now();
+    const quiet = event.type === "message" && sockets.some((ws) => inForeground(ws, now));
     const data = JSON.stringify(quiet ? { ...event, quiet } : event);
     let sent = 0;
     const reached = new Set<string>();
@@ -102,7 +111,7 @@ export class Hub extends DurableObject<Env> {
   /** Keeps a page's "fg" or "bg" report; "ping" is answered by the runtime, the rest is ignored. */
   override webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
     if (message === "fg" || message === "bg") {
-      ws.serializeAttachment({ foreground: message === "fg" } satisfies Attachment);
+      ws.serializeAttachment({ foreground: message === "fg", at: Date.now() } satisfies Attachment);
     }
   }
 }

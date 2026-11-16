@@ -1,10 +1,11 @@
 import { env, exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { FOREGROUND_TTL_MS } from "../src/mail/hub";
 import { copy } from "../src/telegram/card";
 import html from "../src/telegram/card.html";
 import { telegramNewMail } from "../src/telegram/send";
 import { ORIGIN } from "./helpers";
-import { report } from "./hub-helpers";
+import { ageReports, report } from "./hub-helpers";
 import { seedMessage } from "./mailbox-helpers";
 import { signedIn } from "./send-helpers";
 import {
@@ -137,6 +138,11 @@ describe("telegram cards for new mail", () => {
     expect(await notifyNewMail("m2")).toBe(1);
     expect(calls.map((c) => c.method)).toEqual(["sendWidget"]);
     expect((await cardRows()).map((r) => r.messageId)).toEqual(["m1"]);
+    // A report older than 75 s no longer holds the card back.
+    await seedMessage({ id: "m3" });
+    await ageReports(FOREGROUND_TTL_MS);
+    expect(await notifyNewMail("m3")).toBe(1);
+    expect(calls.map((c) => c.method)).toEqual(["sendWidget", "sendWidget"]);
   });
 
   it("falls back to a plain message with the four buttons when the widget is refused", async () => {
