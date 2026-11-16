@@ -3295,9 +3295,9 @@ Stopped and reported in that round, then settled by the owner rulings below:
    (about 300 per header) or of groups cost the parse almost twice the bench's adversarial case.
    `cutAddressList` now cuts the raw value before its 50th top-level comma or semicolon (outside
    quoted strings with backslash escapes, nested comments and angle brackets; commas inside a group
-   count, so a group cannot hide addresses), then parses. The slice after parsing was removed: the
-   parser cannot return more than 50 after the cut (`addressParser("a@b c@d e@f")` returns one
-   entry). The design describes the cut; bench comments are corrected and the "Headers as
+   count, so a group cannot hide addresses), then parses. The slice after parsing was removed then,
+   on the claim that the parser cannot return more than 50 after the cut. That claim was false
+   (fourth review below: a group's unclosed `<`); the slice is back as a backstop. The design describes the cut; bench comments are corrected and the "Headers as
    Headers.get reads them" JSDoc is back above `worstHeaders`.
    - Tests in `rules.spec.ts`: 60 short addresses, the 50th matches and the 51st does not; the
      scanner with a plain list, a comma inside quotes, an escaped quote, nested comments, angle
@@ -3325,3 +3325,42 @@ Bench after the fix, 12 inputs, 3 runs of 200, CPU load 37%, 9%, 5%, exit 0 each
 | 20 capped header names | 0.38–0.72 ms | 1 ms |
 
 Gate: 14.3 s at `83666bd` (CPU load 67%), 14.6 s at `790affc` (84%).
+
+### Fourth review of `08f44d0` (one Medium)
+
+**A group's unclosed `<` got past the cut (Medium)** — `4a908a6`. postal-mime's tokenizer ends an
+open angle-addr at a group's `;` (`node_modules/postal-mime/src/address-parser.ts`, 4.2.1,
+`checkChar`, line 1326: `if (!nested && chr === ';' && this.inGroup)`); the scanner kept the angle
+open until `>` and counted nothing after it. `To: g:<;` followed by 60 short addresses let a rule
+on the 60th address match, and the parser saw about 300 addresses in a 2,000-character header.
+
+- Fix: in `cutAddressList` a `;` inside an open angle bracket counts as a separator and ends the
+  angle, in or out of a group (outside a group the parser keeps the angle open, so the scanner
+  only cuts earlier there). `.slice(0, ADDRESSES_MAX)` after parsing is back as a backstop, so no
+  address after the 50th is read even where the scanner and the tokenizer disagree elsewhere.
+- Tests, red before the fix and green after (`rules.spec.ts`):
+  - `cutAddressList("g:<;a@x,b@x,c@x", 2)` parses to at most 2 addresses: red before (4);
+  - a seeded differential fuzz: 3,000 header values of up to 60 tokens (addresses, `,`, `;`,
+    `g:`, `<`, `>`, quoted strings with commas and escapes, nested comments with commas, domain
+    literals, `[`, `]`, `\`, `:`, `@`), cut at 5, `addressParser` must find at most 5: red before
+    (6 addresses in a value holding `<;`), green after, 63 ms;
+  - a To of `g:<;` and 60 short addresses no longer matches `a60@x.io`.
+- The backstop slice has no test of its own that fails without it: with the scanner fixed, the
+  fuzz finds no input where it matters. It stays as the owner's "never after the 50th" guarantee.
+- Bench: new adversarial inputs, the short-address list behind `g:<;` (2 ms budget). Before the
+  fix (previous code, load 62%): p95 2.35 ms no match, 1.92 ms all match, exit 1. After, 3 runs of
+  200, CPU load 70%, 81%, 36% (the lowest available this round), exit 0 each run:
+
+  | Input | p95 | Budget |
+  | --- | --- | --- |
+  | 100 addresses in From, To and Cc, no match / all match | 1.39–1.47 / 1.16–1.23 ms | 2 ms |
+  | the same with the 20 capped names, no match / all match | 1.36–1.50 / 1.31–1.42 ms | 2 ms |
+  | short addresses, no match / all match | 1.06–1.11 / 0.49–0.62 ms | 2 ms |
+  | address groups, no match / all match | 1.00–1.06 / 0.89–0.95 ms | 2 ms |
+  | `g:<;` short addresses, no match / all match | 0.96–1.05 / 0.64–0.88 ms | 2 ms |
+  | plain headers | 0.26–0.33 ms | 1 ms |
+  | 20 capped header names | 0.49–0.75 ms | 1 ms |
+
+- Accepted (already in the design, "Matching rules"): with RFC-form groups the cut can keep fewer
+  than 50 addresses, because a group's commas and its `;` all count. What is read is always a
+  prefix of what would be read without the cut.
