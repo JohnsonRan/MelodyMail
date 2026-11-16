@@ -962,8 +962,8 @@ the worker suite), expanding older thread messages, and revoking the object URL.
    314.6 kB (limit 370 kB) and holds neither library. The limit stays as it is (coordinator, review
    of 5d11b90).
 2. (Resolved by review fix 6, `ee93a79`: Figtree is self-hosted.)
-3. `GET /api/messages/:id` has no frontend caller (the reader uses the thread route). It is in
-   the design, so it stays, with a row in REQUIREMENTS "Exceptions". Remove it instead?
+3. (Resolved by M4b, `815221c`: a hidden page reads `GET /api/messages/:id` for its
+   notification; the REQUIREMENTS exception row is gone.)
 
 ### Deferred
 
@@ -1053,3 +1053,268 @@ rendering.
    covers trailing whitespace (red with the old pattern, green now).
 
 Verified: `bun run check` green at both commits; `bun run test:browser` 38 tests green.
+
+## M4b: PWA, push notifications and dark reading (built 2026-11-16, awaiting review)
+
+Design: `docs/M4b-pwa.md`. Risk class High (a service worker controlling the origin, the VAPID
+private key, a table linking sessions to push endpoints, Worker requests to push services).
+Branch `m4b-pwa`, not pushed.
+
+### Library choices (checked 2026-11-16)
+
+Web Push (Worker side), candidates from the design:
+
+| Package | Last release | License | Dependencies | Tests | Open issues | Verdict |
+| --- | --- | --- | --- | --- | --- | --- |
+| `@mmmike/web-push` 1.5.0 | 2026-10-23 | MIT | none | RFC 8291 Appendix A vector pinned byte for byte; CI on Node, Bun, Deno, Workers, Chrome, Firefox; 100% coverage badge | 0 | **chosen** |
+| `@pushforge/builder` 2.0.5 | 2026-04-23 | MIT | none | unit and push integration tests | 1 open PR fixing a base64 fallback and `Math.random()` record padding | older, open hardening fix |
+| `@block65/webcrypto-web-push` 2.0.0 | 2026-09-03 | MIT (package.json; the repository has no license file GitHub detects) | `uint8array-extras` | RFC 8291 vectors, snapshots | 1 (dependabot) | not zero-dependency |
+| `@portable/web-push` 0.1.0 | 2026-10-27 (first release that day) | MIT | 4 `@portable/*` packages | monorepo | 11 (repository) | too new, Node 24 engines |
+
+Reason: no dependencies, Web Crypto and `fetch` only (no `nodejs_compat` needed, though the
+Worker has it for other reasons), the RFC test vector in its own suite, and a Workers CI job.
+Risk: a single maintainer with few users; our own round-trip test (below) decrypts its output
+with RFC 8291 code written from the RFC, so a regression in the library turns our suite red.
+Its own endpoint allowlist (`isPushServiceEndpoint`) differs from the design's (it requires a
+subdomain for Mozilla); the Worker uses its own allowlist from the design instead.
+
+PWA: `vite-plugin-pwa` 2.0.0 (2026-10-03, MIT, peer `vite` ^8, the only major that supports Vite
+8), `workbox-precaching`/`workbox-routing`/`workbox-window`/`workbox-build` 7.4.1 (2026-05-04,
+MIT, its peer range), `@vite-pwa/assets-generator` 2.0.0 (2026-09-12, MIT, sharp 0.35; the
+prebuilt `@img/sharp-win32-x64` needed no install script). All pinned exactly.
+
+### Done
+
+- `b8b03be` migration `0008_push_subscriptions.sql` (drizzle-kit, `IF NOT EXISTS`): `id`,
+  `session_id` → `sessions.id` `ON DELETE CASCADE`, unique `endpoint`, `p256dh`, `auth`,
+  `created_at`. `db:migrate:local` applied it to the local D1 holding 15 messages and 6
+  sessions; a second run reported nothing to apply, and running the file again by hand succeeded.
+- `884e0d6` push routes (`worker/src/push/`): `GET /api/push/key` (404 `push_not_configured`
+  without VAPID), `PUT|DELETE /api/push/subscription`, `POST /api/push/test` (rate limited per
+  session by the new `PUSH_LIMITER`, 5 per 60 s). Endpoint allowlist from the design, plus no
+  userinfo and no explicit port; key lengths checked; one subscription per session; 10 kept.
+  The Hub's `notify` now returns a promise and pushes when it reached no socket; sending joins on
+  live sessions, deletes on 404/410, logs only the subscription id and status, TTL 24 h,
+  urgency `normal`, 10 per send. All four routes are in the authz route walk.
+- `f6636bc` `bun run vapid` (`worker/scripts/vapid.ts`), `worker/.dev.vars.example`, README
+  "Notifications".
+- `e4d4eb8` `ReaderToolbar.tsx` split out of `Reader.tsx` (288 → 203 lines), no behaviour change.
+- `390377c` dark reading: `DARK_READING_STYLE` appended to the srcdoc on request, toggle
+  (Astryx `ToggleButton`, `aria-pressed`) in the reader toolbar, dark theme and HTML body only,
+  per message, not remembered.
+- `2eceafa` the API stand-in of the end-to-end suite moved to `web/test/stub-app.ts`.
+- `7afda7a` PWA: manifest, icons from `web/public/logo.svg` (`bun run --cwd web icons`), service
+  worker `web/src/sw.ts` (injectManifest; precache, `NavigationRoute` with
+  `denylist: [/^\/api\//]`, `SKIP_WAITING`, push, notificationclick, pushsubscriptionchange),
+  registration after `load` from `src/pwa/register.ts`, update banner, offline state.
+- `815221c` Settings > Notifications (`/settings/notifications`), page-side notification while
+  hidden, error copy for `not_subscribed`, `push_failed`, `invalid_subscription`.
+- `a90b6b7`, `c0abeaf` and the commit after them: tests added after ablation (below).
+
+Usability references: Gmail desktop notifications
+(https://support.google.com/mail/answer/1075549): off until turned on, the browser prompt only
+after that click, one switch per device; GitHub Settings > Notifications as its own page.
+
+### Proof
+
+Worker (`bun --bun vitest run`, 287 tests, 45 more than before M4b, in `push.spec.ts` and
+`push-hub.spec.ts`; `fetch` stubbed in every test, no request reaches a push service):
+
+- every push route answers 401 without a session (route walk);
+- allowlist: accepts the four hosts; refuses `http:`, other hosts, `fcm.googleapis.com@evil`,
+  userinfo, a port, lookalike suffixes, the bare `push.apple.com`, IPv4 and IPv6 literals,
+  `ftp:`, a non-URL and a 2 KB endpoint; key checks (64/66-byte and compressed points, standard
+  padded base64, 15/17-byte auth, missing keys, non-object body);
+- upsert by endpoint, one per session, endpoint moved between sessions, 10 kept, DELETE removes
+  only this session's row;
+- cascade: sign-out, "sign out other sessions", recovery and the expiry sweep each remove the
+  session's subscription;
+- Hub: pushes when no socket is open (payload decrypted: id, sender name, subject, address, no
+  body text), address fallback, null subject, subject cut at 200 code points, nothing while a
+  socket is open, nothing to an expired or idle session, at most the 10 newest per send, 410
+  deletes, a 500 or a network error and a D1 failure never fail the parse, no endpoint in logs;
+- `POST /api/push/test`: `Content-Encoding: aes128gcm`, `TTL: 86400`, `Urgency: normal`, a VAPID
+  header whose ES256 JWT verifies against the public key (`aud` the push origin, `sub` the
+  configured origin, `exp` in the future), and the body decrypts with the browser's private key
+  (RFC 8291 code in `worker/test/push-helpers.ts`, written from the RFC, not from the library);
+  404 without a subscription, 410 → 404 and row deleted, 500 → 502 without detail, 429 from the
+  limiter, 404 without VAPID.
+
+Browser tier (`bun run test:browser`, 57 tests, 19 more than before M4b):
+
+- `notification.test.ts` (unit): payload to notification options (title, body with the address
+  line, tag `message:<id>`, URL `/?m=<id>`), localized fallbacks, the test message, junk payloads;
+  click target stays a same-origin path.
+- `reader.test.ts`: the whole hostile corpus with dark reading on (no script, no remote
+  request, no popup, sandbox and the CSP first unchanged, the style present); computed filters
+  (root inverted, `<img>` and `url()` backgrounds inverted back, text not).
+- `mailbox.test.ts`: toggle absent in the light theme and for a plain-text message; on, the
+  srcdoc gains the filter after an unchanged CSP prefix, sandbox and `referrerpolicy` unchanged,
+  nothing remote requested; combines with "Show remote images".
+- `pwa.test.ts` (persistent context, service workers allowed): manifest fields and icons,
+  `Page.getInstallabilityErrors` empty; the worker controls the page and after browsing Cache
+  Storage holds `index.html` and the manifest but no `/api` URL; a navigation to `/api/counts`
+  gets JSON; offline reload shows the shell, the offline banner and the list's offline state,
+  no error boundary, and recovers when the network returns; a new `sw.js` makes the update banner
+  appear and Reload moves the page onto the new worker; Settings > Notifications: not set up,
+  subscribe on click (PUT body), test send, unsubscribe (DELETE), blocked; a hidden page with
+  push on shows the notification itself (exact title and options), a visible page or push off
+  shows none. Chromium's `PushManager` is replaced in these pages: the real one would register
+  with Google's push service.
+
+### Ablation
+
+A script applies one mutation at a time and runs the touched suite (worker: `push`, `push-hub`,
+`hub`, `authz`; web: the notification unit tests, the reader security suite, or the mailbox and
+PWA suites after a rebuild).
+
+Worker, 34 hunks: every allowlist condition (https, userinfo, port, exact hosts, suffixes,
+length), the key checks (base64url form, point length, uncompressed point, auth length), the key
+route's 404, one subscription per session, the endpoint moving sessions, the cap of 10 on PUT,
+DELETE scoped to the session, the test route's limiter, not-configured, not-subscribed, gone and
+failed answers, the VAPID subject requirement, TTL, urgency, delete on gone, the logged status,
+both live-session conditions, the per-send limit, the subject cut, the display name, the address
+in the payload, pushing only without sockets, and the contained push failure. 32 red, 2
+survivors. The base64url form got a test (`a90b6b7`), now red. TTL survives: the library's default
+is also 86400 s; the option stays so the design's value does not depend on a library default. The
+per-send limit was tested before this run (`a90b6b7`); the allowlist's suffix length check could
+not change a result and was removed in the same commit.
+
+Web, 42 hunks: the dark-reading style (page, images, `url()` backgrounds, only on request), the
+toggle's dark-theme and HTML-only conditions, the frame flag, the per-thread reset; the worker's
+`/api` denylist, `SKIP_WAITING`, the shell fallback, registration after load, the update prompt;
+the network store's probe, the API failure and answer reports and the offline event; the offline
+route guard, the shell reload on recovery, the list's offline state, both banners; the
+notification tag, URL, both fallbacks, the address line, the test message, both click-target
+checks; the push page's not-configured, blocked, PUT, DELETE and key-mismatch paths; the
+hidden-page visibility and push-on checks and the call on each event. 38 red, 4 survivors:
+
+- the stale-key unsubscribe got a test (`pwa.test.ts`), now red;
+- the per-thread reset of the dark set could never run (MailboxPage keys the reader by message
+  id, so it remounts) and was removed; a test now reopens a message and expects dark reading off;
+- the API answer report (`reportNetwork(true)` in `api()`) and the `offline` event survive: the
+  2-second probe and the failing API call reach the same state, only later. They stay because
+  they make the change immediate.
+
+Not ablated (no test reaches them): the sign-in pages' banners (the stand-in is always signed
+in), `pushsubscriptionchange`, `notificationclick` focusing or opening a window, the push event
+handler itself (its logic is `notificationFor`, unit-tested), the iOS detection, and the
+language choice of the worker's fallback copy.
+
+### Numbers
+
+- `bun run check`: green at every commit, 7.5–8.1 s wall in this session (limit 10 s).
+- Bundle (vite build, gzip -6, the same script for both sides): first paint 319.0 kB (314.6
+  before, limit 370), entry 16.2 kB (15.6), total 660.0 kB (643.1, limit 770). Service worker
+  11.5 kB gzip, 33.0 kB raw, recorded apart. Precache: 130 entries, 2.1 MB.
+- `bun run test:browser`: 57 tests, green; timing under "Open questions", 1.
+
+### Deviations from the design (decisions taken, open to the owner)
+
+1. **`VAPID_SUBJECT` setting.** The design asks for the app's own origin as the VAPID subject;
+   the queue consumer and the Hub have no request to read it from, so it is a third setting
+   (`wrangler secret put VAPID_SUBJECT`). Push stays off while any of the three is unset.
+2. **Notifications is its own page** (`/settings/notifications`, in the Manage navigation)
+   instead of a section on an existing page: each settings page is about one subject (GitHub has
+   the same split). At 1280 and 1920 px the page is one section tall, like Security.
+3. **Notification body** is the subject and, on a second line, the address the mail arrived at,
+   so the payload's address field is visible. The title is the sender.
+4. **Dark reading selectors**: `<picture>` is not listed (its `<img>` matches already; a second
+   filter would invert it again) and `<video>` cannot reach the frame. "Elements with a
+   background image" means an inline `style` with `url(` or a `background` attribute; a CSS
+   gradient or a background set in `<style>` stays inverted, like text colours.
+5. **Offline probe.** Besides the `online` event and the next API answer, the app asks
+   `/api/health` every 2 seconds while it believes it is offline: the `online` event does not
+   fire when the network is up but the Worker cannot be reached, and in Chromium it did not fire
+   after a reload made while offline. `/api/health` now has a frontend caller.
+6. **Offline route guards.** When `/api/auth/state` gets no answer, the guards let the cached
+   page open (the shell, or the sign-in page) instead of failing; recovery runs the guards again.
+   The shell shows no data without the API.
+7. **Banner placement**: the AppShell banner slot (above the app bar) in the signed-in app, above
+   the card on the sign-in pages; offline and update share these places.
+8. **One subscription per session.** A new endpoint on the same session replaces the old row, so
+   DELETE "the current session's subscription" is unambiguous.
+
+### Open questions for the owner
+
+1. **Browser-tier limit.** `bun run test:browser` now runs 57 tests in 30.5, 31.3 and 34.3 s wall
+   (3 runs including the build, CPU load about 2%) against the 21 s limit. The suite as it was
+   before M4b measured 20.9–21.7 s on this host today (17.4 s at the recorded baseline). The PWA suite adds about 10 s (a
+   persistent Chromium profile, a reload under the worker, offline recovery, a worker update).
+   Proposed: limit 37 s (baseline 31 s plus 20%), or move the PWA suite to its own nightly job. The
+   limit is unchanged until you decide.
+2. **Notification content** (design question 1): built with the recommended default, sender and
+   subject (plus the arrival address), no body. "Only New mail" is a change in `pushNewMail`.
+3. **Real push test** (design question 2): not done; no request reached a push service.
+4. **Icon**: `web/public/logo.svg`, an envelope with an eighth note, white on the Astryx neutral
+   accent (#1b1b1b); see the screenshots and `web/public/pwa-512x512.png`.
+
+### Deferred
+
+- `reader.test.ts` is 451 lines (415 before M4b), over the 314-line pass bar; the corpus could
+  move to its own data file. Source: this build; it waits because it is a test-only refactor.
+
+### Not verified
+
+- Delivery through real push services (FCM, Mozilla, Apple, WNS); `pushsubscriptionchange`; a
+  real `notificationclick` focusing a window; iOS Home Screen push; install on Firefox and
+  Safari; Hub CPU time per push in production.
+- Running under `wrangler dev`: the routes ran in workerd through the vitest pool against D1;
+  no VAPID keys were put in the local `.dev.vars`.
+- The sign-in pages' offline banner (no screenshot and no test; the stand-in is always signed in).
+- WCAG contrast of the new banners and page was not measured.
+
+### Screenshots
+
+144 PNG files in the session scratchpad, folder `shots-m4b` (outside the repository): Settings >
+Notifications not set up, off, on, blocked and unsupported (iPhone user agent), offline, and the
+update banner, at 390, 1280 and 1920 px, light and dark, zh-CN, en and ja-JP; dark reading off
+and on for an HTML newsletter (dark theme only, so 18 of them). `scrollWidth` equalled the
+viewport width in all 144. Taken with Playwright against `web/dist` and the in-memory API
+stand-in, not `wrangler dev`. The update banner also shows in the dark-reading shots (one
+context per combination).
+
+### Review of c0abeaf ("FIX FIRST")
+
+Signing (1Password) was locked during these fixes; each is in the working tree with its commit
+message in the session scratchpad; commit order `msgF.txt`, `msgH.txt`, `msgI.txt`,
+`msgJ.txt`, then `msgG.txt` (this file). Bundle after the fixes: first paint 319.0 kB, total
+660.1 kB, service worker 11.6 kB gzip.
+
+1. **A kept browser subscription lost its row (High, reproduced).** The cascade deletes the row
+   on sign-out, recovery, revoke or expiry, while the browser keeps its `PushSubscription`, so
+   Settings > Notifications read "on" and nothing was pushed. `resyncSubscription()` in
+   `web/src/pwa/push.ts` now PUTs the subscription again each time the signed-in shell mounts
+   (`MailboxProvider`, a lazy chunk, not first paint): once per page load and once per sign-in in
+   the same page, only with permission granted and only for a subscription made with the
+   current key. New tests: the PWA suite opens the app with a kept subscription and expects one
+   PUT for the current key and none for a stale one (red with the call removed, green with it);
+   `push.spec.ts` signs out and in, PUTs again and expects the test send to be delivered (the
+   server half the client relies on; it passes before and after, since the fix is on the client).
+2. **One open page silenced every device (Medium, reproduced).** The Hub pushed only when it
+   reached no socket at all. `notify` now collects the session tags of the sockets it reached
+   and `pushNewMail` skips only those sessions (`p.session_id NOT IN json_each(?)`); a session
+   with an open page still notifies itself while hidden. New tests: a subscribed phone gets the
+   push while another session's page is open; a page of a session that expired on its own no
+   longer blocks the push (both red before, green after); the same-session case still sends
+   nothing. README "Notifications" now says "each device that has no MelodyMail page open"; the
+   settings copy ("while MelodyMail is closed", on this device) already matched.
+3. **Click target escaped the origin (Low, reproduced).** `"/\t/evil.example"` passed the prefix
+   checks and `openWindow()` resolved it to `https://evil.example/`. `clickTarget(data, origin)`
+   now resolves with `new URL(url, origin)` and keeps only a same-origin path, search and hash;
+   the worker passes `self.location.origin`. The unit test adds `/\t/evil.example`,
+   `/\evil.example` and `\evil.example` (red before, green after).
+
+### Re-review of the fixes ("PASS", three Lows, all fixed)
+
+1. **Click target (Low).** `"/.//evil.example"` and `https://<origin>//evil.example/x` normalized
+   to the path `//evil.example`, which `openWindow()` would resolve against another host.
+   `clickTarget` now returns the absolute `href` on the origin (or `<origin>/`). The unit test
+   resolves each result against a foreign base and asserts the app's origin (red with the old
+   path-only return).
+2. **Design text (Low).** `docs/M4b-pwa.md`, "Sending", now states the per-session rule and the
+   resync on shell mount.
+3. **README (Low).** Sign-out ends a device's notifications until it signs in again.
+
+Hypothesis left for a real device: a phone that suspends the page without closing its socket
+counts as "page open" until the runtime notices, so it gets no push in that window.
