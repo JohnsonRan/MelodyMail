@@ -217,7 +217,7 @@ describe("notifications settings", () => {
     const p = await pushPage({ permission: "granted" });
     await p.goto(`${app.origin}/settings/notifications`);
     await p.getByText("Push isn't set up on this server").waitFor();
-    expect(await p.getByRole("switch").count()).toBe(0);
+    expect(await p.getByRole("switch", { name: "Notify me about new mail" }).count()).toBe(0);
     await p.close();
   });
 
@@ -334,6 +334,14 @@ describe("notification from an open page", () => {
               },
             ]
           : [],
+      );
+      // While another page is in the foreground the Hub marks new mail quiet: nothing shows.
+      for (const ws of app.sockets) {
+        ws.send(JSON.stringify({ type: "message", id: "hostile", quiet: true }));
+      }
+      await p.waitForTimeout(300);
+      expect(await p.evaluate(() => (window as unknown as { shown: unknown[] }).shown)).toEqual(
+        shown,
       );
       await p.close();
     }

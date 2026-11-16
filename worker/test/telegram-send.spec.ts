@@ -1,9 +1,11 @@
 import { env, exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { FOREGROUND_TTL_MS } from "../src/mail/hub";
 import { copy } from "../src/telegram/card";
 import html from "../src/telegram/card.html";
 import { telegramNewMail } from "../src/telegram/send";
 import { ORIGIN } from "./helpers";
+import { ageReports, report, setQuiet } from "./hub-helpers";
 import { seedMessage } from "./mailbox-helpers";
 import { signedIn } from "./send-helpers";
 import {
@@ -116,18 +118,36 @@ describe("telegram cards for new mail", () => {
     expect(await cardRows()).toEqual([]);
   });
 
-  it("still sends the card while a mailbox page is open", async () => {
+  it("sends the card with a page open, and none in the foreground with the quiet setting on", async () => {
     await seedTelegram();
     await seedMessage({ id: "m1" });
+    await seedMessage({ id: "m2" });
     const client = await signedIn();
     const cookie = [...client.cookies].map(([k, v]) => `${k}=${v}`).join("; ");
     const res = await exports.default.fetch(`${ORIGIN}/api/events`, {
       headers: { upgrade: "websocket", origin: ORIGIN, cookie },
     });
-    res.webSocket?.accept();
-    if (res.webSocket) open.push(res.webSocket);
+    const ws = res.webSocket;
+    if (!ws) throw new Error("no socket");
+    ws.accept();
+    open.push(ws);
     const calls = stubTelegram(sentWidget);
     expect(await notifyNewMail("m1")).toBe(1);
+    expect(calls.map((c) => c.method)).toEqual(["sendWidget"]);
+    await report(ws, "fg");
+    // The quiet setting is off by default: the card still goes out.
+    await seedMessage({ id: "m4" });
+    expect(await notifyNewMail("m4")).toBe(1);
+    expect(calls.map((c) => c.method)).toEqual(["sendWidget", "sendWidget"]);
+    calls.length = 0;
+    await setQuiet(true);
+    expect(await notifyNewMail("m2")).toBe(1);
+    expect(calls).toEqual([]);
+    expect((await cardRows()).map((r) => r.messageId).sort()).toEqual(["m1", "m4"]);
+    // A report older than 75 s no longer holds the card back.
+    await seedMessage({ id: "m3" });
+    await ageReports(FOREGROUND_TTL_MS);
+    expect(await notifyNewMail("m3")).toBe(1);
     expect(calls.map((c) => c.method)).toEqual(["sendWidget"]);
   });
 

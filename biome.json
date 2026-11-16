@@ -6,6 +6,7 @@
       "**",
       "!**/worker-configuration.d.ts",
       "!web/src/astryx-themes.ts",
+      "!web/src/themes/*/*.{js,css,d.ts}",
       "!**/*.md",
       "!worker/src/telegram/card.html"
     ]

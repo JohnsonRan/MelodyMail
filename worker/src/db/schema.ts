@@ -387,3 +387,16 @@ export const telegramCards = sqliteTable(
   },
   (t) => [uniqueIndex("telegram_cards_chat_message").on(t.chatId, t.tgMessageId)],
 );
+
+// M5c: owner settings that change while the service runs (docs/M5c-foreground.md, "Owner
+// ruling"). One row at most; a missing row means every setting is at its default.
+export const settings = sqliteTable(
+  "settings",
+  {
+    id: integer("id").primaryKey(),
+    // 1: no Web Push and no Telegram message while any MelodyMail page is in the foreground.
+    quietForeground: integer("quiet_foreground").notNull().default(0),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [check("settings_single_row", sql`${t.id} = 1`)],
+);

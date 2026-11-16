@@ -403,7 +403,10 @@
     "reload": "再読み込み"
   },
   "notification": {
+    "close": "閉じる",
     "newMail": "新着メール",
+    "notice": "{{from}} からの新着メール：{{subject}}",
+    "open": "開く",
     "testBody": "このデバイスで通知を受け取れます。"
   },
   "notifications": {
@@ -430,6 +433,13 @@
         "title": "最初に MelodyMail をホーム画面に追加してください",
         "description": "iPhone と iPad では、ホーム画面から開いたアプリだけが通知を受け取れます。Safari で [共有] をタップし、[ホーム画面に追加] をタップしてください。"
       }
+    },
+    "quiet": {
+      "sectionTitle": "MelodyMail を開いているとき",
+      "description": "新着メールがあると、開いている MelodyMail のページに差出人と件名のお知らせが表示されます。",
+      "switch": "MelodyMail を開いている間は通知しない",
+      "switchDescription": "いずれかのデバイスで MelodyMail のページが前面にある間は、システム通知も Telegram メッセージも送信しません。",
+      "saved": "設定を保存しました。"
     },
     "telegram": {
       "sectionTitle": "Telegram",

@@ -1,10 +1,12 @@
+import { runInDurableObject } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../src/env";
 
 import { handleQueue } from "../src/mail/consumer";
-import { SESSION_ENDED } from "../src/mail/hub";
+import { FOREGROUND_TTL_MS, Hub, SESSION_ENDED } from "../src/mail/hub";
 import { Client, login, ORIGIN, setupOwner, totpCode } from "./helpers";
+import { ageReports, attachments, report, setQuiet } from "./hub-helpers";
 import { messageRows } from "./mail-helpers";
 import { fetchWith } from "./mailbox-helpers";
 
@@ -140,6 +142,79 @@ describe("notify", () => {
     expect((await messageRows())[0]?.status).toBe("parsed");
     expect(warn.mock.calls.map((c) => JSON.parse(String(c[0])).event)).toContain(
       "hub_notify_failed",
+    );
+  });
+});
+
+describe("foreground reports", () => {
+  it("keeps the last fg or bg on the socket and ignores anything else", async () => {
+    const { client } = await setupOwner();
+    const socket = await connect(client);
+    expect(await attachments()).toEqual([null]);
+    await report(socket.ws, "fg");
+    const [first] = await attachments();
+    expect(first).toEqual({ foreground: true, at: expect.any(Number) });
+    for (const other of ["FG", "fg ", '"bg"', "foreground", new Uint8Array([98, 103])]) {
+      socket.ws.send(other);
+    }
+    socket.ws.send("ping");
+    await within(() => expect(socket.messages).toEqual(["pong"]));
+    expect(await attachments()).toEqual([first]);
+    await report(socket.ws, "bg");
+    expect(await attachments()).toEqual([{ foreground: false, at: expect.any(Number) }]);
+  });
+
+  it("marks new mail quiet while a page is in the foreground, read by a fresh Hub", async () => {
+    const owner = await setupOwner();
+    await setQuiet(true);
+    const hidden = await connect(owner.client);
+    const front = await connect((await login(owner.authenticator)).client);
+    await report(front.ws, "fg");
+    // A new instance holds nothing in memory, as after hibernation; it reads the attachments.
+    await runInDurableObject(env.HUB.getByName("hub"), async (_hub, state) => {
+      expect(await new Hub(state, env).notify({ type: "message", id: "q1" })).toBe(2);
+      expect(await new Hub(state, env).notify({ type: "changed", id: "q2" })).toBe(2);
+    });
+    for (const page of [hidden, front]) {
+      await within(() =>
+        expect(page.messages.map((m) => JSON.parse(m))).toEqual([
+          { type: "message", id: "q1", quiet: true },
+          { type: "changed", id: "q2" },
+        ]),
+      );
+    }
+  });
+
+  it("counts an fg older than 75 s as background until the page repeats it", async () => {
+    const { client } = await setupOwner();
+    await setQuiet(true);
+    const socket = await connect(client);
+    const quiet = async (id: string) => {
+      await env.HUB.getByName("hub").notify({ type: "message", id });
+      await within(() => expect(socket.messages.at(-1)).toContain(`"${id}"`));
+      return JSON.parse(socket.messages.at(-1) ?? "{}").quiet === true;
+    };
+    await report(socket.ws, "fg");
+    await ageReports(FOREGROUND_TTL_MS - 1000);
+    expect(await quiet("t1")).toBe(true);
+    await ageReports(2000);
+    expect(await quiet("t2")).toBe(false);
+    await report(socket.ws, "fg");
+    expect(await quiet("t3")).toBe(true);
+    // With the owner's setting off, the default, a foreground page changes nothing.
+    await setQuiet(false);
+    expect(await quiet("t4")).toBe(false);
+  });
+
+  it("does not mark new mail quiet when every page is in the background", async () => {
+    const { client } = await setupOwner();
+    await setQuiet(true);
+    const socket = await connect(client);
+    await report(socket.ws, "fg");
+    await report(socket.ws, "bg");
+    await env.HUB.getByName("hub").notify({ type: "message", id: "q3" });
+    await within(() =>
+      expect(socket.messages.map((m) => JSON.parse(m))).toEqual([{ type: "message", id: "q3" }]),
     );
   });
 });

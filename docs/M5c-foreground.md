@@ -27,8 +27,8 @@ to the page. No login, secret or stored-data change. Owner requests of 2026-11-1
 - The Hub stores the state on the socket with `serializeAttachment`, so it survives hibernation.
   `webSocketMessage` accepts only `"fg"` and `"bg"` and ignores anything else. A socket that never
   reported counts as background.
-- A message wakes the Hub; that happens only on tab or window switches, which is cheap on
-  Workers Free. Confirm against the Durable Objects hibernation docs before building.
+- A message wakes the Hub: on a state change and on the 30 s `"fg"` refresh (see "Owner ruling:
+  a switch, default off" for the refresh, the 1 s re-check and the cost).
 
 ### Hub.notify for new mail
 
@@ -37,8 +37,8 @@ to the page. No login, secret or stored-data change. Owner requests of 2026-11-1
 - Otherwise: unchanged (push to sessions without a page, Telegram card or message, and hidden
   pages notify themselves through `notifyWhenHidden`).
 - A page that crashed without closing its socket is cleaned up by the runtime when the socket
-  closes; until then its last reported state holds. Accepted: the page sends `"bg"` on `blur`,
-  so the stale window is short.
+  closes; until then its last reported state holds, at most 75 s (see the ruling section below;
+  `blur` alone is not enough, since focus inside the reader frame sends none).
 
 ### The notice
 
@@ -66,3 +66,19 @@ to the page. No login, secret or stored-data change. Owner requests of 2026-11-1
 - Ablate every behaviour hunk or list the ones not ablated.
 - Screenshots of the notice at 390, 1280 and 1920 px, light and dark, three locales.
 - Real check by the owner on local `wrangler dev` (no Telegram traffic needed for the notice).
+
+## Owner ruling: a switch, default off (2026-11-16)
+
+Quiet foreground can hide a notification the owner needed on another device, so it becomes a
+setting, off by default.
+
+- Settings > Notifications has a switch "Quiet while MelodyMail is open", with one line saying
+  that no system notification and no Telegram message is sent while a MelodyMail page is in the
+  foreground on any device. It is stored in D1 (`settings`, one row, migration 0012) and changed
+  with a normal session; it guards no secret, so it needs no fresh passkey.
+- Off: the Hub notifies exactly as in M5b. Push goes to sessions without a page, Telegram always,
+  hidden pages notify themselves, and no event carries `quiet`.
+- On: the behaviour above, with the review fixes: the page re-checks its state every second and
+  repeats `"fg"` every 30 s, and the Hub counts an `"fg"` older than 75 s as background.
+- The in-page notice shows in both modes while the page is in the foreground.
+- The Hub reads the setting only for new mail while a fresh `"fg"` exists: one D1 row read.

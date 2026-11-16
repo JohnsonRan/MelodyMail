@@ -2,7 +2,9 @@ import { env, exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SESSION_IDLE_MS } from "../src/auth/session";
 import { handleQueue } from "../src/mail/consumer";
+import { FOREGROUND_TTL_MS } from "../src/mail/hub";
 import { type Client, login, ORIGIN, setupOwner } from "./helpers";
+import { ageReports, report, setQuiet } from "./hub-helpers";
 import { messageRows } from "./mail-helpers";
 import {
   browserSubscription,
@@ -53,6 +55,7 @@ async function connect(client: Client) {
   if (!ws) throw new Error("no socket");
   ws.accept();
   open.push(ws);
+  return ws;
 }
 
 describe("push for new mail", () => {
@@ -106,6 +109,40 @@ describe("push for new mail", () => {
     const sent = stubPushService(201);
     await storeRow("p12", "Subject: Phone in pocket");
     await parse("p12");
+    expect(sent.map((s) => s.url)).toEqual([sub.json.endpoint]);
+  });
+
+  it("pushes while a page is in the foreground only with the quiet setting off", async () => {
+    const { client: phone, authenticator } = await setupOwner();
+    const sub = await subscribe(phone);
+    const laptop = await connect((await login(authenticator)).client);
+    await report(laptop, "fg");
+    const sent = stubPushService(201);
+    // Off, the default: as in M5b.
+    await storeRow("p17", "Subject: Setting off");
+    await parse("p17");
+    expect(sent.map((s) => s.url)).toEqual([sub.json.endpoint]);
+    sent.length = 0;
+    await setQuiet(true);
+    await storeRow("p14", "Subject: Read on the laptop");
+    await parse("p14");
+    expect(sent).toEqual([]);
+    await report(laptop, "bg");
+    await storeRow("p15", "Subject: Laptop in the background");
+    await parse("p15");
+    expect(sent.map((s) => s.url)).toEqual([sub.json.endpoint]);
+  });
+
+  it("pushes when the last fg is older than 75 s, as from a laptop that slept", async () => {
+    const { client: phone, authenticator } = await setupOwner();
+    const sub = await subscribe(phone);
+    const laptop = await connect((await login(authenticator)).client);
+    await setQuiet(true);
+    await report(laptop, "fg");
+    await ageReports(FOREGROUND_TTL_MS);
+    const sent = stubPushService(201);
+    await storeRow("p16", "Subject: Laptop asleep");
+    await parse("p16");
     expect(sent.map((s) => s.url)).toEqual([sub.json.endpoint]);
   });
 

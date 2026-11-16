@@ -6,7 +6,8 @@ import { deviceSubscribed } from "./push";
 /**
  * Shows the system notification for new mail while this page is open but hidden. The Hub sends
  * no push to a session that has a page connected, so without this a hidden page would leave this
- * device unnotified (docs/M4b-pwa.md, "Sending"). Hidden tabs share one tag, so one shows.
+ * device unnotified (docs/M4b-pwa.md, "Sending"). Hidden tabs share one tag, so one shows. The
+ * caller skips it for an event the Hub marked quiet (docs/M5c-foreground.md).
  */
 export async function notifyWhenHidden(id: string): Promise<void> {
   if (document.visibilityState !== "hidden" || !(await deviceSubscribed())) return;

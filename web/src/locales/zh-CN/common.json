@@ -403,7 +403,10 @@
     "reload": "重新加载"
   },
   "notification": {
+    "close": "关闭",
     "newMail": "新邮件",
+    "notice": "来自 {{from}} 的新邮件：{{subject}}",
+    "open": "打开",
     "testBody": "此设备可以正常接收通知。"
   },
   "notifications": {
@@ -430,6 +433,13 @@
         "title": "请先将 MelodyMail 添加到主屏幕",
         "description": "在 iPhone 和 iPad 上，只有从主屏幕打开的应用才能收到通知。请在 Safari 中轻点“共享”，然后轻点“添加到主屏幕”。"
       }
+    },
+    "quiet": {
+      "sectionTitle": "MelodyMail 打开时",
+      "description": "收到新邮件时，打开的 MelodyMail 页面会显示一条提示，包含发件人和主题。",
+      "switch": "MelodyMail 打开时保持静默",
+      "switchDescription": "任一设备上的 MelodyMail 页面位于前台时，不发送系统通知，也不发送 Telegram 消息。",
+      "saved": "设置已保存。"
     },
     "telegram": {
       "sectionTitle": "Telegram",

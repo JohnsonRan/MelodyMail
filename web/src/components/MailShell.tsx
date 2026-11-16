@@ -1,7 +1,5 @@
 import { AppShell } from "@astryxdesign/core/AppShell";
 import { Badge } from "@astryxdesign/core/Badge";
-import { Icon } from "@astryxdesign/core/Icon";
-import { NavIcon } from "@astryxdesign/core/NavIcon";
 import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
@@ -12,7 +10,6 @@ import {
   AtSymbolIcon,
   BellIcon,
   DocumentTextIcon,
-  EnvelopeIcon,
   GlobeAltIcon,
   InboxIcon,
   MagnifyingGlassIcon,
@@ -28,6 +25,7 @@ import type { Folder } from "../mailbox/api";
 import { MailboxProvider, useMailbox } from "../mailbox/MailboxContext";
 import { useNetwork } from "../network";
 import { PreferenceSelectors } from "../preferences";
+import { AppLogo } from "./AppLogo";
 import { SystemBanners } from "./SystemBanners";
 
 const FOLDER_NAV: { folder: Folder | "drafts"; path: string; icon: typeof InboxIcon }[] = [
@@ -174,12 +172,7 @@ export function MailShell() {
         topNav={
           <TopNav
             label={t("nav.main")}
-            heading={
-              <TopNavHeading
-                heading={t("app.name")}
-                logo={<NavIcon icon={<Icon icon={EnvelopeIcon} size="sm" />} />}
-              />
-            }
+            heading={<TopNavHeading heading={t("app.name")} logo={<AppLogo size="md" />} />}
             centerContent={<SearchField />}
             endContent={<PreferenceSelectors />}
           />

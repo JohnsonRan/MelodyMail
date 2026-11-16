@@ -75,8 +75,9 @@ export default defineConfig({
     }),
   ],
   resolve: {
-    // The generated astryx-themes.ts imports the theme's fonts.css, which loads Figtree from
-    // Google. The alias keeps that file as generated and serves the font from this origin.
+    // The neutral theme's fonts.css loads Figtree from Google. The app imports src/fonts.css
+    // itself (src/main.tsx); the alias keeps Google out should a generated module import the
+    // neutral file again.
     alias: {
       "@astryxdesign/theme-neutral/fonts.css": fileURLToPath(
         new URL("./src/fonts.css", import.meta.url),

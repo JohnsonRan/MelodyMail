@@ -5,6 +5,7 @@ import { HStack } from "@astryxdesign/core/Layout";
 import { Switch } from "@astryxdesign/core/Switch";
 import { api } from "../api";
 import { PageFrame } from "../components/PageFrame";
+import { QuietSection } from "../components/QuietSection";
 import { RowsSkeleton, SecuritySection } from "../components/SecuritySection";
 import { TelegramSection } from "../components/TelegramSection";
 import { readPushState, turnOff, turnOn } from "../pwa/push";
@@ -15,6 +16,7 @@ import { useSettingsPage } from "../settings";
  * notification setting (https://support.google.com/mail/answer/1075549): off until the owner
  * turns it on, and the browser's permission prompt appears only after that click. Telegram is a
  * second delivery channel on the same page, as GitHub lists every channel under Notifications.
+ * "While MelodyMail is open" sits between them: it holds both back while a page is in front.
  */
 export function NotificationsPage() {
   const { data: state, setData, loadError, busy, act, toast, t } = useSettingsPage(readPushState);
@@ -86,6 +88,8 @@ export function NotificationsPage() {
           </>
         )}
       </SecuritySection>
+      <Divider />
+      <QuietSection />
       <Divider />
       <TelegramSection />
     </PageFrame>
