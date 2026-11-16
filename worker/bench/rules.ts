@@ -5,7 +5,8 @@
  * performance.now() during computation, so the budget is measured here with the same code under
  * Bun. Inputs: 50 enabled rules of 10 conditions that never match (every condition runs, no
  * stop), mixing every field and operator, against the worst headers below (From, To and Cc of 100
- * addresses each, an encoded 2,000-character subject, a header repeated 50 times), against plain
+ * addresses each, or of 2,000 characters of short addresses or of groups, with an encoded
+ * 2,000-character subject and a header repeated 50 times), against plain
  * headers, against 20 distinct header names (the HEADER_NAMES_MAX cap), each holding 2,000
  * characters dense with white space, and against the worst headers and the 20 names together;
  * and the same rules made to match. Each input has its own p95 budget: 2 ms for the adversarial
@@ -51,17 +52,29 @@ function encodedSubject(): string {
   return subject;
 }
 
-/** Headers as Headers.get reads them: the worst case for every field. */
-/** 100 addresses with display names; the 2,000-character cut keeps about 60, the cap reads 50. */
+/** 100 addresses with display names: the 2,000-character cut keeps about 60, and the parser sees
+ * only the first 50 (cutAddressList). */
 const ADDRESS_LIST = Array.from(
   { length: 100 },
   (_, i) => `"Person ${i}" <person${i}@example${i}.org>`,
 ).join(", ");
+/** About 300 short addresses in 2,000 characters: the most a parser would see without the cut. */
+const SHORT_LIST = Array.from({ length: 600 }, (_, i) => `a${i}@b`)
+  .join(",")
+  .slice(0, 2000);
+/** Groups of short addresses filling 2,000 characters. */
+const GROUP_LIST = Array.from(
+  { length: 100 },
+  (_, g) => `g${g}: ${Array.from({ length: 5 }, (_, i) => `a${i}@b`).join(", ")};`,
+)
+  .join(" ")
+  .slice(0, 2000);
 
-function worstHeaders(): Headers {
+/** Headers as Headers.get reads them: the worst case for every field, with `list` in From, To and Cc. */
+function worstHeaders(list = ADDRESS_LIST): Headers {
   const h = new Headers();
   h.set("subject", encodedSubject());
-  for (const name of ["from", "to", "cc"]) h.set(name, ADDRESS_LIST);
+  for (const name of ["from", "to", "cc"]) h.set(name, list);
   for (let i = 0; i < 50; i++) h.append("x-repeated", `value number ${i} of a repeated header`);
   return h;
 }
@@ -214,6 +227,30 @@ const inputs: [string, MailSource, RuleRow[], number][] = [
     "50 x 10 conditions, worst + 20 names, all match",
     source(combinedHeaders()),
     combinedRows(true),
+    ADVERSARIAL_BUDGET_MS,
+  ],
+  [
+    "50 x 10 conditions, short addresses, no match",
+    source(worstHeaders(SHORT_LIST)),
+    ruleRows(false),
+    ADVERSARIAL_BUDGET_MS,
+  ],
+  [
+    "50 x 10 conditions, short addresses, all match",
+    source(worstHeaders(SHORT_LIST)),
+    ruleRows(true),
+    ADVERSARIAL_BUDGET_MS,
+  ],
+  [
+    "50 x 10 conditions, address groups, no match",
+    source(worstHeaders(GROUP_LIST)),
+    ruleRows(false),
+    ADVERSARIAL_BUDGET_MS,
+  ],
+  [
+    "50 x 10 conditions, address groups, all match",
+    source(worstHeaders(GROUP_LIST)),
+    ruleRows(true),
     ADVERSARIAL_BUDGET_MS,
   ],
 ];

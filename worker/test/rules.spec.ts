@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { handleEmail } from "../src/mail/inbound";
 import {
   type Condition,
+  cutAddressList,
   evaluateRules,
   type MailSource,
   type Rule,
@@ -100,10 +101,21 @@ describe("rule conditions", () => {
   });
 
   it("reads the first 50 addresses of a header", () => {
-    const to = Array.from({ length: 51 }, (_, i) => `a${i + 1}@x.io`).join(", ");
+    const to = Array.from({ length: 60 }, (_, i) => `a${i + 1}@x.io`).join(",");
     const s = source({ To: to });
     expect(hits({ field: "to", op: "equals", value: "a50@x.io" }, s)).toBe(true);
     expect(hits({ field: "to", op: "equals", value: "a51@x.io" }, s)).toBe(false);
+  });
+
+  it("cuts an address list before parsing, at separators outside quotes, comments and <>", () => {
+    expect(cutAddressList("a@x, b@x; c@x", 2)).toBe("a@x, b@x");
+    expect(cutAddressList('"Doe, J" <j@x>, b@x, c@x', 2)).toBe('"Doe, J" <j@x>, b@x');
+    expect(cutAddressList('"a \\" , b" <j@x>, b@x, c@x', 2)).toBe('"a \\" , b" <j@x>, b@x');
+    expect(cutAddressList("j@x (Doe (J), K), b@x, c@x", 2)).toBe("j@x (Doe (J), K), b@x");
+    expect(cutAddressList("<@r1,@r2:j@x>, b@x, c@x", 2)).toBe("<@r1,@r2:j@x>, b@x");
+    // Commas inside a group count, so a group cannot hide addresses.
+    expect(cutAddressList("g: a@x, b@x, c@x; d@x", 2)).toBe("g: a@x, b@x");
+    expect(cutAddressList("a@x, b@x", 50)).toBe("a@x, b@x");
   });
 
   it("reads each named header on its own", () => {

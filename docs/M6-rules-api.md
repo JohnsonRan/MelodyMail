@@ -104,7 +104,10 @@ Matching rules:
 - Each header value is cut to 2,000 characters before decoding, as `ADDRESS_LIST_MAX` in
   `worker/src/mail/parse.ts`. `Headers.get` joins repeated headers with `, `.
 - Of each of `From`, `To` and `Cc`, only the first 50 addresses are read (owner ruling
-  2026-11-17); an address after the 50th never matches. This bounds the comparisons per header.
+  2026-11-17); an address after the 50th never matches. The raw value is cut before parsing, at
+  its 50th comma or semicolon outside quoted strings, comments and angle brackets; commas inside a
+  group count, so a group cannot hide more addresses (the header may then keep fewer than 50).
+  This bounds both the parse and the comparisons per header.
 - `subject` and display names are decoded with postal-mime's `decodeWords`; addresses are split
   with its `addressParser`. postal-mime 4.2.1, already a Worker dependency, exports both
   (`worker/node_modules/postal-mime/README.md`, "addressParser()", "decodeWords()").
@@ -240,7 +243,8 @@ Benchmark `worker/bench/rules.ts` (`bun run bench:rules`), in the style of `benc
 - it includes loading: `JSON.parse` of 50 rule rows;
 - 3 runs of 200 per input on the dev workstation, load recorded;
 - limit: 1 ms p95 per input, a `REQUIREMENTS.md` "Numbers" row; the adversarial worst headers
-  (100-address `From`, `To` and `Cc`, the encoded subject and the repeated header), alone or with
+  (100-address `From`, `To` and `Cc`, or 2,000 characters of short addresses or of groups, with
+  the encoded subject and the repeated header), alone or with
   the 20 capped header names, have their own 2 ms p95 budget (owner ruling 2026-11-17). The
   script exits 1 when any input reaches its own budget.
 

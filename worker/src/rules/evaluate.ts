@@ -63,13 +63,42 @@ function headerValue(source: MailSource, name: string): string | null {
 }
 
 /**
+ * An address header cut before its `max`-th top-level separator, so the parser sees at most `max`
+ * addresses. A separator is a comma or a semicolon outside a quoted string, a comment in
+ * parentheses and angle brackets. Commas inside a group (`name: a, b;`) count too, so a group
+ * cannot hide more addresses; a header may then keep fewer than `max`, never more. One linear
+ * pass, no regular expression.
+ */
+export function cutAddressList(raw: string, max: number): string {
+  let separators = 0;
+  let quoted = false;
+  let comment = 0;
+  let angle = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (quoted || comment > 0) {
+      if (ch === "\\") i++;
+      else if (quoted && ch === '"') quoted = false;
+      else if (!quoted && ch === "(") comment++;
+      else if (!quoted && ch === ")") comment--;
+    } else if (ch === '"') quoted = true;
+    else if (ch === "(") comment = 1;
+    else if (angle) angle = ch !== ">";
+    else if (ch === "<") angle = true;
+    else if ((ch === "," || ch === ";") && ++separators === max) return raw.slice(0, i);
+  }
+  return raw;
+}
+
+/**
  * The first ADDRESSES_MAX addresses of one header, each with its display name. Owner ruling
- * (2026-11-17): later addresses are not read, which bounds the work per header.
+ * (2026-11-17): later addresses are not read: the header is cut before parsing, so the parser's
+ * work is bounded too.
  */
 function addressValues(raw: string): string[] {
-  return addressParser(raw, { flatten: true })
-    .slice(0, ADDRESSES_MAX)
-    .flatMap((a) => [a.name, a.address].filter((v): v is string => Boolean(v)));
+  return addressParser(cutAddressList(raw, ADDRESSES_MAX), { flatten: true }).flatMap((a) =>
+    [a.name, a.address].filter((v): v is string => Boolean(v)),
+  );
 }
 
 /**
