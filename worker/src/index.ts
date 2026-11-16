@@ -10,6 +10,7 @@ import { handleQueue, handleScheduled } from "./mail/consumer";
 import { registerEventRoutes } from "./mail/hub";
 import { handleEmail } from "./mail/inbound";
 import { registerMailboxRoutes, registerMessageRoutes } from "./mail/routes";
+import { registerPushRoutes } from "./push/routes";
 import { publicRoute, requireAuthorization, requireSameOrigin } from "./routing";
 
 export { Hub } from "./mail/hub";
@@ -36,6 +37,9 @@ registerTargetRoutes(app.basePath("/forward-targets"));
 registerMessageRoutes(app.basePath("/messages"));
 registerMailboxRoutes(app);
 registerEventRoutes(app);
+
+// Web Push for new mail: none of these is public.
+registerPushRoutes(app.basePath("/push"));
 
 app.notFound((c) => fail(c, 404, "not_found"));
 app.onError((err, c) => {

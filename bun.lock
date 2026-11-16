@@ -40,6 +40,7 @@
     "worker": {
       "name": "@melodymail/worker",
       "dependencies": {
+        "@mmmike/web-push": "1.5.0",
         "@simplewebauthn/server": "^14.1.0",
         "hono": "^4.13.18",
         "postal-mime": "^4.2.1",
@@ -325,6 +326,8 @@
     "@melodymail/web": ["@melodymail/web@workspace:web"],
 
     "@melodymail/worker": ["@melodymail/worker@workspace:worker"],
+
+    "@mmmike/web-push": ["@mmmike/web-push@1.5.0", "", {}, "sha512-KU8gWqHBB9FcxEot30jESMbfeINMZ23dBSTHcs+aQYvSaV2MnGuLo99bvx4/H0tROfsYTr6eyeFwxX9xwRAyNg=="],
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.2.6", "", { "dependencies": { "@tybys/wasm-util": "^0.10.3" }, "peerDependencies": { "@emnapi/core": "^1.7.1 || 2.0.0-beta.2", "@emnapi/runtime": "^1.7.1 || 2.0.0-beta.2" } }, "sha512-mRyDmEw9/fCDXCGfL1sbgIw/GUK0PVxRW4YwgPN61F3LQ+fSyoBFarJVzgGyhF6kRzEQZ0FejDqm4WLXSeqQmw=="],
 

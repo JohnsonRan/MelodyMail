@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@mmmike/web-push": "1.5.0",
     "@simplewebauthn/server": "^14.1.0",
     "hono": "^4.13.18",
     "postal-mime": "^4.2.1"

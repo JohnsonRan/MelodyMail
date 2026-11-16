@@ -1,8 +1,11 @@
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
+import { generateVapidKeys } from "@mmmike/web-push/vapid";
 import { defineConfig } from "vitest/config";
 
 // The tests run against a real D1 in workerd with the same SQL migrations a deploy applies.
 const migrations = await readD1Migrations("./migrations");
+// A fresh VAPID pair per run, so no key is kept in the repository; push requests are stubbed.
+const vapid = await generateVapidKeys();
 
 export default defineConfig({
   plugins: [
@@ -12,6 +15,9 @@ export default defineConfig({
         bindings: {
           TEST_MIGRATIONS: migrations,
           SETUP_TOKEN: "test-setup-token-0123456789abcdef0123456789",
+          VAPID_PUBLIC_KEY: vapid.publicKey,
+          VAPID_PRIVATE_KEY: vapid.privateKey,
+          VAPID_SUBJECT: "https://mail.test",
         },
       },
     }),
