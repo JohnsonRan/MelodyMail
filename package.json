@@ -12,6 +12,7 @@
   },
   "scripts": {
     "check": "bun scripts/check.ts",
+    "release": "bun scripts/release.ts",
     "lint": "bun --bun biome check .",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun run --filter '*' test",
