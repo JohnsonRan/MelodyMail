@@ -213,3 +213,24 @@ export const messages = sqliteTable(
       .where(sql`${t.read} = 0`),
   ],
 );
+
+// M4b: Web Push subscriptions, one per signed-in device. The cascade ends a device's push with
+// its session (sign-out, revoke, recovery, expiry). p256dh and auth are the browser's public
+// encryption keys, not secrets of ours.
+export const pushSubscriptions = sqliteTable(
+  "push_subscriptions",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("push_subscriptions_endpoint").on(t.endpoint),
+    index("push_subscriptions_session").on(t.sessionId),
+  ],
+);
