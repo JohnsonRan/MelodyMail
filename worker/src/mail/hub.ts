@@ -4,6 +4,7 @@ import type { AppEnv, Env } from "../env";
 import { errorText, fail, log } from "../http";
 import { pushNewMail } from "../push/send";
 import { telegramNewMail } from "../telegram/send";
+import { quietForeground } from "./quiet";
 
 // Real-time push (docs/M4-mailbox.md). One Hub holds every open mailbox page as a hibernatable
 // WebSocket tagged with its session id hash. Events carry message ids only; the page refetches
@@ -12,7 +13,8 @@ import { telegramNewMail } from "../telegram/send";
 // also sends Web Push to the devices without an open page (docs/M4b-pwa.md, "Sending") and the
 // Telegram card (docs/M5b-telegram.md, "Sending"), so the encryption and the upstream requests run
 // in this invocation, not in the queue consumer. Pages report "fg" or "bg" as they gain or lose the
-// foreground; while any page is in the foreground, new mail sends neither (docs/M5c-foreground.md).
+// foreground; with the owner's "Quiet while MelodyMail is open" on, new mail sends neither while any
+// page is in the foreground (docs/M5c-foreground.md).
 // The report is kept as the socket's attachment, which survives hibernation; the Hub keeps no
 // state in memory.
 
@@ -57,17 +59,20 @@ export class Hub extends DurableObject<Env> {
   }
 
   /**
-   * Sends the event to every open page and returns how many sockets it reached. New mail while a
-   * page is in the foreground goes to the pages with `quiet: true` and nowhere else: no push, no
-   * Telegram, and hidden pages do not notify themselves. Otherwise every device whose session has
-   * no page open gets a push, a session with an open page notifies itself while hidden
-   * (web/src/pwa/notifyHidden.ts), and the Telegram card goes out. A push or Telegram failure is
-   * logged and never fails the caller.
+   * Sends the event to every open page and returns how many sockets it reached. With "Quiet while
+   * MelodyMail is open" on, new mail while a page is in the foreground goes to the pages with
+   * `quiet: true` and nowhere else: no push, no Telegram, and hidden pages do not notify
+   * themselves. Otherwise every device whose session has no page open gets a push, a session with
+   * an open page notifies itself while hidden (web/src/pwa/notifyHidden.ts), and the Telegram card
+   * goes out. A push or Telegram failure is logged and never fails the caller.
    */
   async notify(event: HubEvent): Promise<number> {
     const sockets = this.ctx.getWebSockets();
     const now = Date.now();
-    const quiet = event.type === "message" && sockets.some((ws) => inForeground(ws, now));
+    const quiet =
+      event.type === "message" &&
+      sockets.some((ws) => inForeground(ws, now)) &&
+      (await this.quietSetting());
     const data = JSON.stringify(quiet ? { ...event, quiet } : event);
     let sent = 0;
     const reached = new Set<string>();
@@ -90,6 +95,17 @@ export class Hub extends DurableObject<Env> {
       }),
     ]);
     return sent;
+  }
+
+  /** The owner's setting; read only when a page is in the foreground. A failed read counts as off,
+   * so mail is notified rather than silenced. */
+  private async quietSetting(): Promise<boolean> {
+    try {
+      return await quietForeground(this.env.DB);
+    } catch (err) {
+      log("warn", "quiet_setting_failed", { error: errorText(err) });
+      return false;
+    }
   }
 
   /** Closes the pages of ended sessions; returns how many sockets it closed. */

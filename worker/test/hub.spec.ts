@@ -6,7 +6,7 @@ import type { Env } from "../src/env";
 import { handleQueue } from "../src/mail/consumer";
 import { FOREGROUND_TTL_MS, Hub, SESSION_ENDED } from "../src/mail/hub";
 import { Client, login, ORIGIN, setupOwner, totpCode } from "./helpers";
-import { ageReports, attachments, report } from "./hub-helpers";
+import { ageReports, attachments, report, setQuiet } from "./hub-helpers";
 import { messageRows } from "./mail-helpers";
 import { fetchWith } from "./mailbox-helpers";
 
@@ -166,6 +166,7 @@ describe("foreground reports", () => {
 
   it("marks new mail quiet while a page is in the foreground, read by a fresh Hub", async () => {
     const owner = await setupOwner();
+    await setQuiet(true);
     const hidden = await connect(owner.client);
     const front = await connect((await login(owner.authenticator)).client);
     await report(front.ws, "fg");
@@ -186,6 +187,7 @@ describe("foreground reports", () => {
 
   it("counts an fg older than 75 s as background until the page repeats it", async () => {
     const { client } = await setupOwner();
+    await setQuiet(true);
     const socket = await connect(client);
     const quiet = async (id: string) => {
       await env.HUB.getByName("hub").notify({ type: "message", id });
@@ -199,10 +201,14 @@ describe("foreground reports", () => {
     expect(await quiet("t2")).toBe(false);
     await report(socket.ws, "fg");
     expect(await quiet("t3")).toBe(true);
+    // With the owner's setting off, the default, a foreground page changes nothing.
+    await setQuiet(false);
+    expect(await quiet("t4")).toBe(false);
   });
 
   it("does not mark new mail quiet when every page is in the background", async () => {
     const { client } = await setupOwner();
+    await setQuiet(true);
     const socket = await connect(client);
     await report(socket.ws, "fg");
     await report(socket.ws, "bg");

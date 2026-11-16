@@ -9,6 +9,7 @@ import { fail, log } from "./http";
 import { handleQueue, handleScheduled } from "./mail/consumer";
 import { registerEventRoutes } from "./mail/hub";
 import { handleEmail } from "./mail/inbound";
+import { registerQuietRoutes } from "./mail/quiet";
 import { registerMailboxRoutes, registerMessageRoutes } from "./mail/routes";
 import { registerPushRoutes } from "./push/routes";
 import { publicRoute, requireAuthorization, requireSameOrigin } from "./routing";
@@ -61,6 +62,9 @@ registerWebhookRoute(app);
 // token Telegram sends.
 registerTelegramRoutes(app.basePath("/telegram"));
 registerTelegramWebhook(app);
+
+// "Quiet while MelodyMail is open" (docs/M5c-foreground.md): not public.
+registerQuietRoutes(app.basePath("/settings/quiet"));
 
 app.notFound((c) => fail(c, 404, "not_found"));
 app.onError((err, c) => {

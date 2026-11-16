@@ -5,7 +5,7 @@ import { copy } from "../src/telegram/card";
 import html from "../src/telegram/card.html";
 import { telegramNewMail } from "../src/telegram/send";
 import { ORIGIN } from "./helpers";
-import { ageReports, report } from "./hub-helpers";
+import { ageReports, report, setQuiet } from "./hub-helpers";
 import { seedMessage } from "./mailbox-helpers";
 import { signedIn } from "./send-helpers";
 import {
@@ -118,7 +118,7 @@ describe("telegram cards for new mail", () => {
     expect(await cardRows()).toEqual([]);
   });
 
-  it("sends the card while a page is open in the background, and nothing in the foreground", async () => {
+  it("sends the card with a page open, and none in the foreground with the quiet setting on", async () => {
     await seedTelegram();
     await seedMessage({ id: "m1" });
     await seedMessage({ id: "m2" });
@@ -135,14 +135,20 @@ describe("telegram cards for new mail", () => {
     expect(await notifyNewMail("m1")).toBe(1);
     expect(calls.map((c) => c.method)).toEqual(["sendWidget"]);
     await report(ws, "fg");
+    // The quiet setting is off by default: the card still goes out.
+    await seedMessage({ id: "m4" });
+    expect(await notifyNewMail("m4")).toBe(1);
+    expect(calls.map((c) => c.method)).toEqual(["sendWidget", "sendWidget"]);
+    calls.length = 0;
+    await setQuiet(true);
     expect(await notifyNewMail("m2")).toBe(1);
-    expect(calls.map((c) => c.method)).toEqual(["sendWidget"]);
-    expect((await cardRows()).map((r) => r.messageId)).toEqual(["m1"]);
+    expect(calls).toEqual([]);
+    expect((await cardRows()).map((r) => r.messageId).sort()).toEqual(["m1", "m4"]);
     // A report older than 75 s no longer holds the card back.
     await seedMessage({ id: "m3" });
     await ageReports(FOREGROUND_TTL_MS);
     expect(await notifyNewMail("m3")).toBe(1);
-    expect(calls.map((c) => c.method)).toEqual(["sendWidget", "sendWidget"]);
+    expect(calls.map((c) => c.method)).toEqual(["sendWidget"]);
   });
 
   it("falls back to a plain message with the four buttons when the widget is refused", async () => {

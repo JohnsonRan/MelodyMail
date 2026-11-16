@@ -74,6 +74,8 @@ const GUARDED = [
   "DELETE /api/telegram/link",
   "DELETE /api/telegram",
   "POST /api/telegram/test",
+  "GET /api/settings/quiet",
+  "PUT /api/settings/quiet",
 ];
 
 describe("authorization", () => {

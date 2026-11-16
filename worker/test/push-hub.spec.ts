@@ -4,7 +4,7 @@ import { SESSION_IDLE_MS } from "../src/auth/session";
 import { handleQueue } from "../src/mail/consumer";
 import { FOREGROUND_TTL_MS } from "../src/mail/hub";
 import { type Client, login, ORIGIN, setupOwner } from "./helpers";
-import { ageReports, report } from "./hub-helpers";
+import { ageReports, report, setQuiet } from "./hub-helpers";
 import { messageRows } from "./mail-helpers";
 import {
   browserSubscription,
@@ -112,12 +112,18 @@ describe("push for new mail", () => {
     expect(sent.map((s) => s.url)).toEqual([sub.json.endpoint]);
   });
 
-  it("pushes to no device while a page is in the foreground, and again once it is not", async () => {
+  it("pushes while a page is in the foreground only with the quiet setting off", async () => {
     const { client: phone, authenticator } = await setupOwner();
     const sub = await subscribe(phone);
     const laptop = await connect((await login(authenticator)).client);
     await report(laptop, "fg");
     const sent = stubPushService(201);
+    // Off, the default: as in M5b.
+    await storeRow("p17", "Subject: Setting off");
+    await parse("p17");
+    expect(sent.map((s) => s.url)).toEqual([sub.json.endpoint]);
+    sent.length = 0;
+    await setQuiet(true);
     await storeRow("p14", "Subject: Read on the laptop");
     await parse("p14");
     expect(sent).toEqual([]);
@@ -131,6 +137,7 @@ describe("push for new mail", () => {
     const { client: phone, authenticator } = await setupOwner();
     const sub = await subscribe(phone);
     const laptop = await connect((await login(authenticator)).client);
+    await setQuiet(true);
     await report(laptop, "fg");
     await ageReports(FOREGROUND_TTL_MS);
     const sent = stubPushService(201);

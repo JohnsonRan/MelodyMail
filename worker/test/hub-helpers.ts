@@ -39,3 +39,13 @@ export async function report(ws: WebSocket, state: "fg" | "bg"): Promise<void> {
     { timeout: 2000, interval: 10 },
   );
 }
+
+/** Sets "Quiet while MelodyMail is open" as Settings > Notifications does. */
+export async function setQuiet(on: boolean): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO settings (id, quiet_foreground, updated_at) VALUES (1, ?, ?)
+     ON CONFLICT (id) DO UPDATE SET quiet_foreground = excluded.quiet_foreground`,
+  )
+    .bind(on ? 1 : 0, Date.now())
+    .run();
+}
