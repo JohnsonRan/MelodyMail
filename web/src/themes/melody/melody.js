@@ -433,6 +433,36 @@ export const melodyTheme = {
         "padding": "var(--spacing-3)"
       }
     },
+    "banner": {
+      "base": {
+        "userSelect": "text",
+        "WebkitUserSelect": "text"
+      }
+    },
+    "code": {
+      "base": {
+        "userSelect": "text",
+        "WebkitUserSelect": "text"
+      }
+    },
+    "text-input": {
+      "base": {
+        "userSelect": "text",
+        "WebkitUserSelect": "text"
+      }
+    },
+    "tokenizer": {
+      "base": {
+        "userSelect": "text",
+        "WebkitUserSelect": "text"
+      }
+    },
+    "text-area": {
+      "base": {
+        "userSelect": "text",
+        "WebkitUserSelect": "text"
+      }
+    },
     "toast": {
       "type:mail": {
         "backgroundColor": "var(--color-background-card)",

@@ -40,6 +40,12 @@ async function open(path = "/", width = 1280, mode = "light"): Promise<Session> 
   return session;
 }
 
+const userSelect = (s: Session, selector: string) =>
+  s.page
+    .locator(selector)
+    .first()
+    .evaluate((el) => getComputedStyle(el).userSelect);
+
 const row = (s: Session, id: string) => s.page.locator(`[data-message-row="${id}"]`);
 
 describe("mailbox end to end", () => {
@@ -56,6 +62,15 @@ describe("mailbox end to end", () => {
     );
     expect(fontRequests.length).toBeGreaterThan(0);
     for (const url of fontRequests) expect(url).toStartWith(`${app.origin}/assets/`);
+    // Text selection: chrome is not selectable, copyable values are (docs/STATE.md).
+    for (const selector of ["nav a", "[data-message-row]", "button"])
+      expect([selector, await userSelect(s, selector)]).toEqual([selector, "none"]);
+    expect(await userSelect(s, "input[type=search]")).toBe("text");
+    await s.page.goto(`${app.origin}/settings/domains/example.com`);
+    await s.page.getByText("mx.test.example").waitFor();
+    expect(await userSelect(s, "h1")).toBe("none");
+    expect(await userSelect(s, "text=mx.test.example")).toBe("text");
+    expect(await userSelect(s, `text="MX"`)).toBe("text");
   });
 
   test("renders hostile HTML only in the sandboxed frame and loads nothing remote", async () => {
@@ -120,6 +135,9 @@ describe("mailbox end to end", () => {
     expect((await frame.getAttribute("srcdoc")) ?? "").toContain("invert(");
     await row(s, "note1").click();
     await s.page.getByText("Plain note 1.").waitFor();
+    expect(await userSelect(s, "h2")).toBe("text");
+    expect(await userSelect(s, "text=Plain note 1.")).toBe("text");
+    expect(await userSelect(s, `text="To"`)).toBe("text");
     expect(await toggle.count()).toBe(0);
     // Not remembered: back on the message, it is white again.
     await row(s, "hostile").click();

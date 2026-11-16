@@ -5,6 +5,7 @@ import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { type ColumnWidth, Table, type TableColumn } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import type { ReactNode } from "react";
+import { SELECTABLE } from "../selection";
 
 export type DataColumn<T> = {
   key: string;
@@ -101,5 +102,9 @@ export function TableSkeleton() {
 
 /** An address, domain or host: it never wraps in the middle (web/AGENTS.md, Values never break). */
 export function Value({ children }: { children: string }) {
-  return <Text textWrap="nowrap">{children}</Text>;
+  return (
+    <Text textWrap="nowrap" style={SELECTABLE}>
+      {children}
+    </Text>
+  );
 }

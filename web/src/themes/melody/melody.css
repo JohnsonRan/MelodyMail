@@ -535,6 +535,31 @@
     --astryx-section-padding: var(--spacing-3);
   }
 
+  .astryx-banner {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  .astryx-code {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  .astryx-text-input {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  .astryx-tokenizer {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  .astryx-text-area {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
   .astryx-toast[data-type="mail"] {
     background-color: var(--color-background-card);
     color: var(--color-text-primary);

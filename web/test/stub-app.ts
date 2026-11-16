@@ -199,6 +199,12 @@ export class StubApp {
     if (path === "/api/addresses") {
       return json({ addresses: [{ id: 1, address: "shop@example.com", targetIds: [] }] });
     }
+    if (path === "/api/domains/example.com/dns") {
+      return json({
+        receive: [{ id: "mx", type: "MX", name: "@", values: ["mx.test.example"] }],
+        send: [],
+      });
+    }
     if (path === "/api/counts") {
       return json({ folders: { inbox: 0, starred: 0, archive: 0, trash: 0 }, addresses: {} });
     }
