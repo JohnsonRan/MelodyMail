@@ -199,6 +199,43 @@ describe("API keys", () => {
     expect((await lastUsed())?.ip).toBe("192.0.2.4");
   });
 
+  it("spends no D1 write inside the hour, and the write itself loses a race", async () => {
+    const { key, id } = await apiKey(["mail:read"], { lastUsedAt: Date.now() - 60_000 });
+    const statements: string[] = [];
+    // `stale`: the key lookup reports "never used", as when another request wrote in between.
+    const database = (stale: boolean) =>
+      new Proxy(env.DB, {
+        get(target, prop) {
+          if (prop !== "prepare") return Reflect.get(target, prop);
+          return (sql: string) => {
+            statements.push(sql);
+            const statement = target.prepare(sql);
+            if (!stale || !sql.includes("WHERE token_hash")) return statement;
+            return {
+              bind: (...values: unknown[]) => ({
+                first: async () => ({
+                  ...(await statement.bind(...values).first()),
+                  lastUsedAt: null,
+                }),
+              }),
+            };
+          };
+        },
+      });
+    const request = () =>
+      new Request(`${ORIGIN}/api/v1/addresses`, {
+        headers: { authorization: `Bearer ${key}`, "cf-connecting-ip": "192.0.2.50" },
+      });
+    expect((await fetchWith(request(), { DB: database(false) })).status).toBe(200);
+    expect(statements.some((s) => s.includes("UPDATE api_keys"))).toBe(false);
+    expect((await fetchWith(request(), { DB: database(true) })).status).toBe(200);
+    expect(statements.some((s) => s.includes("UPDATE api_keys"))).toBe(true);
+    const ip = await env.DB.prepare("SELECT last_used_ip AS ip FROM api_keys WHERE id = ?")
+      .bind(id)
+      .first("ip");
+    expect(ip).toBeNull();
+  });
+
   it("checks the rate limit before the key lookup, keyed by client IP", async () => {
     const seen: string[] = [];
     const limiter = {

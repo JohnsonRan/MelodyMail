@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { app } from "../src/index";
 import { apiScopes } from "../src/routing";
 import { apiKey, v1 } from "./api-helpers";
-import { seedMany } from "./mailbox-helpers";
+import { ORIGIN } from "./helpers";
+import { fetchWith, seedMany } from "./mailbox-helpers";
 import { check, documentedOperations } from "./openapi-check";
 import { messageRow, resendOk, sender, signedIn, stubResend } from "./send-helpers";
 
@@ -121,6 +122,16 @@ describe("REST API v1", () => {
     expect(await badKey.json()).toEqual({ error: "bad_request", path: "Idempotency-Key" });
     const unknown = await v1(key, "POST", "/messages/send", { ...SEND, from: from + 9 }, header);
     expect(await unknown.json()).toEqual({ error: "unknown_address" });
+    const off = await fetchWith(
+      new Request(`${ORIGIN}/api/v1/messages/send`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${key}`, ...header },
+        body: JSON.stringify({ ...SEND, from }),
+      }),
+      { RESEND_API_KEY: undefined },
+    );
+    expect(off.status).toBe(503);
+    expect(await off.json()).toEqual({ error: "send_not_configured" });
     expect(calls).toHaveLength(0);
   });
 
