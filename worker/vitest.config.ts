@@ -19,6 +19,10 @@ export default defineConfig({
           VAPID_PRIVATE_KEY: vapid.privateKey,
           VAPID_SUBJECT: "https://mail.test",
           // Requests to Resend are stubbed in every test; these values reach no real account.
+          // The upstream URLs name reserved .invalid hosts (RFC 6761): a request that slips past
+          // the fetch stubs cannot resolve, so it never reaches the real service.
+          RESEND_API_URL: "https://api.resend.invalid",
+          DOH_URL: "https://doh.invalid/dns-query",
           RESEND_API_KEY: "re_test_not_a_real_key",
           RESEND_WEBHOOK_SECRET: `whsec_${btoa(crypto.randomUUID())}`,
           UPLOAD_URL_KEY: crypto.randomUUID(),
