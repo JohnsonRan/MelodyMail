@@ -2598,7 +2598,7 @@ all 156. Taken with Playwright against `web/dist` and the in-memory API stand-in
 was found; the page keeps the M4b layout (one column of sections; at 1280 and 1920 px the page is
 two sections tall).
 
-## M5c: in-page notice and quiet foreground (built 2026-11-16, branch `m5c-foreground`)
+## M5c: in-page notice and quiet foreground (done 2026-11-16, PR #8, merge `b9149cc`)
 
 Plan: `docs/M5c-foreground.md`. Risk class Medium (when Web Push and Telegram go out, a notice on
 the page; no login, secret or stored-data change). Not pushed; waits for review, the owner's look
@@ -2961,3 +2961,12 @@ Deferred (owner decides after release):
 
 Not verified: the card with a screen reader (only the live region's text was read); the notice
 in Safari and Firefox; the logo's 32 px rendering on a high-density display (headless at 1x).
+
+## Next: text selection limited to content (owner request 2026-11-16)
+
+The owner found that dragging the mouse selects nearly the whole interface. Wanted: the app chrome
+(navigation, toolbars, buttons, headings, list rows, settings copy) is not selectable; content the
+owner may copy stays selectable: the message body (its own sandboxed frame), the reader header
+(sender, recipients, addresses, subject), inputs and the compose area, values meant for copying
+(DNS records, the Telegram `/start` command, recovery key, TOTP secret) and error messages.
+M5c closed with PR #8 (CI: merge-gate 43 s, browser 54 s, pwa 36 s, send 42 s, telegram 38 s).
