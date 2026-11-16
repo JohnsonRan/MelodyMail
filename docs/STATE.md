@@ -1321,3 +1321,20 @@ message in the session scratchpad; commit order `msgF.txt`, `msgH.txt`, `msgI.tx
 
 Hypothesis left for a real device: a phone that suspends the page without closing its socket
 counts as "page open" until the runtime notices, so it gets no push in that window.
+
+### Real push test (2026-11-16, owner's Chrome Dev on Windows, local `wrangler dev`)
+
+Allowed by the owner. Local VAPID keys in `worker/.dev.vars` (not committed).
+
+1. Turning push on failed: `PUT /api/push/subscription` answered 400. A new log line
+   `push_subscription_rejected` (host only) showed `jmt17.google.com`, the push service of Chrome's
+   Dev and Canary channels and other non-stable Chromium builds (Chromium
+   `push_messaging_constants.cc`). It was added to the allowlist; the accept test turned red
+   without it and green with it.
+2. Settings > "Send test notification": delivered.
+3. All app tabs closed, one mail posted to `/cdn-cgi/local/email`: the consumer parsed it, the Hub
+   pushed, the notification arrived after a delay (urgency `normal`; the push service decides
+   timing), and clicking it opened the message.
+
+Still unverified: Firefox, Safari and iOS delivery; stable Chrome's `fcm.googleapis.com` path
+(covered only by stubbed tests).
