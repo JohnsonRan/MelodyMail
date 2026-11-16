@@ -137,8 +137,8 @@ events to open pages.
 
 Messages are parsed in the browser. Sender HTML is shown in a sandboxed frame without scripts,
 remote images stay blocked until "Show remote images" is chosen for that message, and
-attachments are always downloaded, never opened in the app. In the dark theme, "Dark reading" in the
-reader shows one HTML message inverted; it is off for every message you open.
+attachments are always downloaded, never opened in the app. In the dark theme, "Dark reading" in
+the reader shows one HTML message inverted; it is off for every message you open.
 
 To fill a local mailbox with the test fixtures, start the Worker and run the seed script. It
 sends every `.eml` in `worker/test/fixtures` through the real `email()` handler of `wrangler dev`

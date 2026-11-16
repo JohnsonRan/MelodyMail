@@ -91,6 +91,12 @@ describe("installable app", () => {
     expect(cached.some((u) => u.includes("/manifest.webmanifest"))).toBe(true);
     expect(cached.filter((u) => new URL(u).pathname.startsWith("/api"))).toEqual([]);
   });
+
+  test("a navigation to an API URL reaches the Worker, not the cached shell", async () => {
+    const res = await page.goto(`${app.origin}/api/counts`);
+    expect(res?.headers()["content-type"]).toContain("application/json");
+    expect(await page.locator("#root").count()).toBe(0);
+  });
 });
 
 describe("offline", () => {
@@ -233,7 +239,13 @@ describe("notification from an open page", () => {
     for (const hidden of [true, false]) {
       const p = await pushPage({ permission: "granted", hidden });
       await p.goto(`${app.origin}/settings/notifications`);
-      await p.getByRole("switch", { name: "Notify me about new mail" }).click();
+      const toggle = p.getByRole("switch", { name: "Notify me about new mail" });
+      await toggle.waitFor();
+      // With push off on this device, a hidden page stays quiet too.
+      for (const ws of app.sockets) ws.send(JSON.stringify({ type: "message", id: "hostile" }));
+      await p.waitForTimeout(300);
+      expect(await p.evaluate(() => (window as unknown as { shown: unknown[] }).shown)).toEqual([]);
+      await toggle.click();
       await p.getByText("Notifications turned on.").first().waitFor();
       for (const ws of app.sockets) ws.send(JSON.stringify({ type: "message", id: "hostile" }));
       if (hidden)
