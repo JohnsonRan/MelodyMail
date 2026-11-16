@@ -76,12 +76,16 @@ export function check(schema: Schema, value: unknown, at = "$"): string[] {
 const paths = doc.paths as unknown as Record<string, Record<string, Operation | unknown>>;
 const METHODS = ["get", "post", "patch", "put", "delete"];
 
-/** Every documented operation as `METHOD /api/v1/path/:param` with its scopes. */
-export function documentedOperations(): { key: string; scopes: string[] }[] {
+/**
+ * Every documented operation as `METHOD /api/v1/path/:param` with its security requirements:
+ * one list of scopes per requirement object. The objects are alternatives (OR); the scopes inside
+ * one object are all required (AND).
+ */
+export function documentedOperations(): { key: string; security: string[][] }[] {
   return Object.entries(paths).flatMap(([path, item]) =>
     METHODS.filter((m) => item[m]).map((m) => ({
       key: `${m.toUpperCase()} ${PREFIX}${path.replaceAll(/\{(\w+)\}/g, ":$1")}`,
-      scopes: ((item[m] as Operation).security ?? []).flatMap((s) => Object.values(s).flat()),
+      security: ((item[m] as Operation).security ?? []).map((s) => Object.values(s).flat().sort()),
     })),
   );
 }

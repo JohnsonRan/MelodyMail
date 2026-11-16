@@ -177,11 +177,17 @@ describe("OpenAPI document", () => {
     const routes = new Map(
       app.routes
         .filter((r) => r.method !== "ALL" && r.path.startsWith("/api/v1/"))
-        .map((r) => [`${r.method} ${r.path}`, [...(apiScopes(r.handler) ?? [])].sort()]),
+        // Any one of a route's scopes is enough: one requirement object per scope.
+        .map((r) => [
+          `${r.method} ${r.path}`,
+          [...(apiScopes(r.handler) ?? [])].sort().map((s) => [s]),
+        ]),
     );
     const documented = documentedOperations();
     expect(new Set(documented.map((o) => o.key)).size).toBe(documented.length);
-    expect(Object.fromEntries(documented.map((o) => [o.key, [...o.scopes].sort()]))).toEqual(
+    const sorted = (security: string[][]) =>
+      [...security].sort((a, b) => a.join().localeCompare(b.join()));
+    expect(Object.fromEntries(documented.map((o) => [o.key, sorted(o.security)]))).toEqual(
       Object.fromEntries(routes),
     );
   });
