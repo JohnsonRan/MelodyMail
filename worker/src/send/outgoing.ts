@@ -158,7 +158,7 @@ async function attachedUploads(
 ): Promise<SentCopy["attachments"] | Refusal> {
   if (value === undefined || value === null) return [];
   const ids = stringList(value, UPLOADS_MAX, 64);
-  if (!ids || !ids.every(clientId) || new Set(ids).size !== ids.length) {
+  if (ids === null || !ids.every(clientId) || new Set(ids).size !== ids.length) {
     return { status: 400, error: "unknown_upload" };
   }
   if (ids.length === 0) return [];
