@@ -1366,7 +1366,7 @@ Allowed by the owner. Local VAPID keys in `worker/.dev.vars` (not committed).
 Still unverified: Firefox, Safari and iOS delivery; stable Chrome's `fcm.googleapis.com` path
 (covered only by stubbed tests).
 
-## M5: sending through Resend (built 2026-11-16, branch `m5-sending`, not pushed)
+## M5: sending through Resend (done 2026-11-16, PR #6, merge `f1a2bf9`)
 
 Design: `docs/M5-sending.md`. Risk class High (mail to the outside world under the owner's
 domains, two public endpoints, three secrets, migration 0009). Waits for the independent review
@@ -2072,6 +2072,10 @@ changed, CPU load read before each run):
 
 ### Deferred
 
+- Cloudflare Email Sending as the transport: it would remove Resend and the signed attachment URLs,
+  but it needs Workers Paid for arbitrary recipients and also refuses a custom `Message-ID`
+  (`E_HEADER_NOT_ALLOWED`, platform-controlled). The owner keeps the Free plan (2026-11-16), so it
+  is not pursued; whether its returned `messageId` equals the delivered Message-ID is untested.
 - Compose still offers "Send again" when its own send answers 409 `send_status_unknown` (a draft
   reopened from Drafts more than a day after a lost send); the retry only gets the same 409, and
   the message tells the owner to check Resend or send it as a new message. Option: hide Retry
