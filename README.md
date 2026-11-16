@@ -156,6 +156,9 @@ The browser security suite needs Chromium for Playwright once:
 bun run --cwd web test:browser
 ```
 
+The compose and Markdown suites run apart with `bun run test:send`, the PWA suite with
+`bun run test:pwa`.
+
 ## Install and offline
 
 MelodyMail is an installable web app. In Chrome or Edge, choose Install in the address bar; on
@@ -227,7 +230,7 @@ Then set up Resend:
 
 Each secret switches on one part: without `UPLOAD_URL_KEY` compose sends without attachments, and
 without `RESEND_WEBHOOK_SECRET` sent mail stays at "Sent" instead of showing delivery. Resend
-fetches attachments from a signed URL on your origin that is valid for one hour; it cannot reach
+fetches attachments from a signed URL on your origin that is valid for 24 hours; it cannot reach
 `wrangler dev` on localhost, so attachments work only on a deployed Worker. For `wrangler dev`,
 put the values in `worker/.dev.vars`.
 

@@ -1360,6 +1360,24 @@ the risk class asks for, the owner's manual Resend test and the owner's look at 
 3. **Open and click tracking stays off.** No tracking option is sent; Resend sets tracking per
    domain, so README "Sending" tells the owner to leave it off there.
 
+Rulings on the review of `c1a3ebf` (2026-11-16):
+
+4. **Signed attachment URLs.** `exp` is computed once when the sent copy is prepared, stored in
+   it and signed from on every attempt, so a retry is byte-identical; the TTL is 24 hours, as long
+   as Resend keeps an idempotency key. Resend's 409 `invalid_idempotent_request` and
+   `concurrent_idempotent_requests` must not land as a retryable `failed`.
+5. **Resend-reported delivery failure** (`email.failed`): final, no Retry, kept apart from a local
+   send failure; the reader says Resend reported it and that the owner forwards the message or
+   writes a new one; `claimRetry` refuses it server-side.
+6. **Rejected send, then corrected.** After `send_rejected` the compose session gets a new key, so
+   the corrected message is a new send and autosave keeps working; a draft save answers
+   `already_sent` only for a message at `sent` or later. Network errors, timeouts and 5xx keep
+   the key.
+7. **First paint** goes back to about 319 kB through a chunk rule in `web/vite.config.ts`; the
+   compose chunk stays separate with marked only in it.
+8. **Browser tests:** the compose and Markdown suites move to `bun run test:send` with their own
+   workflow, limit 14 s; `test:browser` comes back under 26 s.
+
 ### Library choices (checked 2026-11-16)
 
 | Package | Release | License | Dependencies | Verdict |
@@ -1421,7 +1439,7 @@ Inbox, autosave drafts and quote the source under "On <date>, <sender> wrote:".
 
 ### Proof
 
-Worker (`bun --bun vitest run`, 336 tests, 23 more than before M5, in `send.spec.ts` and
+Worker (`bun --bun vitest run`, 315 tests at `c1a3ebf` (an earlier count of 336 was wrong), 324 after the review fixes, in `send.spec.ts` and
 `send-extras.spec.ts`; `fetch` stubbed in every test, no request reaches Resend):
 
 - route walk: the 10 new session routes answer 401 without a session; exactly the two public
@@ -1486,7 +1504,7 @@ PWA tier (`bun run test:pwa`): 11 tests green, unchanged.
 ### Numbers
 
 - `bun run check`: green at every commit; 3 runs at the end 8.3, 8.6, 8.6 s, CPU load 1% (limit 10 s); worker
-  suite (vitest Duration) 7.40, 7.69, 7.71 s (limit 9 s), 336 tests. One fresh-worktree run of `031cfc5` failed in
+  suite (vitest Duration) 7.40, 7.69, 7.71 s (limit 9 s), 315 tests (336 was a miscount). After the review fixes: below. One fresh-worktree run of `031cfc5` failed in
   the worker suite on a cold cache; it passed on the two reruns and the failure did not repeat.
 - `bun run test:browser`: 60 tests green (55 end to end and corpus, 5 prefill unit tests); 3 runs
   31.17–34.07 s (wall 32.5–35.3 s including the build), CPU load 0–2%. The same host ran the 47 suites from before M5 in 20.06 s twice (21.3 s
@@ -1548,6 +1566,111 @@ the stale-row path when the stored copy is missing, the Drafts list refresh afte
 upload progress, Discard deleting the draft and its uploads, the forward's re-uploaded
 attachments, the reply-from address choice, and the Settings quota section.
 
+### Review fixes (review of `c1a3ebf`, rulings 4–8)
+
+Commits, oldest first: `a0cba04` test upstreams unresolvable, `0fa489d` stored URL expiry,
+`d4bf860` idempotency conflicts, `14e098e` `delivery_failed`, `de49981` new key after a
+rejection, `564b9eb` webhook race, `b15083a` webhook body cap, `1894adc` vendor chunk,
+`34af786` shorter compose tests, `07060b0` `bun run test:send`, `2590830` no quota write on a
+conflict, `96c31e0` and `579ae1b` tests found missing by ablation, `86cefed` the review tests in
+one file (`worker/test/send-resend.spec.ts`).
+
+- **Ruling 4, URLs.** `SentCopy.attachmentsExpireAt` is set in `prepare` (now + 24 h);
+  `deliver` signs from it. Test: a send with an attachment fails with 500, the retry runs with
+  `Date.now` ten minutes later, and the two request bodies are byte-identical; `exp` is 24 h
+  ahead. The origin still comes from the request, so a retry through another hostname (for
+  example `workers.dev` instead of the custom domain) would change the body.
+- **Ruling 4, 409.** `errorCode` maps 409 `concurrent_idempotent_requests` and
+  `invalid_idempotent_request` (names checked in resend.com/docs/api-reference/errors,
+  2026-11-16) to `send_in_progress`; `deliver` then leaves the row `sending`, writes nothing and
+  answers 409 `send_in_progress`. Chosen because the first request's success only updates a row
+  still `sending`: any other state written by the conflicting attempt could land first and
+  overwrite that success, and leaving the row alone needs no new state. After the 60-second
+  stale limit a repeat may claim the row again, and Resend answers it with the first result.
+  Test (both names): the first request waits inside the Resend stub, the row is made stale, a
+  repeat gets the 409, the row stays `sending`, the first request finishes and the row is
+  `sent` with its `resend_id`.
+- **Ruling 5.** Own status `delivery_failed` (smaller than an error code: no special case in
+  `claimRetry`, `DONE` or `SentStatus`'s Retry path; the status column has no CHECK, so no
+  migration). The webhook maps `email.failed` to it; it ranks with the final states; a repeat
+  returns the message; `claimRetry` takes only `failed`. The reader shows an error banner
+  without Retry: en "Resend reported that this message could not be delivered. To send it
+  again, forward it or write a new message.", zh-CN and ja-JP likewise; Sent shows the
+  "Delivery failed" badge. Tests: worker (webhook, then a repeat returns the message without a
+  Resend call) and browser (seeded message opened by URL: badge, banner, no "Send again").
+- **Ruling 6.** Worker: a draft save answers `already_sent` only for status other than
+  `sending` and `failed`; the draft upsert takes a new key only when the old key's message
+  failed with `send_rejected`; a rejection clears `message_id` on its uploads, and a send no
+  longer clears an upload's `draft_id`, so the draft lists the attachments again. Browser: on
+  `send_rejected` `useCompose` takes a new key and saves the draft at once; compose shows no
+  Retry for a rejection. Found while fixing: without the upload hand-back the corrected message
+  failed with `unknown_upload`. Tests: worker (after a 500 the draft saves, the key cannot move
+  and the upload cannot be deleted; while `sending` the draft saves; after a 422 the draft
+  moves to a new key, lists the attachment, and the corrected send goes out under the new key
+  with the attachment and deletes the draft) and browser (failure retried under the same key,
+  then a rejection without Retry, the draft saved under a new key, the corrected message sent
+  under it).
+- **Ruling 7.** A code-splitting group in `web/vite.config.ts` puts every `node_modules` module
+  that the HTML entry reaches by static imports into one `vendor` chunk; app code and lazy
+  chunks keep the automatic split. A first try that grouped every first-paint module also
+  folded the entry into one 261 kB chunk (near the 270 kB entry limit); the vendor-only rule
+  was kept. Without the rule (measured at `b15083a`): 322.9 kB.
+- **Ruling 8.** `test:send` in `web/package.json` and the root; `test:browser` ignores
+  `compose.test.ts` and `markdown.test.ts`; `.github/workflows/send.yml` (nightly 03:57, by
+  hand, pull requests on `web/src/compose/**`, `SentStatus.tsx`, `sentCopy.ts`,
+  `ReaderToolbar.tsx`, `SendStatusLabel.tsx`, the two suites, `stub-send.ts` and the workflow).
+  To fit 14 s with the build, the compose suite builds its 25 MB file inside the page instead of
+  sending it over CDP (3.5 s to 2.3 s for that test), seeds the delivery-failure message, and
+  runs the failure and rejection in one session.
+- **Low, test count.** 315 at `c1a3ebf`, 324 now; REQUIREMENTS and this section corrected.
+- **Hypothesis A, webhook race: reachable, fixed.** A test that posts `email.delivered` from
+  inside the stubbed Resend call (before `resend_id` is stored) got 200 and the svix-id was
+  recorded, so Resend would never deliver it again. Now an event whose email id no message
+  carries answers 409 and is not recorded; Resend's retry with the same svix-id lands after the
+  id is stored. An id that is not ours is retried on Resend's schedule until Resend gives up.
+- **Hypothesis B, webhook CPU: fixed.** `standardwebhooks` verify measured in Bun (30 runs per
+  size): 4 KB 0.04 ms median, 256 KB 0.88 ms, 1 MB 3.02 ms, 4 MB 12.15 ms. Resend publishes no
+  size; its email events carry ids, addresses, subject and timestamps. A body over 256 KB now
+  answers 413 before verification; test: a signed 256 KB+ body gets 413, `verify` is never
+  called, the status is unchanged, a normal event still passes.
+- **Hypothesis C, real traffic from tests: one gap, fixed.** Every Resend call in the tests goes
+  through `stubResend`, and `apply-migrations.ts` rejects any other fetch in `beforeEach`; but
+  the bindings named the real `https://api.resend.com` and DoH URL, so a request after a mock
+  was restored would have gone out. The test bindings now name `.invalid` hosts. Also found:
+  wrangler loads `worker/.dev.vars` (the owner's real key) into the test environment; the test
+  binding wins, and a test asserts the Worker sees the fake key (compared as a boolean so a
+  failure cannot print the key). The file itself was not read.
+
+Ablation of the review fixes (one mutation at a time, the touched suites rerun, the file restored
+from a copy): worker 20 hunks, all red against the final test files: the two `.invalid`
+bindings, signing from the stored expiry, the 24 h TTL, the expiry in the copy, the 409 mapping,
+leaving the row `sending`, `email.failed` to `delivery_failed`, `delivery_failed` in `DONE`,
+`already_sent` only at `sent` or later and not for `sending`, the key rotation clause, rotation
+only after `send_rejected`, the draft taking the new key, the upload hand-back, the hand-back
+only on a rejection, an upload keeping its draft id, not recording an unmatched event, its 409,
+the body cap. Web 5 hunks against a rebuild and `compose.test.ts`: the new key, the immediate
+draft save, no Retry for a rejection and the reader banner are red; the `delivery_failed` badge
+variant survives (the label is the same as plain text and Astryx Badge exposes no attribute to
+assert; the other attention statuses have the same untested shape). First pass: 21 of 25 red;
+the four survivors were test gaps, fixed in `96c31e0` and `579ae1b`. The vendor chunk rule is
+proved by measurement, not a test.
+
+Numbers after the review fixes (2026-11-16, dev workstation, Ryzen 9 9950X3D):
+
+- `bun run check`: green at every commit; 3 runs at `86cefed` 9.64, 10.01, 9.05 s wall, CPU load
+  1–3%, and 3 more 9.17, 9.10, 9.59 s; worker suite (vitest Duration) 7.82–8.83 s over those
+  runs, 324 tests. One run reached the 10 s limit. One gate run during the vendor-chunk work
+  failed in the worker suite with a probe file in `web/`; four reruns passed and the failure did
+  not repeat.
+- `bun run test:browser`: 52 tests; 3 runs 21.90, 21.45, 21.71 s wall including the build, CPU
+  load 1–10% (limit 26 s).
+- `bun run test:send`: 9 tests; 3 runs 12.53, 13.20, 12.37 s wall including the build, CPU load
+  0–3% (limit 14 s).
+- `bun run test:pwa`: 11 tests green; 11.76 s wall (one run; limit 15 s).
+- Bundle (vite build, gzip -6, the same script as before; 3 builds identical): entry 16.5 →
+  3.4 kB; first paint 322.9 → 311.8 kB (319.0 before M5), 7 assets instead of 31; total 736.7 →
+  715.5 kB; compose chunk 51.4 kB, the only chunk with marked.
+
 ### Deviations from the design (decisions taken, open to the owner)
 
 1. **`uploads.message_id`.** The design's `uploads` has only `draft_id`; the cron could not tell
@@ -1556,8 +1679,11 @@ attachments, the reply-from address choice, and the Settings quota section.
 2. **Draft attachments** are linked by `uploads.draft_id` only; the draft row keeps no list of
    upload ids, so there is one source of truth.
 3. **The sent copy is written before the Resend call** (the design writes it after the 200), so a
-   retry sends exactly the stored request again; a retry ignores a changed request body and a
-   Retry from the reader sends `{ idempotencyKey }` alone.
+   retry sends exactly the stored request again, signed attachment URLs included (ruling 4); a
+   retry ignores a changed request body and a Retry from the reader sends `{ idempotencyKey }`
+   alone. After a final rejection (`send_rejected`) the compose session takes a new key and the
+   corrected message is a new send with its own row (ruling 6); the rejected row stays in Sent as
+   "Not sent" and hands its attachments back to the draft.
 4. **`received_at` of an outbound row** is the time of its last send attempt; the 60-second
    staleness check reads it, so no new column is needed.
 5. **`GET /api/uploads/:id`** (session): the owner's download of a sent message's attachment; it
@@ -1583,12 +1709,12 @@ attachments, the reply-from address choice, and the Settings quota section.
 
 ### Open questions for the owner
 
-1. **First paint grew 3.9 kB** (319.0 → 322.9 kB, limit 370) although marked is not in it. The
+1. Settled by ruling 7 (vendor chunk rule, first paint 311.8 kB). **First paint grew 3.9 kB** (319.0 → 322.9 kB, limit 370) although marked is not in it. The
    compose chunk shares Astryx modules (Selector, Item, Stack) with the first paint, and the
    bundler re-split those shared modules into four more preloaded chunks; a probe build with the
    compose chunk replaced by an empty component measured 319.1 kB. Options: accept it, or add a
    manual chunk rule to the Vite config to keep the old split (more config to maintain).
-2. **Browser tier 31–34 s against 26 s.** Proposed: split the sending suites into
+2. Settled by ruling 8 (`bun run test:send`). **Browser tier 31–34 s against 26 s.** Proposed: split the sending suites into
    `bun run test:send` (compose and Markdown, about 11 s, limit 14 s) with its own workflow like
    the PWA suite, which brings `test:browser` back to about 21 s; or raise the limit to 42 s
    (35 s plus 20%).
@@ -1596,6 +1722,17 @@ attachments, the reply-from address choice, and the Settings quota section.
    a reply to a message started in MelodyMail threads by its In-Reply-To, which no stored row
    carries; it starts a new thread. Setting our own `Message-ID` header through Resend's `headers`
    is untested against the real API. Try it during the manual test?
+4. **A Retry more than 24 hours after the first attempt** signs with the stored, expired `exp`
+   (ruling 4), so Resend cannot fetch the attachments. Resend's idempotency key has expired by
+   then too, so a fresh `exp` would not conflict. Keep the ruling as it is, or re-sign when the
+   stored expiry has passed?
+5. **A message stuck at `sending`** (a 409 idempotency conflict, or a Worker that died
+   mid-send) shows "Sending" in the reader with no action; only a repeat from the same compose
+   session claims it after 60 s. Offer Retry in the reader for a `sending` row older than 60 s?
+6. **The rejected row after a correction** stays in Sent as "Not sent" with Retry, and its
+   attachments now belong to the draft: Discard deletes them, and the rejected row's copy then
+   names attachments that are gone. Remove the rejected row once the corrected message is sent,
+   or keep it as a record?
 
 ### Deferred
 
@@ -1613,7 +1750,11 @@ attachments, the reply-from address choice, and the Settings quota section.
   manual Resend test is for the owner and the coordinator.
 - Firefox and Safari; only Chromium was driven.
 - WCAG contrast of the new screens was not measured.
-- The browser tier and the new suites have not run in CI (nothing was pushed).
+- The browser tier and the new suites have not run in CI (nothing was pushed); `send.yml` has
+  never run.
+- Resend's behaviour behind the review fixes: the 409 names come from Resend's error reference,
+  not a real answer; that `email.*` can overtake the send's answer is shown only by the stubbed
+  test; the size of real webhook payloads is not published.
 
 ### Screenshots
 
