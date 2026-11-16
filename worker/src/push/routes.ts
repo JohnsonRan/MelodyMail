@@ -1,6 +1,6 @@
 import type { Hono, MiddlewareHandler } from "hono";
 import type { AppEnv } from "../env";
-import { fail, readJson } from "../http";
+import { fail, log, readJson } from "../http";
 import { MAX_SUBSCRIPTIONS, sendTo, vapidConfig } from "./send";
 import { parseSubscription } from "./subscription";
 
@@ -23,7 +23,12 @@ export function registerPushRoutes(push: Hono<AppEnv>): void {
   push.put("/subscription", async (c) => {
     const body = await readJson(c);
     const sub = body && parseSubscription(body);
-    if (!sub) return fail(c, 400, "invalid_subscription");
+    if (!sub) {
+      // The push service's host only (never the endpoint path, which identifies the device), so a
+      // browser whose push service is missing from the allowlist can be recognised.
+      log("warn", "push_subscription_rejected", { host: endpointHost(body?.endpoint) });
+      return fail(c, 400, "invalid_subscription");
+    }
     const sessionId = c.get("sessionId");
     const db = c.env.DB;
     await db.batch([
@@ -71,4 +76,13 @@ export function registerPushRoutes(push: Hono<AppEnv>): void {
     if (outcome === "failed") return fail(c, 502, "push_failed");
     return c.json({ ok: true });
   });
+}
+
+function endpointHost(endpoint: unknown): string | null {
+  if (typeof endpoint !== "string") return null;
+  try {
+    return new URL(endpoint).hostname.slice(0, 253);
+  } catch {
+    return null;
+  }
 }

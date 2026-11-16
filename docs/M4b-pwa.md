@@ -91,7 +91,8 @@ idle-expired) so a session that expired but was not swept yet gets nothing.
 | `POST /api/push/test` | Sends one test notification to the current session's subscription. Rate limited with the existing limiter pattern. |
 
 Endpoint validation on PUT: `https:` only, and the host must belong to a known push service:
-`fcm.googleapis.com`, `updates.push.services.mozilla.com`, `*.push.apple.com`,
+`fcm.googleapis.com`, `jmt17.google.com` (Chrome Dev, Canary and other non-stable Chromium
+builds; added after the owner's real push test), `updates.push.services.mozilla.com`, `*.push.apple.com`,
 `*.notify.windows.com`. Anything else is 400. Reason: the Worker POSTs to this URL; the allowlist
 keeps it from becoming a request relay even with a stolen session. Key lengths are checked
 (`p256dh` a 65-byte P-256 point, `auth` 16 bytes).

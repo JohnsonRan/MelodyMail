@@ -46,6 +46,7 @@ describe("push key", () => {
 describe("subscription endpoint check", () => {
   it.each([
     "https://fcm.googleapis.com/fcm/send/abc",
+    "https://jmt17.google.com/fcm/send/abc",
     "https://updates.push.services.mozilla.com/wpush/v2/abc",
     "https://web.push.apple.com/QGx",
     "https://wns2-par02p.notify.windows.com/w/?token=abc",
@@ -80,6 +81,18 @@ describe("subscription endpoint check", () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "invalid_subscription" });
     expect(await pushRows()).toEqual([]);
+  });
+
+  it("logs the refused push service's host, never the endpoint path", async () => {
+    const { client } = await setupOwner();
+    const sub = await browserSubscription("https://push.example.net/send/device-secret-path");
+    const warn = vi.spyOn(console, "warn");
+    expect((await subscribe(client, sub.json)).status).toBe(400);
+    const line = warn.mock.calls
+      .map((c) => String(c[0]))
+      .find((l) => l.includes("push_subscription_rejected"));
+    expect(JSON.parse(line ?? "{}")).toMatchObject({ host: "push.example.net" });
+    expect(line).not.toContain("device-secret-path");
   });
 
   it("refuses keys of the wrong length or form", async () => {

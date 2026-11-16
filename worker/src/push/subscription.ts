@@ -2,7 +2,13 @@
 // The Worker POSTs to the endpoint, so only the known push services are accepted: with any
 // other host a stolen session could turn the Worker into a request relay.
 
-const EXACT_HOSTS = new Set(["fcm.googleapis.com", "updates.push.services.mozilla.com"]);
+// jmt17.google.com is the push service of Chrome's Dev and Canary channels and other non-stable
+// Chromium builds (Chromium's push_messaging_constants.cc).
+const EXACT_HOSTS = new Set([
+  "fcm.googleapis.com",
+  "jmt17.google.com",
+  "updates.push.services.mozilla.com",
+]);
 const HOST_SUFFIXES = [".push.apple.com", ".notify.windows.com"];
 const ENDPOINT_MAX = 2048;
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
