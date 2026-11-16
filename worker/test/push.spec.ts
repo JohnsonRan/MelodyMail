@@ -195,6 +195,18 @@ describe("subscriptions end with their session", () => {
     expect(await pushRows()).toEqual([]);
   });
 
+  it("a kept browser subscription stored again after sign-in delivers again", async () => {
+    const { client, authenticator, sub } = await subscribed();
+    await client.json("POST", "/api/auth/logout", {});
+    await login(authenticator, client);
+    expect(await pushRows()).toEqual([]);
+    // What the app does when the signed-in shell opens (web/src/pwa/push.ts, resyncSubscription).
+    expect((await subscribe(client, sub.json)).status).toBe(200);
+    const sent = stubPushService(201);
+    expect(await client.json("POST", "/api/push/test", {})).toEqual({ ok: true });
+    expect(sent.map((s) => s.url)).toEqual([sub.json.endpoint]);
+  });
+
   it("an expired session's subscription goes when the session is swept", async () => {
     const { client } = await subscribed();
     await env.DB.prepare("UPDATE sessions SET expires_at = ?")

@@ -11,6 +11,7 @@ import {
 } from "react";
 import { api, getAuthState } from "../api";
 import { notifyWhenHidden } from "../pwa/notifyHidden";
+import { resyncSubscription } from "../pwa/push";
 import type { Address } from "../settings";
 import { type Counts, getCounts } from "./api";
 
@@ -116,6 +117,7 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    void resyncSubscription();
     void refreshCounts();
     api<{ addresses: Address[] }>("GET", "/addresses")
       .then((data) => setAddresses(data.addresses))

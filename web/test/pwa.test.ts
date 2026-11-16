@@ -150,54 +150,65 @@ const KEY = Buffer.from([4, ...Array.from({ length: 64 }, (_, i) => i)]).toStrin
 type PushPageOptions = {
   permission?: NotificationPermission;
   hidden?: boolean;
-  /** Starts with a subscription made with another VAPID key. */
-  staleKey?: boolean;
+  /** Starts with a subscription made with another VAPID key, or with the current one. */
+  existing?: "stale" | "current";
 };
 
 async function pushPage(options: PushPageOptions = {}) {
   const p = await context.newPage();
-  await p.addInitScript((opts) => {
-    const w = window as unknown as { shown: { title: string; options: NotificationOptions }[] };
-    w.shown = [];
-    let current: unknown = null;
-    const decode = (k: string) =>
-      Uint8Array.from(atob(k.replaceAll("-", "+").replaceAll("_", "/")), (c) => c.charCodeAt(0));
-    PushManager.prototype.subscribe = async (o?: PushSubscriptionOptionsInit) => {
-      const key = decode(String(o?.applicationServerKey));
-      current = {
-        endpoint: "https://fcm.googleapis.com/fcm/send/stand-in",
-        options: { applicationServerKey: key.buffer },
-        toJSON: () => ({
+  await p.addInitScript(
+    (opts) => {
+      const w = window as unknown as { shown: { title: string; options: NotificationOptions }[] };
+      w.shown = [];
+      let current: unknown = null;
+      const decode = (k: string) =>
+        Uint8Array.from(atob(k.replaceAll("-", "+").replaceAll("_", "/")), (c) => c.charCodeAt(0));
+      PushManager.prototype.subscribe = async (o?: PushSubscriptionOptionsInit) => {
+        const key = decode(String(o?.applicationServerKey));
+        current = {
           endpoint: "https://fcm.googleapis.com/fcm/send/stand-in",
-          keys: { p256dh: "p", auth: "a" },
-        }),
-        unsubscribe: async () => {
-          current = null;
-          return true;
-        },
+          options: { applicationServerKey: key.buffer },
+          toJSON: () => ({
+            endpoint: "https://fcm.googleapis.com/fcm/send/stand-in",
+            keys: { p256dh: "p", auth: "a" },
+          }),
+          unsubscribe: async () => {
+            current = null;
+            return true;
+          },
+        };
+        return current as PushSubscription;
       };
-      return current as PushSubscription;
-    };
-    if (opts.staleKey) {
-      current = {
-        options: { applicationServerKey: new Uint8Array(65).buffer },
-        unsubscribe: async () => {
-          current = null;
-          (window as unknown as { unsubscribed: boolean }).unsubscribed = true;
-          return true;
-        },
+      if (opts.existing) {
+        current = {
+          endpoint: "https://fcm.googleapis.com/fcm/send/kept",
+          options: {
+            applicationServerKey:
+              opts.existing === "current" ? decode(opts.key).buffer : new Uint8Array(65).buffer,
+          },
+          toJSON: () => ({
+            endpoint: "https://fcm.googleapis.com/fcm/send/kept",
+            keys: { p256dh: "p", auth: "a" },
+          }),
+          unsubscribe: async () => {
+            current = null;
+            (window as unknown as { unsubscribed: boolean }).unsubscribed = true;
+            return true;
+          },
+        };
+      }
+      PushManager.prototype.getSubscription = async () => current as PushSubscription | null;
+      ServiceWorkerRegistration.prototype.showNotification = async (title, options = {}) => {
+        w.shown.push({ title, options });
       };
-    }
-    PushManager.prototype.getSubscription = async () => current as PushSubscription | null;
-    ServiceWorkerRegistration.prototype.showNotification = async (title, options = {}) => {
-      w.shown.push({ title, options });
-    };
-    if (opts.permission) {
-      Object.defineProperty(Notification, "permission", { get: () => opts.permission });
-      Notification.requestPermission = async () => opts.permission as NotificationPermission;
-    }
-    if (opts.hidden) Object.defineProperty(document, "visibilityState", { get: () => "hidden" });
-  }, options);
+      if (opts.permission) {
+        Object.defineProperty(Notification, "permission", { get: () => opts.permission });
+        Notification.requestPermission = async () => opts.permission as NotificationPermission;
+      }
+      if (opts.hidden) Object.defineProperty(document, "visibilityState", { get: () => "hidden" });
+    },
+    { ...options, key: KEY },
+  );
   return p;
 }
 
@@ -243,7 +254,7 @@ describe("notifications settings", () => {
 
   test("drops a subscription made with an earlier key pair", async () => {
     app.pushKey = KEY;
-    const p = await pushPage({ permission: "granted", staleKey: true });
+    const p = await pushPage({ permission: "granted", existing: "stale" });
     await p.goto(`${app.origin}/settings/notifications`);
     const toggle = p.getByRole("switch", { name: "Notify me about new mail" });
     await toggle.waitFor();
@@ -252,6 +263,33 @@ describe("notifications settings", () => {
       await p.evaluate(() => (window as unknown as { unsubscribed?: boolean }).unsubscribed),
     ).toBe(true);
     await p.close();
+  });
+
+  test("the signed-in app stores a kept subscription again when it opens", async () => {
+    app.pushKey = KEY;
+    for (const existing of ["current", "stale"] as const) {
+      app.push = [];
+      const p = await pushPage({ permission: "granted", existing });
+      await p.goto(app.origin);
+      await p.locator('[data-message-row="note3"]').waitFor();
+      await p.waitForTimeout(300);
+      const puts = app.push.filter((c) => c.method === "PUT");
+      expect(puts, existing).toEqual(
+        existing === "current"
+          ? [
+              {
+                method: "PUT",
+                path: "/api/push/subscription",
+                body: {
+                  endpoint: "https://fcm.googleapis.com/fcm/send/kept",
+                  keys: { p256dh: "p", auth: "a" },
+                },
+              },
+            ]
+          : [],
+      );
+      await p.close();
+    }
   });
 
   test("explains a blocked permission", async () => {

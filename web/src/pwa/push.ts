@@ -93,3 +93,24 @@ export async function deviceSubscribed(): Promise<boolean> {
   if (!pushSupported() || Notification.permission !== "granted") return false;
   return (await currentSubscription()) !== null;
 }
+
+/**
+ * Stores this device's subscription again each time the signed-in app opens (once per page load
+ * and once per sign-in in the same page). The row ends with its session (sign-out, recovery,
+ * revoke, expiry) while the browser keeps the subscription, so without this the switch would read
+ * "on" and no push would come. The PUT is an idempotent upsert; a subscription made with another
+ * key is left to the settings page.
+ */
+export async function resyncSubscription(): Promise<void> {
+  if (!pushSupported() || Notification.permission !== "granted") return;
+  try {
+    const subscription = await currentSubscription();
+    if (!subscription) return;
+    const { key } = await api<{ key: string }>("GET", "/push/key");
+    if (sameKey(subscription, key)) {
+      await api("PUT", "/push/subscription", subscription.toJSON());
+    }
+  } catch {
+    // Push not set up, offline or signed out: the next time the app opens tries again.
+  }
+}
