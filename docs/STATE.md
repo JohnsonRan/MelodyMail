@@ -2736,7 +2736,7 @@ Timed with the scratchpad's `time-gate.ts` and `time-cmd.ts`, CPU load read befo
    M5b owner ruling 1: the two Telegram suites moved into `bun run test:telegram` with
    `.github/workflows/telegram.yml` (nightly, by hand, and, after the review fix, on pull
    requests touching `web/`, the card or the dependencies, as `browser.yml`). Browser tier now 25.4–26.1 s (55 tests), Telegram tier
-   6.5–7.0 s (12 tests), CPU load 0–10%. Its limit, 10 s, is proposed and awaits the owner.
+   6.5–7.0 s (12 tests), CPU load 0–10%. Its limit, 10 s, was approved by the owner on 2026-11-16.
 2. **Stale foreground after a crash.** Settled by the review fix below: a report older than 75 s
    counts as background, so a crashed, sleeping or disconnected page stops holding back push and
    Telegram within 75 s.
