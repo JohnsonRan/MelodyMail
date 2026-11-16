@@ -3117,7 +3117,14 @@ before the host's low-memory guard stopped the run; the guard asks not to restar
    stored and forwarded as if no rule matched instead of throwing (which would bounce it).
 4. The test route reads the raw header block (UTF-8) into a case-insensitive lookup that joins
    repeats with ", " as `Headers.get` does, instead of a `Headers` object, which refuses values
-   outside Latin-1.
+   outside Latin-1. Since the review fix it refuses the same header names as create and update,
+   so it cannot report a match on a name `email()` would throw on. Hypothesis, not verified: for a
+   raw 8-bit (unencoded UTF-8) header value, workerd's `message.headers` may hold the bytes as
+   Latin-1 characters, while the test route decodes them as UTF-8; a condition on such a value
+   (for example a raw Chinese subject) could then match in the test and not in `email()`, or the
+   reverse. Encoded words and ASCII behave the same in both.
+8. Header names are HTTP tokens (RFC 9110), not RFC 5322 `ftext`, and the enabled rules may name
+   at most 20 distinct headers (review fixes below).
 5. Validation is by hand (`worker/src/rules/validate.ts`), not zod: owner ruling 2 adds no schema
    library to the Worker, and the existing routes validate by hand.
 6. The test dialog lists the 20 newest Inbox messages (`GET /api/messages?folder=inbox&limit=20`,
@@ -3133,10 +3140,13 @@ before the host's low-memory guard stopped the run; the guard asks not to restar
    Recommended: add it to `bun run test:telegram` (6.0 s base, 10 s limit, about 3 s more),
    whose workflow already runs on pull requests that touch `web/`; or to `test:send` (14.3 s
    base, 18 s limit).
-2. **Merge gate under load.** 14.5–15.2 s at 48–76% load, base 13.5 s at 51%. Recommended:
-   re-measure on an idle host before deciding anything.
-3. **Finish the ablation** the memory guard stopped (five forward-target hunks, four web hunks).
-   Recommended: rerun both scripts for those names on an idle host before review.
+   On a quiet host after the review fixes (0–7% load): 33.2 and 28.4 s with the suite, 27.1 and
+   26.7 s without. The suite is still excluded; the owner decides the tier.
+2. **Merge gate under load.** 14.5–15.2 s at 48–76% load; re-measured after the review fixes on
+   a quiet host: 11.9, 11.8, 12.1 s at 0–4% load (worker suite 10.7–11.0 s), under the 15 s
+   limit. The worker suite is still at or just over the 10.8 s "Slowest test package" limit.
+   Recommended: no change; watch it in phase B.
+3. (Resolved: the ablation the memory guard stopped was run after the review, below.)
 
 ### Not verified
 
@@ -3148,3 +3158,46 @@ before the host's low-memory guard stopped the run; the guard asks not to restar
 - The Rules page in Firefox and Safari, dark-mode contrast, and screenshots (the owner checks on
   local `wrangler dev`; it was not started in this session).
 - An independent review by a different model family.
+
+### Review of `7d087e2` ("FIX FIRST")
+
+1. **One saved rule bounced every message (High, reproduced by the reviewer)** — `0f39b61`.
+   Header names were checked against RFC 5322 `ftext`, which allows `a/b`, `X-Spam(Score)`,
+   `a@b`, `a=b`, `a;b`, `a[b`, `a,b`; workerd's `Headers.get` throws "Invalid header name" on
+   them, and `decide()` caught only the rule read, so `handleEmail` threw before storage and
+   forwarding. Fixes: (a) header names are HTTP tokens (`/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,64}$/`)
+   on create, update and test; (b) `decide()` also contains evaluation, logging
+   `rules_eval_failed` at error and storing the message in the Inbox with the default forwards.
+   Tests, each red without its fix (run one at a time): (a) the route refuses the eight names and
+   the test route refuses `a/b` (`rules.spec.ts`, 1 failed, 2.6 s, CPU load 68%); (b) a rule
+   with `a/b` written straight to D1 still lets the message be stored and forwarded to the
+   defaults (`inbound.spec.ts`, 1 failed, 2.8 s, load 58%).
+2. **bench:rules missed the worst case (Medium)** — `725bf91`. Cost grows with distinct header
+   names; the reviewer measured 9.3–10.9 ms p95 over 500 names. The enabled rules may now name at
+   most 20 distinct headers (case-insensitive); create, replace or enable over that answers 409
+   `too_many_header_names` (message in three locales, `580d34b`). The cap is in the design
+   ("Limits", benchmark inputs), the README and REQUIREMENTS. New bench inputs: 20 names each
+   with a 2,000-character value dense with white space, never matching and all matching: p95
+   0.42–0.50 ms; worst p95 over all 6 inputs 0.67–0.74 ms; 3 runs at CPU load 56–62%. Ablation,
+   one at a time at load 1–6%: the comparison, the replaced rule's own names, case folding,
+   disabled rules not counting, the check on update: 5 red.
+3. **Target-delete test (Low)** — `2a788d1`: the rules are asserted right after the 409, and the
+   "no action left" condition is covered for mark read, star, archive, Trash and stop.
+4. **List separators (Low)** — `580d34b`: targets and actions join with `summary.listSeparator`
+   in the summary and the test panel; the test result is one line per condition plus one for the
+   actions. Red without it: the zh-CN summary with two targets.
+5. **Stale test result (Low)** — `580d34b`: cleared whenever the draft changes. Red without it.
+6. **Stale comment (Low)** — `580d34b`, `web/src/mailbox/MailboxContext.tsx`.
+
+Ablation finished after the review (one mutation at a time, CPU load 1–6%):
+
+- the five forward-target hunks left by the memory guard, the per-column "no action left"
+  conditions and `ruleCount`: 9 red;
+- `rules_eval_failed` containment: red;
+- web, a rebuild per mutation: the body keeping `targetIds`, the test sending the draft, the
+  operator change, the test result listing actions, the stale-result reset: 5 red; the summary's
+  target separator survived until the zh-CN test used two targets, then red.
+- Not ablated: the separator in the test panel's forward line (the stand-in answers no targets).
+
+Gate after the fixes (`580d34b`): `bun run check` 11.9, 11.8, 12.1 s at 0–4% load, 415 worker
+tests; earlier the same day, under load, 14.0 s (61%) at `0f39b61` and 12.3 s (0%) at `2a788d1`.
