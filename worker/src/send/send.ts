@@ -155,7 +155,6 @@ async function deliver(c: Context<AppEnv>, id: string, key: string, copy: SentCo
       // Marking the row failed could overwrite the first request's success, which only updates
       // a row still "sending". After SENDING_STALE_MS a repeat may claim the row again.
       log("warn", "send_in_progress", fields);
-      if (quota.length > 0) await db.batch(quota);
       return fail(c, 409, "send_in_progress");
     }
     log("warn", "send_failed", fields);
