@@ -1338,3 +1338,291 @@ Allowed by the owner. Local VAPID keys in `worker/.dev.vars` (not committed).
 
 Still unverified: Firefox, Safari and iOS delivery; stable Chrome's `fcm.googleapis.com` path
 (covered only by stubbed tests).
+
+## M5: sending through Resend (built 2026-11-16, branch `m5-sending`, not pushed)
+
+Design: `docs/M5-sending.md`. Risk class High (mail to the outside world under the owner's
+domains, two public endpoints, three secrets, migration 0009). Waits for the independent review
+the risk class asks for, the owner's manual Resend test and the owner's look at the screenshots.
+
+### Owner rulings (2026-11-16)
+
+1. **Body editor: Markdown.** A plain text area; the browser renders it with a maintained library;
+   raw HTML in the source is not rendered; DOMPurify before sending; links keep only http(s) and
+   mailto; `text` = the Markdown source, `html` = the sanitized rendering in a minimal inline-styled
+   document without remote resources; a Write / Preview toggle that previews in the sandboxed mail
+   frame; replies quote with `> `; the library only in the compose chunk; first paint must not
+   grow; drafts and the sent copy keep the Markdown source (and the sent copy the HTML).
+2. **Real Resend test allowed.** The owner puts `RESEND_API_KEY` into `worker/.dev.vars`; the
+   coordinator runs the manual test with the owner. The app works with only that key set:
+   attachments say they are off without `UPLOAD_URL_KEY`, the webhook answers 404 without
+   `RESEND_WEBHOOK_SECRET`. No real mail was sent in this build and `worker/.dev.vars` was not read.
+3. **Open and click tracking stays off.** No tracking option is sent; Resend sets tracking per
+   domain, so README "Sending" tells the owner to leave it off there.
+
+### Library choices (checked 2026-11-16)
+
+| Package | Release | License | Dependencies | Verdict |
+| --- | --- | --- | --- | --- |
+| `resend` 6.38.1 | 2026-11-13 | MIT | `postal-mime` 2.7.6, `standardwebhooks` 1.1.1 | **chosen** for the send call |
+| `standardwebhooks` 1.1.1 | 2026-08-28 | MIT | `@stablelib/base64`, `fast-sha256` | **chosen** for the webhook signature |
+| `svix` 2.10.0 | 2026-11-09 | MIT | `standardwebhooks`; 1.68 MB unpacked (the whole Svix API client) | not needed: it verifies through `standardwebhooks` |
+| `marked` 18.2.0 | 2026-11-09 | MIT | none; GFM built in | **chosen** for Markdown |
+| `markdown-it` 15.0.3 | 2026-10-16 | MIT | 6 (`linkify-it`, `entities`, `mdurl`, ...) | larger, more dependencies |
+| `micromark` 4.0.3 (+ `micromark-extension-gfm`) | 2026-09-26 | MIT | 18 for the core alone | most CommonMark-exact, many small packages |
+
+Resend SDK: one `fetch` per send and no retry of its own; `emails.send(payload, { idempotencyKey })`
+sets `Idempotency-Key`; every answer returns the response headers, so the quota headers are read
+on success and on error. It reads `process.env` only for an unset key, `RESEND_BASE_URL`,
+`RESEND_USER_AGENT` and `RESEND_DEBUG`. The Worker passes the key and `baseUrl` (new var
+`RESEND_API_URL`) and never sets `RESEND_DEBUG`, which would make the SDK log upstream error
+text. The SDK's error `message` is upstream text and is never returned or logged.
+
+workerd without `nodejs_compat`: a probe Worker importing `resend` and `standardwebhooks`, with a
+config that has no compatibility flags, built with `wrangler deploy --dry-run` (200 KiB, gzip
+42 KiB) and ran under local `wrangler dev`. `emails.send` against an unreachable base URL returned
+the SDK's network error, and `Webhook.sign` reproduced Svix's published test vector
+(`v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE=`). The probe was removed afterwards.
+
+Worker bundle (`wrangler deploy --dry-run`, gzip -6): 1074 KB raw / 220.0 kB gzip before, 1309 KB
+/ 270.3 kB after (wrangler reports 264.8 KiB). The SDK brings its own `postal-mime` 2.7.6 beside
+the Worker's 4.2.1. Workers Free allows 3 MB compressed.
+
+Markdown: `marked` has no dependencies and GFM (tables, strikethrough, autolinks, task lists) in
+its core. It is not exactly CommonMark in every corner case, which does not matter for mail the
+owner writes. Renderer overrides: raw HTML escaped, images as their alt text, task boxes as ☑/☐.
+DOMPurify (already in the project) runs as its own instance with a fixed tag list.
+
+### Done
+
+- `031cfc5` migration `0009_sending.sql` (drizzle-kit; every CREATE with `IF NOT EXISTS`):
+  `messages` gains `bcc_hdr`, `resend_id` (unique), `idempotency_key` (unique), `error`, and an
+  index `(direction, trashed, received_at DESC, id DESC)` for Sent; tables `drafts`, `uploads`,
+  `webhook_events`, `send_quota`. `db:migrate:local` applied it to the local D1 holding 16
+  messages; a second run reported nothing to apply. The four `ALTER TABLE ... ADD` statements
+  cannot run twice by hand (as with 0006); wrangler's migration table prevents a second run.
+- `df665b4` Worker (`worker/src/send/`): `POST /api/messages/send`, `GET /api/send/from`,
+  `GET /api/send/quota`, drafts CRUD, `PUT|GET|DELETE /api/uploads[/:id]`, the public
+  `GET /api/uploads/:id/blob` and `POST /api/webhooks/resend`, the Sent folder (Inbox now lists
+  inbound mail only), two cron jobs, Hub event `changed`.
+- `66776c8` README "Sending", `bun run upload-key`, `worker/.dev.vars.example`.
+- `88a7021` web: compose (a panel from 1280 px, a page below), reply, reply all, forward, Markdown
+  with Write / Preview, chips, attachments with progress, autosave, Discard with confirmation,
+  the quota line, Sent and Drafts, status and Retry in the reader, shortcuts `c r a f` and
+  Ctrl+Enter, copy in three locales (compose strings in their own `compose` namespace).
+- `0dc8ea9` Worker tests for the ablation survivors; `0f85969` `useCompose` split (316 lines over
+  the pass bar) into `compose/start.ts`; `1894fae` prefill unit tests, two stronger browser tests
+  and the redundant link check removed.
+
+Usability references: Gmail compose and shortcuts (https://support.google.com/mail/answer/6594):
+`c` compose, `r` reply, `a` reply all, `f` forward, Ctrl+Enter send; a reply to one's own sent
+message goes to its recipients, as in Gmail. Gmail and Outlook both list Drafts and Sent beside the
+Inbox, autosave drafts and quote the source under "On <date>, <sender> wrote:".
+
+### Proof
+
+Worker (`bun --bun vitest run`, 336 tests, 23 more than before M5, in `send.spec.ts` and
+`send-extras.spec.ts`; `fetch` stubbed in every test, no request reaches Resend):
+
+- route walk: the 10 new session routes answer 401 without a session; exactly the two public
+  routes are marked public;
+- the request to Resend: `Authorization`, `Idempotency-Key`, the quoted From display name,
+  to/cc/bcc, subject, `text` (Markdown) and `html`, no tracking field; the stored row (`sent`,
+  `resend_id`, thread key), the R2 JSON copy, the FTS row (search finds it), the quota row, the
+  draft with the same key deleted; Sent lists it and Inbox does not;
+- validation, each without a Resend call: domain without sending, disabled address, unknown
+  address, 51 recipients, a non-address, no recipients, CRLF in the subject, unknown upload,
+  31 MiB of attachments, unknown source, a malformed key;
+- idempotency: a second request while the first waits for Resend gets 409 `send_in_progress`; a
+  repeat afterwards returns the message; one call in total. A failed send and a `sending` row older
+  than 60 s are sent again with the same key and the stored copy (a changed body is ignored); a
+  fresh `sending` row answers 409;
+- replies: `In-Reply-To`, `References` (source References plus its Message-ID), "Re:" once, "RE:"
+  kept, the source's thread key, the reply shows in the source's thread; forward: "Fwd:", "FW:"
+  kept, no thread headers;
+- attachments go as `path` URLs on the request's origin that open the bytes through the public
+  route; a sent upload cannot be deleted or attached again;
+- error mapping: 429 daily and monthly quota, 429 rate limit, 422, 500 and a network error map to
+  `daily_quota_exceeded`, `monthly_quota_exceeded`, `rate_limited`, `send_rejected`,
+  `send_failed`, stored on the row; upstream text appears in neither response nor log; a
+  malformed error name is logged as null;
+- uploads: streamed in and out with octet-stream, `filename*` and nosniff; over 25 MiB 413; bad
+  percent-encoding and a newline in the name 400; delete removes the R2 object;
+- signed URL: valid; expired, another id, a later expiry, a changed signature, missing `sig`,
+  missing `exp` and no parameters all 403 without detail;
+- drafts: save, update, list, read with attachments, delete; another key for the same draft and
+  the key of another draft 409; saving after the send 409 `already_sent`;
+- webhook: Svix test vector; delivered, then a late delayed ignored, bounced final; a replayed
+  `svix-id` does nothing; unknown email id and unknown type 200; bad signature, a 6-minute-old
+  timestamp and a request without headers 401; 404 without the secret;
+- cron: uploads older than 24 h without a live draft or stored message go with their R2 objects;
+  young, live-draft and sent uploads stay; replay rows older than 7 days go;
+- the quota reads 0 after Resend's UTC day; sending, attachments and the from list report "not
+  set up" without their secrets.
+
+Browser tier (`bun run test:browser`, 60 tests, 13 more than before M5):
+
+- `markdown.test.ts`: headings, lists, tables, inline and fenced code, links, autolinks (`<...>`,
+  `www.`, `mailto:`), strikethrough, task marks, inline styles; raw `<script>`, `<img onerror>`,
+  `<b>` and a raw `<a>` shown as text; `javascript:`, `data:`, `vbscript:` and relative links lose
+  their href; an image keeps only its alt text; the sent document has no `<link>`, `<style>`,
+  `@import` or `<img>`;
+- `compose.test.ts`: `c` opens compose; chips (a non-address refused and named); two files
+  attached and one removed; a file over 25 MB refused in the browser; a double click on Send makes
+  one request with the Markdown `text`, the sanitized `html` and the upload id; the message appears
+  in Sent as "To: ..."; Reply from the toolbar prefills the sender, "Re: Note 1" and the `> `
+  quote, and Ctrl+Enter sends with `sourceId`/`sourceKind`; `f` opens a forward with "Fwd:"; `a`
+  opens a reply all; autosave waits 2 s (fake clock: nothing at 1.5 s, saved at 2.1 s) and the
+  draft opens again from Drafts; a failed send shows the reason and "Send again" resends under the
+  same key; the quota warning at 85/100, Send blocked at 100/100 and without a Resend key; Preview
+  renders in the sandboxed frame with the CSP first, the script escaped, no `javascript:`, nothing
+  remote.
+
+- `quote.test.ts` (unit): "Re:"/"Fwd:" once, the `> ` quote, reply all without the owner's
+  addresses, a reply to one's own message going to its recipients, a forward without recipients.
+
+PWA tier (`bun run test:pwa`): 11 tests green, unchanged.
+
+### Numbers
+
+- `bun run check`: green at every commit; 3 runs at the end 8.3, 8.6, 8.6 s, CPU load 1% (limit 10 s); worker
+  suite (vitest Duration) 7.40, 7.69, 7.71 s (limit 9 s), 336 tests. One fresh-worktree run of `031cfc5` failed in
+  the worker suite on a cold cache; it passed on the two reruns and the failure did not repeat.
+- `bun run test:browser`: 60 tests green (55 end to end and corpus, 5 prefill unit tests); 3 runs
+  31.17–34.07 s (wall 32.5–35.3 s including the build), CPU load 0–2%. The same host ran the 47 suites from before M5 in 20.06 s twice (21.3 s
+  wall), so the 8 new tests add about 10 s. Over the 26 s limit: open question 2.
+- `bun run test:pwa`: 11 tests green; 3 runs 10.35–10.57 s (wall 11.7–11.8 s), limit 15 s.
+- Bundle (vite build, gzip -6, the same script for both sides; the script reproduces the recorded
+  M4b numbers on main): entry 16.2 → 16.5 kB; first paint 319.0 → 322.9 kB (limit 370);
+  total 660.0 → 736.4 kB (limit 770); the compose chunk `ComposeView` 51.8 kB gzip
+  (marked, the compose screens and the Tokenizer, Selector, FileInput, SegmentedControl and
+  TextArea components). marked is in no first-paint asset. First paint: open question 1.
+- Worker bundle: 220.0 → 270.3 kB gzip (above, "Library choices").
+
+### Ablation
+
+A script applies one mutation at a time and runs the touched suites (worker: `send`,
+`send-extras`, `authz`, `mailbox`; web: a rebuild, then `compose.test.ts` and `markdown.test.ts`),
+then restores the file.
+
+Worker, 64 hunks: email syntax, key format, file-name control characters and decoding, "Re:" and
+"Fwd:" once, References with the Message-ID, the CRLF check, the signed URL's expiry, its id
+binding, its parameter format and the blob route's check, uploads off without the key, the
+25 MiB limit, delete only unsent and its R2 delete, octet-stream and attachment disposition on
+download, drafts (already sent, conflict, key match), the from address (enabled, sending on),
+recipient count, none, syntax, subject CRLF, unknown source, In-Reply-To, the source's thread key,
+no thread headers on forward, unknown upload, the 30 MiB total, a sent upload not reusable, the
+quoted display name, a repeat returning the message, 409 for a fresh `sending` row, retry of a
+failed row, `Idempotency-Key`, the FTS row, status `sent`, quota from headers, draft deleted on
+send, status `failed`, HTTP 429 for quota, the quota error names, 4xx as rejected, the error-name
+filter, uploads linked to the message, the copy stored before the call, the webhook's signature,
+replay guard, forward-only rank and 404 without the secret, the four cron conditions and its R2
+delete, the cron job registration, the CSRF exemption of the webhook, Inbox inbound only, the Sent
+filter, the quota's UTC day and sending off without the key. First pass: 58 red, 5 survivors and
+one mutation that did not apply. The five got tests (`0dc8ea9`): the Sent filter, "FW:" kept, a
+sent upload attached again, a malformed error name, the quota's UTC day; with the blob-route
+mutation fixed, all six are red. 64 of 64 red.
+
+Web, 33 hunks (compose and Markdown against a rebuild and the compose and Markdown suites; the
+prefill against `quote.test.ts`): raw HTML as text, images as alt text, the link scheme check
+(twice), the tag allowlist, inline styles, task marks, the double-click guard, one key per
+session, the HTML part, the source kind, the upload ids, the 2 s debounce, the 25 MB check,
+Ctrl+Enter, Send blocked by the quota and without a Resend key, the preview through the reader's
+sanitizer, chips refusing non-addresses, the `c`, `a` and `f` shortcuts, the "To:" line in
+Sent, the reply button, and in `quote.ts` "Re:" and "Fwd:" once, own addresses left out of reply
+all and Cc, a reply to one's own message, a forward without recipients and the `> ` quote. First
+pass (26 applied, one mutation that did not apply): 19 red, 7 survivors. Fixed (`1894fae`): the
+prefill got unit tests (all 7 `quote.ts` hunks red); the not-set-up test no longer leans on the
+used-up quota (red); the preview test asserts the reader's link attributes (red); the link scheme
+was checked by a DOMPurify hook and by `ALLOWED_URI_REGEXP`, each enough on its own, so the hook's
+check was removed (the allowlist alone, ablated, is red). Two survivors kept: the tag allowlist
+(raw HTML is already escaped and DOMPurify's defaults drop the dangerous tags; it stays so an
+option change cannot widen the output) and the double-click guard in `useCompose` (the Send
+button's loading state already blocks the second click; the guard covers a second Ctrl+Enter
+before that state renders). The test counts the script printed for some red hunks are not
+reliable (it read the wrong line of Bun's summary); only red or survived is recorded.
+
+Not ablated (no test reaches them): pushing nothing for a `changed` Hub event and refreshing
+listed messages on it (the Hub tests cover only new mail), `notifyWhenHidden` only for new mail,
+the stale-row path when the stored copy is missing, the Drafts list refresh after compose closes,
+upload progress, Discard deleting the draft and its uploads, the forward's re-uploaded
+attachments, the reply-from address choice, and the Settings quota section.
+
+### Deviations from the design (decisions taken, open to the owner)
+
+1. **`uploads.message_id`.** The design's `uploads` has only `draft_id`; the cron could not tell
+   an attachment of a sent message from a stale one. `message_id` is set when the message is
+   inserted; the cron keeps such an upload while the message exists.
+2. **Draft attachments** are linked by `uploads.draft_id` only; the draft row keeps no list of
+   upload ids, so there is one source of truth.
+3. **The sent copy is written before the Resend call** (the design writes it after the 200), so a
+   retry sends exactly the stored request again; a retry ignores a changed request body and a
+   Retry from the reader sends `{ idempotencyKey }` alone.
+4. **`received_at` of an outbound row** is the time of its last send attempt; the 60-second
+   staleness check reads it, so no new column is needed.
+5. **`GET /api/uploads/:id`** (session): the owner's download of a sent message's attachment; it
+   also lets a forward of a sent message carry its attachments. Not in the design's route list.
+6. **Hub event `changed`.** A send or a status change notifies open pages without Web Push; the
+   design's "as for new mail" would have pushed a new-mail notification for the owner's own mail.
+7. **The webhook is exempt from the CSRF guard** (`signedWebhookRoute`): Resend's request has no
+   matching `Origin`; the Svix signature authenticates it.
+8. **Status in Sent:** only states that need attention (delayed, bounced, complained, failed,
+   suppressed) get a badge; sending, sent and delivered are plain text (Astryx Badge guidance).
+   `suppressed` joins the status set (the webhook design lists it).
+9. **Markdown details:** images become their alt text (no remote image in sent mail), task list
+   boxes ☑/☐, raw HTML shown as text.
+10. **Quota in Settings** is a section on Settings > Domains, shown once a domain can send.
+11. **Compose has a Close control** (the draft is kept), beside its heading in the panel and in
+    the page's title row at phone width.
+12. **Forward** uploads the source's attachments as soon as compose opens; the owner removes the
+    ones not wanted.
+13. **`RESEND_API_URL`** is a var (no hardcoded URL) and is passed to the SDK, so no
+    `process.env.RESEND_BASE_URL` can redirect the call.
+14. **Inbox lists inbound mail only**, and the unread Inbox count ignores outbound rows (they are
+    stored read).
+
+### Open questions for the owner
+
+1. **First paint grew 3.9 kB** (319.0 → 322.9 kB, limit 370) although marked is not in it. The
+   compose chunk shares Astryx modules (Selector, Item, Stack) with the first paint, and the
+   bundler re-split those shared modules into four more preloaded chunks; a probe build with the
+   compose chunk replaced by an empty component measured 319.1 kB. Options: accept it, or add a
+   manual chunk rule to the Vite config to keep the old split (more config to maintain).
+2. **Browser tier 31–34 s against 26 s.** Proposed: split the sending suites into
+   `bun run test:send` (compose and Markdown, about 11 s, limit 14 s) with its own workflow like
+   the PWA suite, which brings `test:browser` back to about 21 s; or raise the limit to 42 s
+   (35 s plus 20%).
+3. **Threading of replies to new outbound mail.** Resend sets the Message-ID and returns none, so
+   a reply to a message started in MelodyMail threads by its In-Reply-To, which no stored row
+   carries; it starts a new thread. Setting our own `Message-ID` header through Resend's `headers`
+   is untested against the real API. Try it during the manual test?
+
+### Deferred
+
+- `web/test/reader.test.ts` (451 lines) is still over the pass bar (M4b deferral).
+- An address book for recipient suggestions (the Tokenizer takes a search source).
+- Pushing flag changes and delivery statuses to other tabs beyond the `changed` event's list
+  refresh (only the open list refetches its first page).
+
+### Not verified
+
+- Real delivery through Resend, the webhook from Resend (it cannot reach localhost), Resend
+  fetching a signed attachment URL from localhost, the quota headers and quota error names of the
+  real API (taken from the design's Resend facts), production CPU of a send.
+- Running sending under `wrangler dev`: the routes ran in workerd through the vitest pool; the
+  manual Resend test is for the owner and the coordinator.
+- Firefox and Safari; only Chromium was driven.
+- WCAG contrast of the new screens was not measured.
+- The browser tier and the new suites have not run in CI (nothing was pushed).
+
+### Screenshots
+
+252 PNG files in the session scratchpad, folder `shots-m5` (outside the repository): compose new,
+filled (chips, Cc/Bcc, Markdown with a table, an uploaded attachment and one refused over 25 MB),
+preview, quota warning, quota used up, sending not set up, reply, send failed with Retry, Sent
+with each status, a failed sent message with Retry, a delivered sent message, Drafts with drafts
+and empty, Settings > Domains with the quota, each at 390, 1280 and 1920 px, light and dark,
+en, zh-CN and ja-JP. `scrollWidth` equalled the viewport width in all 252. Taken with Playwright
+against `web/dist` and the in-memory API stand-in. Found and fixed from them: the "Cc and Bcc"
+button was cut off beside the To field (now under it), and the status badge in a Sent row shrank
+to an ellipsis (it keeps its width now; the recipients are cut instead).
