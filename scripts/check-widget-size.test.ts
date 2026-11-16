@@ -37,4 +37,5 @@ test("passes the card and fails each planted violation", async () => {
     run(join(dir, "missing.html")),
   ]);
   expect(codes).toEqual([0, 1, 1, 1, 1, 2, 2]);
-});
+  // Seven `uv run` starts at once take longer than bun's 5 s default on a CI runner.
+}, 20_000);
