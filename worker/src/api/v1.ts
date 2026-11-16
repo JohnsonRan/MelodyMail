@@ -1,6 +1,7 @@
 import type { Context, Hono } from "hono";
 import type { AppEnv } from "../env";
 import { fail, readJson } from "../http";
+import { notifyHub } from "../mail/hub";
 import {
   getMessage,
   getRaw,
@@ -69,6 +70,26 @@ async function send(c: Ctx) {
   );
 }
 
+/**
+ * A script's flag change tells open pages to refresh, as a Telegram button does; the session
+ * routes are unchanged. One event per request: pages refresh whole lists on any "changed", and a
+ * bulk change of 100 ids must not cost 100 Durable Object calls.
+ */
+async function patchOne(c: Context<AppEnv, "/:id">) {
+  const res = await patchMessage(c);
+  if (res.ok) await notifyHub(c.env, { type: "changed", id: c.req.param("id") });
+  return res;
+}
+
+async function patchMany(c: Ctx) {
+  const res = await patchMessages(c);
+  const first = (await readJson(c))?.ids;
+  if (res.ok && Array.isArray(first) && typeof first[0] === "string") {
+    await notifyHub(c.env, { type: "changed", id: first[0] });
+  }
+  return res;
+}
+
 /** Every address with whether its domain may send; a key picks `from` here. */
 async function addresses(c: Ctx) {
   const { results } = await c.env.DB.prepare(
@@ -95,7 +116,7 @@ export function registerApiV1(v1: Hono<AppEnv>): void {
   apiRoute(v1, "GET", "/search", read, searchMessages);
   // A send-only key needs the address ids for `from` (docs/M6-rules-api.md, "Scopes").
   apiRoute(v1, "GET", "/addresses", ["mail:read", "mail:send"], addresses);
-  apiRoute(v1, "PATCH", "/messages", write, patchMessages);
-  apiRoute(v1, "PATCH", "/messages/:id", write, patchMessage);
+  apiRoute(v1, "PATCH", "/messages", write, patchMany);
+  apiRoute(v1, "PATCH", "/messages/:id", write, patchOne);
   apiRoute(v1, "POST", "/messages/send", ["mail:send"], send);
 }

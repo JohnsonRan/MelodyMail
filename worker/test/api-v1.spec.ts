@@ -1,5 +1,5 @@
-import { env } from "cloudflare:workers";
-import { describe, expect, it, vi } from "vitest";
+import { env, exports } from "cloudflare:workers";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { app } from "../src/index";
 import { apiScopes } from "../src/routing";
 import { apiKey, v1 } from "./api-helpers";
@@ -15,6 +15,27 @@ import { messageRow, resendOk, sender, signedIn, stubResend } from "./send-helpe
 type Json = Record<string, unknown>;
 
 const SEND = { from: 0, to: ["friend@example.org"], subject: "Hello", text: "Hi" };
+
+/** An open page's live-update socket; returns the events it receives. */
+async function openPage(): Promise<string[]> {
+  const client = await signedIn();
+  const cookie = [...client.cookies].map(([k, v]) => `${k}=${v}`).join("; ");
+  const res = await exports.default.fetch(`${ORIGIN}/api/events`, {
+    headers: { upgrade: "websocket", origin: ORIGIN, cookie },
+  });
+  const ws = res.webSocket;
+  if (!ws) throw new Error("no socket");
+  ws.accept();
+  sockets.push(ws);
+  const events: string[] = [];
+  ws.addEventListener("message", (e) => events.push(String(e.data)));
+  return events;
+}
+
+const sockets: WebSocket[] = [];
+afterEach(() => {
+  for (const ws of sockets.splice(0)) ws.close();
+});
 
 async function body(res: Response): Promise<Json> {
   return (await res.json()) as Json;
@@ -70,14 +91,20 @@ describe("REST API v1", () => {
     ]);
   });
 
-  it("changes flags on one message and in bulk", async () => {
+  it("changes flags on one message and in bulk, and tells open pages", async () => {
     const { key } = await apiKey(["mail:write"]);
     await seedMany([{ id: "f1" }, { id: "f2" }]);
+    const events = await openPage();
     expect(await body(await v1(key, "PATCH", "/messages/f1", { starred: true }))).toEqual({
       ok: true,
     });
     const bulk = await v1(key, "PATCH", "/messages", { ids: ["f1", "f2", "gone"], read: true });
     expect(await bulk.json()).toEqual({ updated: 2 });
+    await expect.poll(() => events.length).toBe(2);
+    expect(events.map((e) => JSON.parse(e))).toEqual([
+      { type: "changed", id: "f1" },
+      { type: "changed", id: "f1" },
+    ]);
     const { results } = await env.DB.prepare(
       "SELECT id, read, starred FROM messages ORDER BY id",
     ).all();
