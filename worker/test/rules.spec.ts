@@ -412,26 +412,39 @@ describe("forward targets used by rules", () => {
       conditions: BODY.conditions,
       targets: ["a@out.test", "b@out.test"],
     });
-    const archives = await addRule({
-      conditions: BODY.conditions,
-      archive: true,
-      targets: ["a@out.test"],
-    });
+    // One rule per other action: each keeps the rule on after its only target goes.
+    const kept = [];
+    for (const action of ["markRead", "star", "archive", "trash", "stop"]) {
+      kept.push(
+        await addRule({ conditions: BODY.conditions, [action]: true, targets: ["a@out.test"] }),
+      );
+    }
+    const state = async () =>
+      ((await client.json("GET", "/api/rules")).rules as Json[]).map((r) => [
+        r.id,
+        r.enabled,
+        r.targetIds,
+      ]);
     const list = (await client.json("GET", "/api/forward-targets")).targets as Json[];
     expect(list.map((t) => [t.id, t.ruleCount])).toEqual([
-      [target, 3],
+      [target, 7],
       [other, 1],
     ]);
 
     expect(await client.json("DELETE", `/api/forward-targets/${target}`, undefined, 409)).toEqual({
       error: "target_in_use",
     });
+    // A refused delete changes no rule.
+    expect(await state()).toEqual([
+      [forwardOnly, true, [target]],
+      [both, true, [target, other]],
+      ...kept.map((id) => [id, true, [target]]),
+    ]);
     await client.json("DELETE", `/api/forward-targets/${target}?detach=1`);
-    const rules = (await client.json("GET", "/api/rules")).rules as Json[];
-    expect(rules.map((r) => [r.id, r.enabled, r.targetIds])).toEqual([
+    expect(await state()).toEqual([
       [forwardOnly, false, []],
       [both, true, [other]],
-      [archives, true, []],
+      ...kept.map((id) => [id, true, []]),
     ]);
   });
 });
