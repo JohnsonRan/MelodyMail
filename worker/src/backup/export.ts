@@ -115,11 +115,8 @@ async function writePage(env: Env, cursor: Cursor, table: ExportTable, first: bo
       .prepare(splitQuery(table))
       .bind(head.r, LONG_VALUE_BYTES, PIECE_CHARS)
       .all<{ s: string }>();
-    if (split.results.length === 0) {
-      // Deleted since the page query: nothing to write.
-      cursor.lastRowid = head.r;
-      return { calls: 2, bytes: 0, dirty: true, deferred: false };
-    }
+    // Deleted since the page query: nothing to write; the next page query skips it.
+    if (split.results.length === 0) return { calls: 2, bytes: 0, dirty: false, deferred: false };
     lines = split.results.map((r) => r.s);
   }
   const calls = oversized ? 2 : 1;

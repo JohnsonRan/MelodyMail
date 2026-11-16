@@ -66,9 +66,12 @@ export async function seedAll(): Promise<void> {
     db
       .prepare(
         `INSERT INTO drafts (id, address_id, subject, text, idempotency_key, created_at, updated_at)
-       VALUES ('long-draft', 1, '长草稿', ?, 'key-long-0001', ?, ?), ('short-draft', NULL, '', 'x', 'key-short-01', ?, ?)`,
+       VALUES ('short-draft', NULL, '', 'x', 'key-short-01', ?, ?),
+         ('mid-draft', NULL, '', ?, 'key-mid-0001', ?, ?),
+         ('long-draft', 1, '长草稿', ?, 'key-long-0001', ?, ?)`,
       )
-      .bind(LONG_TEXT, t, t, t, t),
+      // Oversized rows after a short one, one of them under a page: each starts its own page.
+      .bind(t, t, "b".repeat(100_000), t, t, LONG_TEXT, t, t),
     db
       .prepare(
         `INSERT INTO uploads (id, r2_key, filename, content_type, size, created_at, draft_id, message_id)

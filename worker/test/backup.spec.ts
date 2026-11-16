@@ -177,7 +177,20 @@ describe("daily export", () => {
     expect(targets?.parts).toHaveLength(10);
     for (const part of targets?.parts ?? []) expect(part.bytes).toBeLessThanOrEqual(PAGE_BYTES);
   });
-  it("writes an oversized row only as a run's first page", async () => {
+  it("stops a run at its call budget", async () => {
+    // 500 short rows a page: 8 pages fit the calls, far below the byte budget.
+    await env.DB.exec(
+      "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 6000) INSERT INTO domains (name, created_at) SELECT 'd' || i || '.example', 1 FROM n",
+    );
+    await runExport(env, START);
+    const state = await latestState();
+    expect(state?.status).toBe("running");
+    expect(JSON.parse(state?.parts_json as string)).toHaveLength(8);
+    expect(state?.bytes as number).toBeLessThan(RUN_BYTES);
+  });
+
+  it("writes an oversized row only as a run's first page, and keeps the cursor it reached", async () => {
+    await env.DB.prepare("INSERT INTO domains (name, created_at) VALUES ('example.com', 1)").run();
     const insert = env.DB.prepare(
       "INSERT INTO drafts (id, text, idempotency_key, created_at, updated_at) VALUES (?, ?, ?, 1, 1)",
     );
@@ -186,10 +199,18 @@ describe("daily export", () => {
       insert.bind("d0", text, "key-0-000000"),
       insert.bind("d1", text, "key-1-000000"),
     ]);
+    const prepare = vi.spyOn(env.DB, "prepare");
     await runExport(env, START);
-    expect(JSON.parse((await latestState())?.parts_json as string)).toHaveLength(1);
+    // domains, its end, 8 empty tables, then the oversized row, left for the next run.
+    const pages = prepare.mock.calls.filter((c) => String(c[0]).startsWith("WITH p AS"));
+    expect(pages).toHaveLength(11);
+    const state = await latestState();
+    expect(JSON.parse(state?.parts_json as string)).toHaveLength(1);
+    expect(state?.table_index).toBe(EXPORTED.findIndex((t) => t.name === "drafts"));
     await runExport(env, START + 15 * MINUTE);
     expect(JSON.parse((await latestState())?.parts_json as string)).toHaveLength(2);
+    await runExport(env, START + 30 * MINUTE);
+    expect(JSON.parse((await latestState())?.parts_json as string)).toHaveLength(3);
   });
   it("starts once a day at 03:00 UTC and replaces an export running for 48 hours", async () => {
     expect(dayStart(START - 1)).toBe(START - DAY);

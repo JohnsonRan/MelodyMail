@@ -85,6 +85,8 @@ describe("automatic Trash clean-up", () => {
   it("stamps the time a message enters Trash, keeps it there, and clears it when it leaves", async () => {
     const { client } = await setupOwner();
     await seedMessage({ id: "m" });
+    // A change that does not touch Trash leaves the clock unset.
+    await client.json("PATCH", "/api/messages/m", { read: true });
     expect(await trashedAt("m")).toBeNull();
     const before = Date.now();
     await client.json("PATCH", "/api/messages/m", { trashed: true });
