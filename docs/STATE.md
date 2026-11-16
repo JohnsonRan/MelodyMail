@@ -1054,7 +1054,7 @@ rendering.
 
 Verified: `bun run check` green at both commits; `bun run test:browser` 38 tests green.
 
-## M4b: PWA, push notifications and dark reading (built 2026-11-16, awaiting review)
+## M4b: PWA, push notifications and dark reading (done 2026-11-16, PR #5, merge `15054c9`)
 
 Design: `docs/M4b-pwa.md`. Risk class High (a service worker controlling the origin, the VAPID
 private key, a table linking sessions to push endpoints, Worker requests to push services).
