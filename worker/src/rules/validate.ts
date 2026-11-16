@@ -10,8 +10,9 @@ export const CONDITIONS_MAX = 10;
 export const RULE_TARGETS_MAX = 5;
 const NAME_MAX = 100;
 const VALUE_MAX = 256;
-// RFC 5322 ftext: printable US-ASCII except ":".
-const HEADER_NAME = /^[!-9;-~]{1,64}$/;
+// An HTTP token (RFC 9110, section 5.6.2): the names Headers.get accepts. RFC 5322 allows more,
+// but a name outside this set makes Headers.get throw in email().
+const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,64}$/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are refused
 const CONTROL = /[\x00-\x1f\x7f]/;
 

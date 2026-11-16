@@ -495,4 +495,17 @@ describe("email() with rules", () => {
       await env.DB.exec("ALTER TABLE rules_away RENAME TO rules");
     }
   });
+
+  it("stores and forwards to the defaults when a stored rule cannot be evaluated", async () => {
+    await addAddress("shop", { targets: ["a@dest.example"] });
+    // Written before header names were limited to HTTP tokens: Headers.get throws on it.
+    const bad = [{ field: "header", name: "a/b", op: "contains", value: "x" }];
+    await addRule({ conditions: bad, trash: true, targets: ["b@dest.example"] });
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const message = github();
+    await expect(handleEmail(asMessage(message), env)).resolves.toBeUndefined();
+    expect(forwardedTo(message)).toEqual(["a@dest.example"]);
+    expect(await flags()).toEqual([[0, 0, 0, 0]]);
+    expect(error.mock.calls.join(" ")).toContain("rules_eval_failed");
+  });
 });

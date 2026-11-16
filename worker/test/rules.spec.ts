@@ -290,6 +290,13 @@ describe("rule routes", () => {
       ],
       [{ ...BODY, conditions: [{ ...header, name: "X-A" }, header] }, "invalid_condition"],
       [{ ...BODY, conditions: [{ ...header, name: "Bad:Name" }] }, "invalid_condition"],
+      // Names outside the HTTP token set: Headers.get throws on them in email().
+      ...["X-Spam(Score)", "a/b", "a@b", "a=b", "a;b", "a[b", "a,b", "a b"].map(
+        (name): [Json, string] => [
+          { ...BODY, conditions: [{ ...header, name }] },
+          "invalid_condition",
+        ],
+      ),
       [{ ...BODY, conditions: [{ ...header, name: "h".repeat(65) }] }, "invalid_condition"],
       [{ ...BODY, conditions: [{ ...BODY.conditions[0], name: "X-A" }] }, "invalid_condition"],
       [{ ...BODY, archive: false }, "no_rule_action"],
@@ -302,6 +309,10 @@ describe("rule routes", () => {
         error,
       });
     }
+    const slash = { ...BODY, conditions: [{ ...header, name: "a/b" }] };
+    expect(
+      await client.json("POST", "/api/rules/test", { messageId: "none", rule: slash }, 400),
+    ).toEqual({ error: "invalid_condition" });
     // "Stop processing more rules" alone is an action; a header name may be 64 characters.
     const stopOnly = { ...BODY, archive: false, stop: true };
     await client.json("POST", "/api/rules", stopOnly, 201);

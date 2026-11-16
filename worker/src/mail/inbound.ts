@@ -98,8 +98,9 @@ const NO_RULES: Decision = {
 };
 
 /**
- * Runs the enabled rules once for this message (Decision 1). A failed rule read is logged and
- * the message is handled as if no rule matched: it is still stored and forwarded to the defaults.
+ * Runs the enabled rules once for this message (Decision 1). A failed rule read or evaluation is
+ * logged and the message is handled as if no rule matched: it is still stored and forwarded to the
+ * defaults, never bounced because of a rule.
  */
 async function decide(
   env: Env,
@@ -115,12 +116,17 @@ async function decide(
     return NO_RULES;
   }
   if (rules.length === 0) return NO_RULES;
-  return evaluateRules(rules, {
-    envelopeFrom: message.from,
-    headers: message.headers,
-    recipient: `${recipient.localPart}@${recipient.domain}`,
-    tag: recipient.tag,
-  });
+  try {
+    return evaluateRules(rules, {
+      envelopeFrom: message.from,
+      headers: message.headers,
+      recipient: `${recipient.localPart}@${recipient.domain}`,
+      tag: recipient.tag,
+    });
+  } catch (err) {
+    log("error", "rules_eval_failed", { addressId, error: errorText(err) });
+    return NO_RULES;
+  }
 }
 
 /** Forwards to each target once; returns how many failed. A failure never throws. */
