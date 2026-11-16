@@ -112,7 +112,6 @@ async function deliver(c: Context<AppEnv>, id: string, key: string, copy: SentCo
   const db = env.DB;
   const apiKey = env.RESEND_API_KEY as string;
   const origin = new URL(c.req.url).origin;
-  const nowS = Math.floor(Date.now() / 1000);
   const secret = env.UPLOAD_URL_KEY;
   if (copy.attachments.length > 0 && !secret) {
     await markFailed(db, id, "send_failed");
@@ -121,7 +120,7 @@ async function deliver(c: Context<AppEnv>, id: string, key: string, copy: SentCo
   const attachments = await Promise.all(
     copy.attachments.map(async (a) => ({
       filename: a.filename,
-      path: await signedBlobUrl(origin, secret as string, a.uploadId, nowS),
+      path: await signedBlobUrl(origin, secret as string, a.uploadId, copy.attachmentsExpireAt),
     })),
   );
   const outcome = await callResend(

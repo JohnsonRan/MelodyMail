@@ -2,9 +2,11 @@ import { isoBase64URL } from "@simplewebauthn/server/helpers";
 
 // Signed attachment URLs for Resend (docs/M5-sending.md, "Routes"): Resend fetches each
 // attachment from GET /api/uploads/:id/blob?exp=&sig=, where sig is HMAC-SHA256 over the id and
-// the expiry with UPLOAD_URL_KEY. The URL is valid for an hour and names one upload only.
+// the expiry with UPLOAD_URL_KEY. The URL names one upload only. The expiry is fixed when the
+// sent copy is prepared and stored in it, so every attempt sends the same body under the same
+// idempotency key; it lasts as long as Resend keeps that key (24 hours).
 
-export const SIGNED_URL_TTL_S = 3600;
+export const SIGNED_URL_TTL_S = 24 * 3600;
 
 const encoder = new TextEncoder();
 
@@ -44,9 +46,8 @@ export async function signedBlobUrl(
   origin: string,
   secret: string,
   id: string,
-  nowS: number,
+  exp: number,
 ): Promise<string> {
-  const exp = nowS + SIGNED_URL_TTL_S;
   const sig = await signUpload(secret, id, exp);
   return `${origin}/api/uploads/${encodeURIComponent(id)}/blob?exp=${exp}&sig=${sig}`;
 }

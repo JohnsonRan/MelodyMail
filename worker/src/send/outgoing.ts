@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import type { AppEnv } from "../env";
+import { SIGNED_URL_TTL_S } from "./signed-url";
 import {
   byteLength,
   clientId,
@@ -32,6 +33,8 @@ export type SentCopy = {
   html: string | null;
   headers: Record<string, string>;
   attachments: { uploadId: string; filename: string; contentType: string; size: number }[];
+  /** Expiry (Unix seconds) of the signed attachment URLs, the same on every attempt. */
+  attachmentsExpireAt: number;
 };
 
 export type Prepared = { copy: SentCopy; threadKey: string | null; sourceKind: string | null };
@@ -146,6 +149,7 @@ export async function prepare(
       html: html as string | null,
       headers,
       attachments,
+      attachmentsExpireAt: Math.floor(Date.now() / 1000) + SIGNED_URL_TTL_S,
     },
     threadKey,
     sourceKind: kind,
