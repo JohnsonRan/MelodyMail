@@ -1380,10 +1380,10 @@ Rulings on the review of `c1a3ebf` (2026-11-16):
 
 Rulings on the re-review and the open questions (2026-11-16):
 
-9. **Retry after 24 h (open question 4).** Re-sign with a fresh expiry only when the stored `exp`
+9. **Retry after 24 h (open question 4).** Narrowed by ruling 13. Re-sign with a fresh expiry only when the stored `exp`
    has passed, and write it back to the R2 sent copy so later retries stay byte-identical; safe
    because Resend's idempotency window has closed by then.
-10. **A row stuck at `sending` (open question 5).** The reader offers Retry when the row is older
+10. **A row stuck at `sending` (open question 5).** Its window part is replaced by ruling 13. The reader offers Retry when the row is older
     than 60 s and younger than 24 h, where Resend dedupes; past 24 h it shows "status unknown,
     check Resend" without Retry. `claimRetry` enforces the same window.
 11. **The rejected row in Sent (open question 6)** stays as a final record: no Retry, no
@@ -1745,6 +1745,149 @@ Numbers after the second round (2026-11-16, dev workstation, Ryzen 9 9950X3D):
 - Bundle (3 builds identical): entry plus statically preloaded JS 263.0 kB; first paint
   311.8 kB; total 715.9 kB; compose chunk 51.4 kB.
 
+### Third fix round (third review of `m5-sending`, rulings 13 and 14)
+
+Commits: `6dd5cb2` the retry window from the first attempt (Worker, migration 0010, design doc),
+`a4053a1` "Send as a new message" in the reader and compose, and the docs commit after them.
+
+Rulings of 2026-11-16 on the third review:
+
+13. **Retry window from the first attempt** (replaces the window part of ruling 10 and narrows
+    ruling 9). Every message stores the time of its first attempt; the window is that time plus
+    24 h minus a safety margin. Inside it, a Retry of a non-final row (stale `sending`, or
+    `failed` other than `send_rejected`) sends the same body under the same key and is never
+    re-signed. Past it, a row whose outcome is unknown (`sending`, or `failed` after a network
+    error, a timeout or a 5xx) is refused with 409, left unchanged, and nothing is called; the
+    reader shows "Status unknown, check Resend" with "Send as a new message", which opens compose
+    prefilled from the sent copy under a new key with a warning that the earlier message may
+    already have been delivered. Re-signing after `exp` only when every attempt on the key got a
+    definite "not accepted" (429). Copy in zh-CN, en and ja-JP.
+14. **Browser tier limit** 26 s → 30 s (owner approval 2026-11-16).
+
+- **[Medium] The sliding window.** New columns (migration `0010_send_window.sql`):
+  `first_attempt_at`, set at insert, before the first Resend request; `maybe_accepted`, set by an
+  attempt whose outcome is unknown and never cleared. The stored `attachmentsExpireAt` was not
+  used: ruling 9 moved it on every re-sign, it lives in R2 where the claim cannot read it
+  atomically, and the flag needs D1 anyway. Margin: **5 minutes** (`RETRY_WINDOW_MARGIN_MS`), so
+  the window is 23 h 55 min (`RETRY_WINDOW_MS`). The route decides from the row it read:
+  - past the window and unknown (status `sending`, or `maybe_accepted = 1`), not a rejection:
+    409 `send_status_unknown` with the message id, no write, no call;
+  - past the window, `failed`, `maybe_accepted = 0` (every attempt a 429, or a local failure
+    before any call): claimed as a fresh first attempt; `first_attempt_at` moves to now and the
+    attachment URLs are re-signed and written back. Moving it is safe because Resend accepted
+    none of the earlier requests; if Resend kept the key anyway, a different body under it gets
+    409 `invalid_idempotent_request`, which leaves the row `sending`;
+  - inside the window: the claim of rulings 4 and 10, same stored body, never re-signed.
+  `maybe_accepted` is set by `send_failed` (5xx, network error, timeout: the SDK reports no
+  status) and by taking over a `sending` row (an attempt that never answered); a 429 leaves it
+  alone; a 4xx is final as before. The fresh claim also requires `maybe_accepted = 0` in SQL,
+  against a concurrent attempt that ended unknown between the read and the claim. The message
+  detail returns `firstAttemptAt` and `maybeAccepted` for the reader.
+  Migration: outbound rows from before it that are unfinished get `first_attempt_at = 0` and
+  `maybe_accepted = 1` (unknown, past the window: only "send as new"); finished ones get
+  `received_at`. Production holds no outbound rows (not deployed).
+- **Reviewer's note on ruling 9.** Re-signing now happens only past the window and only for a
+  row with `maybe_accepted = 0`; a `failed` row from a network error, a timeout or a 5xx is
+  refused instead.
+- **"Send as a new message".** Compose kind `again` (URL `kind=again&src=<id>`): from address,
+  To, Cc, Bcc, subject and Markdown text from the sent copy; no reply source and no thread
+  headers; a new idempotency key (a new compose session); a warning Banner. Attachments are
+  **copied**: the browser downloads each through `GET /api/uploads/:id` and uploads it again for
+  the new draft, as a forward of a sent message already does. Re-referencing would need a join
+  table and would let one upload belong to two messages; copying keeps `uploads.message_id`
+  single, so the old message keeps its uploads (never deletable, never attachable again) and the
+  new message owns its copies. The old row stays as a record. Worker side the new send is an
+  ordinary send; no server change was needed.
+- **[Low] 409 `send_in_progress` in the reader.** The status is left alone (a toast explains);
+  409 `send_status_unknown` switches the banner to the unknown state with "Send as a new
+  message", whatever the browser's clock says.
+- **[Low] REQUIREMENTS "Full end-to-end run, wall time"** now carries the same numbers as the
+  scheduled tier row.
+- **Ruling 14.** REQUIREMENTS lines 37 (tier) and 54 (end-to-end) say 30 s with "owner approval
+  2026-11-16". No CI or test timeout encoded 26 s: the workflows use `timeout-minutes: 10` and
+  bun a 20 s per-test timeout.
+- **Hypothesis 3** (a rejection on a retry past 24 h released the uploads of mail that may have
+  gone out): no longer reachable. A retry past the window is sent only for a row with
+  `maybe_accepted = 0`, so no earlier attempt can have been accepted, and a 422 on it releases
+  uploads of a message that never went out. A row that may have gone out is refused before any
+  call and keeps its uploads. Tests: the reviewer's scenario asserts the upload still answers
+  409 to a delete after the refusal; "a rejection past the window" shows a 5xx-then-422 row stays
+  final without a call; the ownership test shows the old upload keeps its message.
+
+Tests. Worker, new file `worker/test/send-window.spec.ts` (the two superseded window tests left
+`send-resend.spec.ts`):
+
+- the reviewer's scenario: accepted at T0 with the answer lost, a Retry at T0 + 23 h 50 min
+  (byte-identical body) also lost, a Retry at T0 + 24 h 30 min answers 409
+  `send_status_unknown`, two calls in total, the row unchanged, the upload not deletable;
+- a retry one minute before the window ends sends a byte-identical body;
+- a network failure, then a Retry two minutes before Resend's 24 h end (inside the margin):
+  refused, no call, row unchanged; the message detail carries both fields;
+- a 5xx then a 422, past the window: a repeat answers 422 `send_rejected` without a call;
+- 429, 429 inside the window (same body), then past the stored `exp`: re-signed
+  (`exp` = now + 24 h, written back to R2), sent, `first_attempt_at` moved;
+- 429 then a network error, a network error then 429, and an attempt that never answered then
+  429: each refused past the window;
+- "send as new": the old row stuck past the window, its attachment downloaded and uploaded again,
+  sent under a new key: a new row, Resend called with the new key, the old row unchanged;
+- ownership: the old upload cannot be attached to the new send (400 `unknown_upload`) nor
+  deleted (409), the copy belongs to the new message, the old one is still downloadable.
+
+Browser (`compose.test.ts`, "offers Retry in the reader only where it may still send"): a
+`sending` row claimed 2 minutes ago but first attempted 25 h ago and a `failed` row with
+`maybeAccepted` past the window show "Status unknown, check Resend" with "Send as a new message"
+and no Retry; a rejected row with `maybeAccepted` past the window stays "refused"; a stalled
+row's Retry answered 409 `send_in_progress` keeps its banner, the next Retry sends; a failed row
+inside the window whose Retry answers 409 `send_status_unknown` turns to the unknown state;
+"Send as a new message" opens compose with the warning, To, Bcc, subject, text and the copied
+attachment, and the request carries a new UUID key, no `sourceId`/`sourceKind` and the new
+upload id.
+
+Migration 0010: applied to a scratch D1 migrated to 0009 with outbound `sent`, `sending` and
+`failed` rows and an inbound row: inbound untouched, `sent` got its `received_at`, the
+unfinished ones `0` and `1`. Applied to the local D1 with `bun run db:migrate:local`; a second
+run reported nothing to apply. A second manual run of the file fails on `ALTER TABLE ... ADD`,
+as for 0006 and 0009; wrangler's migration table prevents it.
+
+Ablation of the third round (one mutation at a time, the touched suites rerun, the file restored;
+script in the session scratchpad, `ablate.ts`). Worker 13 hunks against the four send suites and
+`mailbox.spec.ts`, all red: `first_attempt_at` set at insert, the route's window from
+`first_attempt_at`, `maybe_accepted` on taking over a `sending` row, on `send_failed`, the 409
+refusal, `maybe_accepted` in it, the rejection exempt from it, the fresh claim past the window,
+the fresh claim moving `first_attempt_at`, no re-sign inside the window, re-sign past it, the
+5-minute margin, the two detail fields. Web 13 hunks against a rebuild and `compose.test.ts`,
+all red: the reader's window from `firstAttemptAt`, a failed row with `maybeAccepted` unknown, a
+rejection not shown as unknown, the "Send as a new message" button, the unknown state on 409
+`send_status_unknown`, the status kept on 409 `send_in_progress`, the Reader wiring, the route
+kind `again`, no reply source for `again`, the prefill from the sent copy, the copied
+attachments, the Bcc, the warning. First pass: the in-window claim's SQL window clause survived
+(the route refuses before the claim); the clause was removed as redundant and the route's check
+ablated instead (red). Not ablated: the fresh claim's `maybe_accepted = 0` in SQL (only a race
+between the read and the claim reaches it), the from-address choice for `again` (the stand-in
+has one address), the `send_status_unknown` entry in `web/src/errors.ts` (the reader does not
+toast that code; compose would show it, see Deferred), and the migration's backfill (proved on
+the scratch D1 above, not by a test).
+
+Numbers after the third round: below, "Numbers after the third round".
+
+Numbers after the third round (2026-11-16, dev workstation, Ryzen 9 9950X3D; one Bun script ran
+the 9 runs in a row, `time.ts` in the session scratchpad, CPU load read before each run):
+
+- `bun run check`: 9.86, 9.49, 9.34 s wall, CPU load 1–5% (limit 10 s); worker suite (vitest
+  Duration) 8.55, 8.26, 8.09 s (limit 9 s); 335 worker tests (327 before). Green before each
+  commit, run on that commit's exact tree.
+- `bun run test:browser`: 21.67, 22.53, 21.77 s wall including the build (bun test 20.05–20.86 s),
+  52 tests, CPU load 0–3% (limit 30 s by ruling 14).
+- `bun run test:send`: 14.67, 13.96, 14.63 s wall including the build (bun test 12.37–13.05 s),
+  9 tests, CPU load 0–1%: **over the 14 s limit in two of three runs** (open question 7). The
+  reader test grew by the unknown state, the two 409 answers and the send-as-new flow.
+- Bundle (`vite build`, gzip level 6, `bundle.ts` in the session scratchpad: entry plus the JS
+  `index.html` references; first paint = `index.html` plus every JS and CSS file it references;
+  total = every JS and CSS file under `assets`). The script run on the base `de4b1c5` gave 263.1,
+  311.8, 715.9 and compose 51.4 kB (the recorded entry figure was 263.0 kB). Head, 3 builds
+  identical: entry plus preloaded JS 263.1 kB, first paint 311.8 kB (7 assets), total 716.7 kB,
+  compose chunk 51.5 kB.
+
 ### Deviations from the design (decisions taken, open to the owner)
 
 1. **`uploads.message_id`.** The design's `uploads` has only `draft_id`; the cron could not tell
@@ -1759,7 +1902,8 @@ Numbers after the second round (2026-11-16, dev workstation, Ryzen 9 9950X3D):
    corrected message is a new send with its own row (ruling 6); the rejected row stays in Sent as
    "Not sent" and hands its attachments back to the draft.
 4. **`received_at` of an outbound row** is the time of its last send attempt; the 60-second
-   staleness check reads it, so no new column is needed.
+   staleness check reads it. The retry window reads `first_attempt_at` instead (ruling 13,
+   migration 0010), with `maybe_accepted` beside it.
 5. **`GET /api/uploads/:id`** (session): the owner's download of a sent message's attachment; it
    also lets a forward of a sent message carry its attachments. Not in the design's route list.
 6. **Hub event `changed`.** A send or a status change notifies open pages without Web Push; the
@@ -1808,8 +1952,20 @@ Numbers after the second round (2026-11-16, dev workstation, Ryzen 9 9950X3D):
    names attachments that are gone. Remove the rejected row once the corrected message is sent,
    or keep it as a record?
 
+7. **`bun run test:send` is over its 14 s limit** in two of three runs after the third round
+   (13.96–14.67 s wall, CPU load 0–1%). Options: raise it to 18 s (14.7 s plus 20%, the method
+   of "Commands"), or move the reader send states into their own suite with its own build.
+
 ### Deferred
 
+- Compose still offers "Send again" when its own send answers 409 `send_status_unknown` (a draft
+  reopened from Drafts more than a day after a lost send); the retry only gets the same 409, and
+  the message tells the owner to check Resend or send it as a new message. Option: hide Retry
+  for that code in compose and offer the reader's "Send as a new message". Source: third fix
+  round.
+- "Send as a new message" sends without the old message's thread headers (`In-Reply-To`,
+  `References`): the sent copy keeps them, but compose kind `again` sends no reply source.
+  Option: let the send carry the stored headers. Source: third fix round.
 - `web/test/reader.test.ts` (451 lines) is still over the pass bar (M4b deferral).
 - An address book for recipient suggestions (the Tokenizer takes a search source).
 - Pushing flag changes and delivery statuses to other tabs beyond the `changed` event's list
@@ -1833,6 +1989,11 @@ Numbers after the second round (2026-11-16, dev workstation, Ryzen 9 9950X3D):
 - WCAG contrast of the new screens was not measured.
 - The browser tier and the new suites have not run in CI (nothing was pushed); `send.yml` has
   never run.
+- Resend's idempotency window boundary: that Resend keeps a key 24 hours from the first stored
+  request (the 5-minute margin covers skew) and how it treats a key whose first request got a
+  429 come from Resend's documentation, not a real answer.
+- The "Send as a new message" screens were not screenshotted at the three widths, two themes and
+  three locales; only the browser test drove them (Chromium, 1280 px default, en).
 - Resend's behaviour behind the review fixes: the 409 names come from Resend's error reference,
   not a real answer; that `email.*` can overtake the send's answer is shown only by the stubbed
   test; the size of real webhook payloads is not published.
