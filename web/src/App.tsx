@@ -2,11 +2,12 @@ import { InternationalizationProvider } from "@astryxdesign/core/i18n";
 import { LinkProvider } from "@astryxdesign/core/Link";
 import { Theme } from "@astryxdesign/core/theme";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { type AnchorHTMLAttributes, useEffect, useRef } from "react";
+import { type AnchorHTMLAttributes, useEffect, useLayoutEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { defaultThemeSlug, themes } from "./astryx-themes";
 import type { AstryxMessages, Locale } from "./i18n";
 import { PreferencesProvider } from "./preferences";
+import { disableChromeSelection } from "./selection";
 
 /** Every Astryx link navigates through the router instead of reloading the page. */
 function RouterLink({ href, ...props }: AnchorHTMLAttributes<HTMLAnchorElement>) {
@@ -62,6 +63,7 @@ export function RootLayout({
 }) {
   useFocusTitleOnNavigate();
   useServiceWorker();
+  useLayoutEffect(disableChromeSelection, []);
   return (
     <PreferencesProvider initialLocale={initialLocale} initialMessages={initialMessages}>
       {({ locale, mode, astryxMessages }) => (

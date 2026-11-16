@@ -88,6 +88,13 @@ describe("Telegram settings", () => {
     expect(await link.getAttribute("href")).toBe(`https://t.me/melody_test_bot?start=${CODE}`);
     expect(await link.getAttribute("target")).toBe("_blank");
     await page.getByText(`/start ${CODE}`).waitFor();
+    const userSelect = (selector: string) =>
+      page
+        .locator(selector)
+        .first()
+        .evaluate((el) => getComputedStyle(el).userSelect);
+    expect(await userSelect("code")).toBe("text");
+    expect(await userSelect("h1")).toBe("none");
     await page.getByText(/^The code expires at /).waitFor();
     expect(app.telegram.calls.map((c) => `${c.method} ${c.path}`)).toEqual([
       "GET /api/telegram",

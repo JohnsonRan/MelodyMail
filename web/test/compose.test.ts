@@ -46,6 +46,13 @@ describe("compose end to end", () => {
     const s = await open();
     await s.page.keyboard.press("c");
     await compose(s).waitFor();
+    for (const field of [
+      compose(s).getByLabel("Subject"),
+      compose(s).locator("textarea"),
+      compose(s).getByRole("combobox", { name: "To" }),
+    ]) {
+      expect(await field.first().evaluate((el) => getComputedStyle(el).userSelect)).toBe("text");
+    }
     await addRecipient(s, "To", "friend@example.org");
     // Not an address: refused and named.
     const to = compose(s).getByRole("combobox", { name: "To" });

@@ -2962,11 +2962,25 @@ Deferred (owner decides after release):
 Not verified: the card with a screen reader (only the live region's text was read); the notice
 in Safari and Firefox; the logo's 32 px rendering on a high-density display (headless at 1x).
 
-## Next: text selection limited to content (owner request 2026-11-16)
+## Text selection limited to content (owner request 2026-11-16, branch `ui-selection`)
 
-The owner found that dragging the mouse selects nearly the whole interface. Wanted: the app chrome
-(navigation, toolbars, buttons, headings, list rows, settings copy) is not selectable; content the
-owner may copy stays selectable: the message body (its own sandboxed frame), the reader header
-(sender, recipients, addresses, subject), inputs and the compose area, values meant for copying
-(DNS records, the Telegram `/start` command, recovery key, TOTP secret) and error messages.
-M5c closed with PR #8 (CI: merge-gate 43 s, browser 54 s, pwa 36 s, send 42 s, telegram 38 s).
+A drag selects only content. `web/src/selection.ts` turns selection off on the document element
+(portals included) from the root layout, and exports `SELECTABLE` for the regions that opt back in.
+
+- Selectable through the `SELECTABLE` style: the reader subject, sender row and header rows
+  (`reader/Reader.tsx`, `reader/MessageView.tsx`), the plain-text body (`reader/PlainText.tsx`),
+  DNS record values and every `Value` cell, which also covers addresses and domains
+  (`pages/DomainDnsPage.tsx`, `components/DataTable.tsx`).
+- Selectable through the melody theme (`themes/melody/melodyTheme.ts`, rebuilt with
+  `astryx theme build`): Banner (error and warning messages), Code (the Telegram `/start`
+  command, the recovery key, the TOTP secret), TextInput, TextArea and Tokenizer (compose).
+- The HTML body is a sandboxed frame with its own document and is not affected.
+- Not selectable: navigation, top bar, toolbars, buttons, headings, list rows, settings copy,
+  menus, dialogs, toasts.
+
+Tests: `test/mailbox.test.ts` (computed `user-select` on a nav link, a row, a button, the search
+input, the reader header and body, a DNS value), `test/telegram.test.ts` (the command),
+`test/compose.test.ts` (subject, body, recipients).
+
+Not verified: Safari and Firefox; iOS long-press in inputs; a drag over the page by hand (the
+owner checks on `wrangler dev`). No test asserts the Banner opt-in. No screenshots (owner's call).

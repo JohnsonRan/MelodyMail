@@ -9,6 +9,7 @@ import { api } from "../api";
 import { DataTable, TableSkeleton, Value } from "../components/DataTable";
 import { PageFrame } from "../components/PageFrame";
 import { usePreferences } from "../preferences";
+import { SELECTABLE } from "../selection";
 import { useSettingsPage } from "../settings";
 
 type Expected = { id: string; type: string; name: string | null; values: string[] | null };
@@ -80,7 +81,9 @@ export function DomainDnsPage() {
               render: (r) => (
                 <VStack gap={0}>
                   {(r.values ?? []).map((v) => (
-                    <Text key={v}>{v}</Text>
+                    <Text key={v} style={SELECTABLE}>
+                      {v}
+                    </Text>
                   ))}
                   <Text type="supporting" color="secondary">
                     {t(`dns.hint.${r.id}`)}
@@ -102,7 +105,7 @@ export function DomainDnsPage() {
                     </HStack>
                     {s.status === "different" &&
                       s.found.map((v) => (
-                        <Text key={v} type="supporting" color="secondary">
+                        <Text key={v} type="supporting" color="secondary" style={SELECTABLE}>
                           {v}
                         </Text>
                       ))}

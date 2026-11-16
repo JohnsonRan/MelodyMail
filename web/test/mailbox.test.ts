@@ -127,6 +127,29 @@ describe("mailbox end to end", () => {
     expect(await toggle.getAttribute("aria-pressed")).toBe("false");
   });
 
+  test("selects content only: chrome is not selectable, copyable values are", async () => {
+    const s = await open();
+    const select = (selector: string) =>
+      s.page
+        .locator(selector)
+        .first()
+        .evaluate((el) => getComputedStyle(el).userSelect);
+    const chrome = ["nav a", "[data-message-row]", "button"];
+    for (const selector of chrome)
+      expect([selector, await select(selector)]).toEqual([selector, "none"]);
+    expect(await select("input[type=search]")).toBe("text");
+    await row(s, "note1").click();
+    await s.page.getByText("Plain note 1.").waitFor();
+    expect(await select("h2")).toBe("text");
+    expect(await select("text=Plain note 1.")).toBe("text");
+    expect(await select(`text="To"`)).toBe("text");
+    await s.page.goto(`${app.origin}/settings/domains/example.com`);
+    await s.page.getByText("mx.test.example").waitFor();
+    expect(await select("h1")).toBe("none");
+    expect(await select("text=mx.test.example")).toBe("text");
+    expect(await select(`text="MX"`)).toBe("text");
+  });
+
   test("downloads an HTML attachment and never opens it", async () => {
     const s = await open();
     await row(s, "invoice").click();

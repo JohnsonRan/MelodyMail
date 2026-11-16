@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { MessageDetail } from "../mailbox/api";
 import { formatFullDate, formatSize } from "../mailbox/format";
+import { SELECTABLE } from "../selection";
 import { downloadPart } from "./download";
 import { MailFrame } from "./MailFrame";
 import { PlainText } from "./PlainText";
@@ -78,7 +79,7 @@ function Header({
     [t("mail.date"), formatFullDate(message.receivedAt, i18n.language)],
   ];
   return (
-    <VStack gap={1}>
+    <VStack gap={1} style={SELECTABLE}>
       {message.tag && (
         <HStack>
           <Token size="sm" label={`+${message.tag}`} description={t("mail.tag")} />

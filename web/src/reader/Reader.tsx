@@ -16,6 +16,7 @@ import {
   senderName,
 } from "../mailbox/api";
 import { formatListDate } from "../mailbox/format";
+import { SELECTABLE } from "../selection";
 import { MessageView } from "./MessageView";
 import { type ReaderAction, ReaderToolbar } from "./ReaderToolbar";
 import { SentStatus } from "./SentStatus";
@@ -166,7 +167,9 @@ export default function Reader({
       {thread.state === "failed" && <Banner status="error" title={t("mail.threadFailed")} />}
       {thread.state === "ready" && (
         <>
-          <Heading level={2}>{current?.subject || t("mail.noSubject")}</Heading>
+          <Heading level={2} style={SELECTABLE}>
+            {current?.subject || t("mail.noSubject")}
+          </Heading>
           {current?.direction === "out" && (
             <SentStatus
               message={current}
@@ -192,7 +195,7 @@ export default function Reader({
                 })
               }
               trigger={
-                <HStack gap={2} vAlign="center">
+                <HStack gap={2} vAlign="center" style={SELECTABLE}>
                   <StackItem size="fill">
                     <HStack gap={2} vAlign="center" wrap="wrap">
                       <Text weight={m.read ? "normal" : "semibold"}>{senderName(m.from)}</Text>
