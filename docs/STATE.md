@@ -3201,3 +3201,72 @@ Ablation finished after the review (one mutation at a time, CPU load 1–6%):
 
 Gate after the fixes (`580d34b`): `bun run check` 11.9, 11.8, 12.1 s at 0–4% load, 415 worker
 tests; earlier the same day, under load, 14.0 s (61%) at `0f39b61` and 12.3 s (0%) at `2a788d1`.
+
+### Owner rulings (2026-11-17)
+
+1. Rule evaluation reads at most the first 50 addresses of each of From, To and Cc; the 1 ms p95
+   budget stays. The bench gets 100-address From, To and Cc and one input combining them with the
+   20 capped header names and the encoded subject; every input under 1 ms p95, or stop and report.
+2. The Rules browser suite joins the Telegram tier, renamed `test:settings`; the limit stays
+   10 s, or stop and report.
+3. "Slowest test package" limit 13 s (was 10.8 s); in REQUIREMENTS.md.
+
+### Re-review of `f389bad` and the rulings
+
+Done:
+
+- `04555c7`: the header-name cap test's last replace uses X-Other, so counting the disabled
+  rule's X-New would give 21 names; red without `enabled = 1` (2.8 s, CPU load 57%). The
+  `headersFromRaw` doc comment is back above its function.
+- `d061390`: ruling 1's 50-address cap (`ADDRESSES_MAX`), in the design and README. Test: the
+  51st address of a To does not match, the 50th does; red without the cap (3.1 s, load 57%).
+- `5cc5211`: a condition is matched with one search over the field's values joined by line
+  breaks, instead of one comparison per value. 500 conditions over To and Cc of 50 addresses each
+  went from about 1.15 ms to 0.45 ms mean (Bun, load 13%). Ablation, one at a time at load
+  45–64%: equals, starts_with and ends_with each turned into a plain substring search: red; a
+  removed null guard: red; the separate "no value" case survived (an empty field's string never
+  matches a non-empty value) and was removed.
+- `c4c32b8`: `errors.invalid_condition` names what a header name may not hold (spaces,
+  brackets, symbols such as / @ : = and commas) in zh-CN, en and ja-JP.
+- Ruling 3: REQUIREMENTS "Slowest test package" 13 s (docs commit).
+
+Stopped and reported, not committed:
+
+- **Ruling 1, benchmark.** With the new inputs the bench exits 1. Worst p95 per input, 3 runs of
+  200, after `5cc5211`, CPU load 8–14% (the quietest the host was):
+
+  | Input | p95 |
+  | --- | --- |
+  | worst headers (From, To, Cc of 100 addresses, encoded subject, repeated header), no match / all match | 1.38–1.51 / 1.21–1.45 ms |
+  | worst headers and the 20 capped names, no match / all match | 1.44–1.64 / 1.41–1.77 ms |
+  | 20 capped names alone | 0.47–1.05 ms |
+  | plain headers | 0.22–0.34 ms |
+
+  Before `5cc5211`, at load 52–71%, the combined input measured 1.80–2.12 ms p95. Breakdown of
+  the worst-headers input (Bun, single run): reading From, To, Cc and the subject 0.40 ms median,
+  0.74 ms p95, most of it postal-mime's `addressParser` over three 2,000-character lists
+  (0.11 ms each); evaluating 50 parsed rules 0.35 ms median, 0.99 ms p95; `JSON.parse` of the
+  rows 0.07 ms. The bench additions are kept outside the repository as
+  `m6-bench-ruling1.patch` in the session scratchpad. Options for the owner: parse fewer
+  characters of each address header (cut the list at the 50th top-level comma before
+  `addressParser`, which saves little for long lists of short addresses), a smaller character
+  cut for address headers only, or a budget for the combined worst case; the p95 is also wide
+  against the median (0.6 ms), which points at garbage collection under Bun.
+- **Ruling 2, tier.** `bun run test:settings` (Telegram suites plus Rules, 15 tests) ran 13.1,
+  11.1, 10.6, 10.9 and 10.5 s at CPU load 61–68%, over the 10 s limit; the Telegram suites alone
+  ran 8.0 and 7.8 s at 57–62% (6.0 s baseline at 0–5%). The rename (scripts, `settings.yml`,
+  REQUIREMENTS row) is kept outside the repository as `m6-settings-tier.patch`; the Rules suite
+  stays outside every tier.
+
+### Deferred (added)
+
+- The header-name cap check and the rule write are two statements, so two saves at once can pass
+  20 names. Source: re-review of `f389bad`. It waits because only the owner saves rules, the cost
+  is the owner's own CPU time in `email()`, and no mail is lost.
+
+### Not verified (added)
+
+- workerd's `Headers.get` joining thousands of copies of a repeated header before the
+  2,000-character slice: the native join's CPU time is not measured.
+- Bun (JavaScriptCore) against production V8 for `includes` on repetitive values: the benchmark
+  numbers are Bun's.

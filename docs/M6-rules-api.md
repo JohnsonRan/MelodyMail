@@ -542,6 +542,15 @@ paint does not grow; side navigation entries beside Forwarding.
    never.
 4. The sub-address on/off switch stays deferred; sub-addressing stays always on.
 
+## Owner rulings (2026-11-17)
+
+1. Rule evaluation reads at most the first 50 addresses of each of `From`, `To` and `Cc`; the
+   1 ms p95 budget stays. The benchmark's worst headers carry 100 addresses in each, and one input
+   combines them with the 20 capped header names and the 2,000-character encoded subject.
+2. The Rules browser suite joins the Telegram tier, renamed `test:settings`
+   (`.github/workflows/settings.yml`); its limit stays 10 s.
+3. The "Slowest test package" limit goes from 10.8 s to 13 s.
+
 ## Open questions for the owner (asked 2026-11-16, answered above)
 
 1. **Decide every rule action in `email()`.** PLAN runs mark, archive and delete in the consumer
