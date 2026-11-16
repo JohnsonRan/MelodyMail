@@ -39,6 +39,16 @@ const GUARDED = [
   "GET /api/forward-targets",
   "POST /api/forward-targets",
   "DELETE /api/forward-targets/:id",
+  "GET /api/messages",
+  "PATCH /api/messages",
+  "GET /api/messages/:id",
+  "GET /api/messages/:id/thread",
+  "GET /api/messages/:id/raw",
+  "PATCH /api/messages/:id",
+  "DELETE /api/messages/:id",
+  "GET /api/search",
+  "GET /api/counts",
+  "GET /api/events",
 ];
 
 describe("authorization", () => {

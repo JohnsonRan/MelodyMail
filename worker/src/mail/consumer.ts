@@ -1,5 +1,6 @@
 import type { Env } from "../env";
 import { errorText, log } from "../http";
+import { notifyHub } from "./hub";
 import { type ParsedHeaders, parseSlice, SLICE_BYTES, threadKey } from "./parse";
 
 // The inbound queue consumer and the cron step that feeds it again. Each job is { id } of a
@@ -61,6 +62,12 @@ async function processJob(env: Env, id: string): Promise<void> {
     .bind(id)
     .first<Row>();
   if (!row) return;
+  await parseRow(env, id, row);
+  // Open mailbox pages refetch; a failed notify is logged and never fails the parse.
+  await notifyHub(env, { type: "message", id });
+}
+
+async function parseRow(env: Env, id: string, row: Row): Promise<void> {
   if (row.attempts > MAX_ATTEMPTS) {
     log("warn", "mail_parse_gave_up", { messageId: id, attempts: row.attempts });
     await markFailed(env, id);

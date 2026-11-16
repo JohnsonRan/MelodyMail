@@ -34,7 +34,7 @@ as the baseline; then the limit, as the baseline plus a margin (start at 20%).
 | --- | --- | --- | --- | --- |
 | Pre-commit | `bun run lint` | locally, before each commit (no hook yet) | 1 s | 0.34 s, 3 runs 0.34–0.46 s (2026-11-15, dev workstation, Ryzen 9 9950X3D, CPU load ~80%) |
 | Merge gate | `bun run check` | CI on every pull request and push to main; locally before push | 10 s | 7.2 s, 3 runs 6.5–7.8 s with the steps run concurrently by `scripts/check.ts`, CPU load 9–14% (2026-11-16, dev workstation, Ryzen 9 9950X3D); sequential before: 10.6–11.1 s |
-| Scheduled run on main | | | | |
+| Scheduled run on main | `bun run test:browser` | CI nightly on main and on pull requests that touch `web/` (`.github/workflows/browser.yml`); locally before a web change is pushed | 21 s | 17.4 s, 3 runs 16.81–17.62 s including the web build (35 tests: the rendering-security corpus, file-name unit tests and the mailbox end to end, Playwright 1.65.0 under `bun test`), CPU load 1–5% (2026-11-16, dev workstation, Ryzen 9 9950X3D) |
 | Release | | | | |
 
 ## Numbers
@@ -49,11 +49,11 @@ meanwhile.
 | Spacing scale (section, card, inside card, label to field) | Astryx spacing tokens only; no literal pixel value | a setting, not measured | design system |
 | Page frame width; readable column width | | | e2e page-width check |
 | Supported widths (phone, laptop, wide) | phone 390 px, laptop 1280 px, wide 1920 px; tables stack below Astryx's sm breakpoint (640 px) | a setting, not measured (owner ruling 2026-11-16) | screenshots |
-| Full end-to-end run, wall time | | | |
+| Full end-to-end run, wall time | 21 s | 17.4 s, the same 3 runs as the scheduled tier; the mailbox API is an in-memory stand-in, the Worker is covered by its own suite (2026-11-16, dev workstation, Ryzen 9 9950X3D, CPU load 1–5%) | `bun run test:browser` in CI |
 | Slowest test package | 9 s (owner approval 2026-11-16) | 6.1 s, worker suite (vitest Duration) inside the concurrent gate, 3 runs 5.48–6.62 s, CPU load 9–14% (2026-11-16, dev workstation, Ryzen 9 9950X3D); about 80% of it is transform | review |
-| Frontend entry chunk, gzip | 270 kB | 14 kB (2026-11-15, vite build, gzip -6) | review |
-| Frontend first paint (sign-in page), JS + CSS gzip | 370 kB | 309 kB (2026-11-15, vite build, gzip -6) | review |
-| Frontend total JS + CSS, gzip | 610 kB | 508 kB; Astryx core about 890 kB minified is most of it (2026-11-15, vite build, gzip -6) | review |
+| Frontend entry chunk, gzip | 270 kB | 15.6 kB after M4 (15.4 kB before), 2026-11-16, vite build, gzip -6; 14 kB on 2026-11-15 | review |
+| Frontend first paint (sign-in page), JS + CSS gzip | 370 kB | 314.6 kB after M4 with Figtree self-hosted (313.5 kB before), index.html and every asset it references, 2026-11-16, vite build, gzip -6; postal-mime and DOMPurify are in none of them; font files are not counted: the Figtree latin woff2 for the 4 weights is 45.7 kB, all 16 woff2 files 70.5 kB; 309 kB on 2026-11-15 | review |
+| Frontend total JS + CSS, gzip | 610 kB | 643.0 kB after M4 with Figtree self-hosted, over the limit (568.4 kB before): the parse worker with postal-mime 30.6 kB and the reader chunk with DOMPurify 22.1 kB load only when a message is opened; open question in `docs/STATE.md`, M4 (2026-11-16, vite build, gzip -6); 508 kB on 2026-11-15 | review |
 | Source file size, p90 of this repository (pass bar) | 314 lines | 314 lines over 15 .ts/.tsx/.py files (2026-11-15) | review |
 | Wait timeout before a stuck step is recorded and left | 30 min | a setting, not measured | agent |
 | Context handoff limit (share of the model's window) | 60% | a setting, not measured | orchestrator |
@@ -125,6 +125,7 @@ Backend endpoints with no frontend caller:
 | Endpoint | Caller | Reason |
 | --- | --- | --- |
 | GET /api/health | deploy and uptime checks | liveness probe; carries no data |
+| GET /api/messages/:id | none yet | one message's metadata, as `docs/M4-mailbox.md` defines; the M4 reader reads the thread route instead (open question in `docs/STATE.md`, M4) |
 
 Intentional designs that look like defects:
 
@@ -145,10 +146,8 @@ body.
 
 | Row | Current state | Plan | Due |
 | --- | --- | --- | --- |
-| Commands: Scheduled run on main | no heavy suites exist yet | add when the Playwright suite lands in M4 | 2027-01-31 |
 | Commands: Release | no release flow yet | add with the deploy rehearsal in M7 | 2027-03-31 |
 | Numbers: Page frame width; readable column width | the shell has no content pages yet | measure once the mail list and settings pages exist (M4) | 2027-01-31 |
-| Numbers: Full end-to-end run, wall time | no end-to-end suite | measure when Playwright lands in M4 | 2027-01-31 |
 | Numbers: CPU time per Worker invocation, production | not deployed yet; Workers Free caps it at 10 ms | read cpuTime from Workers Logs after the first deploy | 2027-02-28 |
 
 ## Example (illustrative values; measure your own)

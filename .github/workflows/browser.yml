@@ -1,0 +1,33 @@
+name: browser
+
+# The browser suite (Playwright driven by bun test): the sender-HTML rendering security corpus
+# and the mailbox end to end. It takes about 17 s, too long for the 10 s merge gate, so it runs
+# as its own job: on pull requests that touch web/, because it guards a High-risk path, and every
+# night on main, which covers merges that skipped it.
+on:
+  pull_request:
+    paths: ["web/**", "package.json", "bun.lock", ".github/workflows/browser.yml"]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bunx --bun playwright install --with-deps chromium-headless-shell
+        working-directory: web
+      - run: bun run test:browser

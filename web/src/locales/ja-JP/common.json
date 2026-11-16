@@ -13,14 +13,71 @@
   },
   "folder": {
     "inbox": "受信トレイ",
-    "sent": "送信済み",
-    "drafts": "下書き",
+    "starred": "スター付き",
     "archive": "アーカイブ",
     "trash": "ごみ箱"
   },
-  "inbox": {
-    "emptyTitle": "まだメールはありません",
-    "emptyDescription": "追加したアドレス宛てのメールがここに表示されます。"
+  "mail": {
+    "search": "メールを検索",
+    "searchPlaceholder": "メールを検索",
+    "searchTitle": "検索: {{query}}",
+    "unread": "未読",
+    "message": "メッセージ",
+    "date": "日付",
+    "to": "宛先",
+    "cc": "CC",
+    "from": "差出人",
+    "tag": "サブアドレス タグ",
+    "noSubject": "(件名なし)",
+    "noPreview": "プレビューなし",
+    "hasAttachments": "添付ファイルあり",
+    "starred": "スター付き",
+    "refresh": "更新",
+    "retry": "再試行",
+    "listActions": "選択したメッセージの操作",
+    "messageActions": "メッセージの操作",
+    "selected": "選択済み: {{count}}",
+    "archive": "アーカイブ",
+    "moveToInbox": "受信トレイに移動",
+    "trash": "ごみ箱に移動",
+    "restore": "元に戻す",
+    "star": "スターを付ける",
+    "unstar": "スターを外す",
+    "markRead": "既読にする",
+    "markUnread": "未読にする",
+    "backToList": "一覧に戻る",
+    "showRemoteImages": "リモート画像を表示",
+    "remoteBlocked": "プライバシー保護のため、このメッセージのリモート画像とスタイルはブロックされています。",
+    "deleteForever": "完全に削除",
+    "deleteForeverTitle": "このメッセージを完全に削除しますか?",
+    "deleteForeverDescription": "メッセージと添付ファイルは削除され、元に戻せません。",
+    "reader": "閲覧ウィンドウ",
+    "nothingOpen": "読むメッセージを選択してください",
+    "listFailed": "メッセージを読み込めませんでした。",
+    "threadFailed": "このスレッドを読み込めませんでした。再試行してください。",
+    "readFailed": "このメッセージを読み取れませんでした",
+    "readFailedDescription": "元のメッセージをダウンロードして、別のメール アプリで開いてください。",
+    "downloadOriginal": "元のメッセージをダウンロード",
+    "downloading": "メッセージをダウンロードしています",
+    "attachments": "添付ファイル",
+    "download": "ダウンロード",
+    "unnamedAttachment": "添付ファイル",
+    "imageTooLarge": "画像が大きすぎるため表示できません",
+    "noContent": "このメッセージには本文がありません。",
+    "noResults": "一致するメッセージはありません",
+    "noResultsDescription": "別のキーワードをお試しください。ごみ箱内のメッセージは検索されません。",
+    "empty": {
+      "inbox": "まだメールはありません",
+      "starred": "スター付きのメッセージはありません",
+      "archive": "アーカイブしたメッセージはありません",
+      "trash": "ごみ箱は空です"
+    },
+    "done": {
+      "archived": "アーカイブしました ({{count}})",
+      "trashed": "ごみ箱に移動しました ({{count}})",
+      "restored": "元に戻しました ({{count}})",
+      "deleted": "完全に削除しました ({{count}})"
+    }
   },
   "settings": {
     "language": "言語",
@@ -150,7 +207,8 @@
     "invalid_display_name": "差出人名が長すぎるか、改行が含まれています。1 行で 100 文字以内にしてください。",
     "invalid_email": "有効なメールアドレスではありません。確認してもう一度お試しください。",
     "target_exists": "この転送先アドレスは既に追加されています。",
-    "target_in_use": "まだこのアドレスに転送しているアドレスがあります。それらから削除することを確認してください。"
+    "target_in_use": "まだこのアドレスに転送しているアドレスがあります。それらから削除することを確認してください。",
+    "not_in_trash": "完全に削除できるのはごみ箱内のメッセージだけです。先にごみ箱に移動してください。"
   },
   "common": {
     "cancel": "キャンセル"

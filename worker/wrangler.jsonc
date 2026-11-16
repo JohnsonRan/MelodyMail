@@ -32,6 +32,9 @@
     "producers": [{ "binding": "INBOUND", "queue": "melodymail-inbound" }],
     "consumers": [{ "queue": "melodymail-inbound", "max_batch_size": 1, "max_retries": 5 }]
   },
+  // Real-time push to open mailbox pages. Workers Free allows only SQLite-backed Durable Objects.
+  "durable_objects": { "bindings": [{ "name": "HUB", "class_name": "Hub" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Hub"] }],
   // One trigger (Workers Free allows 5 per account): re-enqueue stuck messages. M7 adds the R2
   // orphan sweep and trash clean-up here.
   "triggers": { "crons": ["*/15 * * * *"] },

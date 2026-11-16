@@ -1,6 +1,7 @@
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import type { AppEnv } from "../env";
 import { fail, readJson, str } from "../http";
+import { closeHubSessions } from "../mail/hub";
 import { publicRoute } from "../routing";
 import { checkAssertion, counterUpdate } from "./assertion";
 import { clearChallengeCookie, findChallenge, saveChallenge } from "./challenge";
@@ -167,12 +168,16 @@ export function registerAuthRoutes(auth: Hono<AppEnv>): void {
     if (swapped.meta.changes !== 1) return fail(c, 401, "verification_failed");
     const session = await startSession(c, now, true);
     // Whoever needed recovery may have lost a device: every other session ends (owner ruling).
-    await db.batch([
+    const [, ended] = await db.batch([
       session.insert,
-      db.prepare("DELETE FROM sessions WHERE id != ?").bind(session.id),
+      db.prepare("DELETE FROM sessions WHERE id != ? RETURNING id").bind(session.id),
       clearFailures(db, ip),
       audit(c, "recover", now),
     ]);
+    await closeHubSessions(
+      c.env,
+      ((ended?.results ?? []) as { id: string }[]).map((s) => s.id),
+    );
     setSessionCookie(c, session.token);
     return c.json({ recoveryKey });
   });

@@ -194,5 +194,22 @@ export const messages = sqliteTable(
     // The cron step finds messages still waiting for the parser.
     index("messages_status_received").on(t.status, t.receivedAt),
     index("messages_thread_key").on(t.threadKey),
+    // M4 folder lists: keyset pagination on (received_at DESC, id DESC) inside one folder.
+    index("messages_folder_received").on(
+      t.trashed,
+      t.archived,
+      sql`${t.receivedAt} DESC`,
+      sql`${t.id} DESC`,
+    ),
+    index("messages_starred_received").on(
+      t.starred,
+      t.trashed,
+      sql`${t.receivedAt} DESC`,
+      sql`${t.id} DESC`,
+    ),
+    // Unread counts read only unread rows.
+    index("messages_unread")
+      .on(t.trashed, t.archived, t.starred, t.addressId)
+      .where(sql`${t.read} = 0`),
   ],
 );

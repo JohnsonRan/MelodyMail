@@ -50,6 +50,13 @@
       "when": 1794763086796,
       "tag": "0006_parse_attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1794765377528,
+      "tag": "0007_mailbox_indexes",
+      "breakpoints": true
     }
   ]
 }
