@@ -105,12 +105,13 @@ Matching rules:
   `worker/src/mail/parse.ts`. `Headers.get` joins repeated headers with `, `.
 - Of each of `From`, `To` and `Cc`, only the first 50 addresses are read (owner ruling
   2026-11-17); an address after the 50th never matches. The raw value is cut before parsing, at
-  its 50th comma or semicolon outside quoted strings, comments and angle brackets; a semicolon also
-  ends an angle bracket left open, as postal-mime ends an open angle-addr at a group's `;`.
-  Commas inside a group count, so a group cannot hide more addresses (the header may then keep
-  fewer than 50, always a prefix of them). This bounds both the parse and the comparisons per
-  header. The first 50 parsed addresses are kept as a backstop, in case the cut and the parser
-  disagree on some other input.
+  its 50th raw `,` or `;`, counting every one, inside quoted strings, comments, angle brackets and
+  domain literals too. postal-mime's tokenizer starts a new address only at one of these two
+  characters, so the cut can never come later than the tokenizer's 50th address, whatever its
+  quoting rules make of the rest; two attempts to mirror those rules missed cases (a group's
+  unclosed `<`, a domain literal inside `<>`). A display name or group holding `,` or `;` makes
+  the header keep fewer than 50 addresses, always a prefix of them (accepted). This bounds both the
+  parse and the comparisons per header. The first 50 parsed addresses are kept as a backstop.
 - `subject` and display names are decoded with postal-mime's `decodeWords`; addresses are split
   with its `addressParser`. postal-mime 4.2.1, already a Worker dependency, exports both
   (`worker/node_modules/postal-mime/README.md`, "addressParser()", "decodeWords()").
@@ -246,8 +247,8 @@ Benchmark `worker/bench/rules.ts` (`bun run bench:rules`), in the style of `benc
 - it includes loading: `JSON.parse` of 50 rule rows;
 - 3 runs of 200 per input on the dev workstation, load recorded;
 - limit: 1 ms p95 per input, a `REQUIREMENTS.md` "Numbers" row; the adversarial worst headers
-  (100-address `From`, `To` and `Cc`, or 2,000 characters of short addresses or of groups, with
-  the encoded subject and the repeated header), alone or with
+  (100-address `From`, `To` and `Cc`, or 2,000 characters of short addresses, of short addresses
+  behind `g:<;` or `<a@[(]>,`, or of groups, with the encoded subject and the repeated header), alone or with
   the 20 capped header names, have their own 2 ms p95 budget (owner ruling 2026-11-17). The
   script exits 1 when any input reaches its own budget.
 

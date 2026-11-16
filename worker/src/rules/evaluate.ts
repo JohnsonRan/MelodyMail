@@ -63,36 +63,19 @@ function headerValue(source: MailSource, name: string): string | null {
 }
 
 /**
- * An address header cut before its `max`-th top-level separator, so the parser sees at most `max`
- * addresses. A separator is a comma or a semicolon outside a quoted string, a comment in
- * parentheses and angle brackets. A semicolon also ends an angle bracket left open: postal-mime's
- * tokenizer ends an open angle-addr at a group's ";" (node_modules/postal-mime/src/
- * address-parser.ts, checkChar, `if (!nested && chr === ';' && this.inGroup)`, 4.2.1 line 1326),
- * and counting it everywhere only cuts earlier. Commas inside a group (`name: a, b;`) count too,
- * so a group cannot hide more addresses; a header may then keep fewer than `max` (a prefix of
- * them). One linear pass, no regular expression. addressValues still keeps only the first `max`
- * parsed addresses in case the scanner and the tokenizer disagree elsewhere.
+ * An address header cut before its `max`-th raw "," or ";", counting every one, inside quoted
+ * strings, comments, angle brackets and domain literals too. postal-mime's tokenizer starts a new
+ * address only at one of these two characters, so each address after the first sits behind one
+ * of them; cutting before the `max`-th leaves at most `max` addresses, whatever the tokenizer
+ * makes of the rest. The cut never mirrors the tokenizer's quoting rules, which earlier attempts
+ * got wrong on groups and domain literals. A display name holding "," or ";" makes the header
+ * keep fewer than `max` addresses, always a prefix of them (accepted, docs/M6-rules-api.md).
  */
 export function cutAddressList(raw: string, max: number): string {
   let separators = 0;
-  let quoted = false;
-  let comment = 0;
-  let angle = false;
   for (let i = 0; i < raw.length; i++) {
     const ch = raw[i];
-    if (quoted || comment > 0) {
-      if (ch === "\\") i++;
-      else if (quoted && ch === '"') quoted = false;
-      else if (!quoted && ch === "(") comment++;
-      else if (!quoted && ch === ")") comment--;
-    } else if (ch === '"') quoted = true;
-    else if (ch === "(") comment = 1;
-    else if (angle && ch !== ";") angle = ch !== ">";
-    else if (ch === "<") angle = true;
-    else if (ch === "," || ch === ";") {
-      angle = false;
-      if (++separators === max) return raw.slice(0, i);
-    }
+    if ((ch === "," || ch === ";") && ++separators === max) return raw.slice(0, i);
   }
   return raw;
 }

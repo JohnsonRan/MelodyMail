@@ -108,12 +108,15 @@ describe("rule conditions", () => {
     expect(hits({ field: "to", op: "equals", value: "a51@x.io" }, s)).toBe(false);
   });
 
-  it("cuts a group's unclosed angle bracket at its semicolon, as the parser does", () => {
+  it("reads no address past the 50th behind a group's open < or a domain literal in <>", () => {
     expect(
       addressParser(cutAddressList("g:<;a@x,b@x,c@x", 2), { flatten: true }).length,
     ).toBeLessThanOrEqual(2);
-    const to = `g:<;${Array.from({ length: 60 }, (_, i) => `a${i + 1}@x.io`).join(",")}`;
-    expect(hits({ field: "to", op: "equals", value: "a60@x.io" }, source({ To: to }))).toBe(false);
+    const list = Array.from({ length: 60 }, (_, i) => `a${i + 1}@x.io`).join(",");
+    for (const prefix of ["g:<;", "<a@[(]>,"]) {
+      const s = source({ To: `${prefix}${list}` });
+      expect(hits({ field: "to", op: "equals", value: "a60@x.io" }, s), prefix).toBe(false);
+    }
   });
 
   it("never leaves more addresses than the cut allows (seeded differential fuzz)", () => {
@@ -142,6 +145,13 @@ describe("rule conditions", () => {
       "\\",
       ":",
       "@",
+      "@[",
+      "@ [",
+      "@\u00a0[",
+      "@\r[",
+      "@(c)[",
+      '@"q"[',
+      "<a@[",
     ];
     let seed = 0x5eed;
     const random = () => {
@@ -160,14 +170,11 @@ describe("rule conditions", () => {
     }
   });
 
-  it("cuts an address list before parsing, at separators outside quotes, comments and <>", () => {
+  it("cuts an address list before its max-th raw comma or semicolon, quoted or not", () => {
     expect(cutAddressList("a@x, b@x; c@x", 2)).toBe("a@x, b@x");
-    expect(cutAddressList('"Doe, J" <j@x>, b@x, c@x', 2)).toBe('"Doe, J" <j@x>, b@x');
-    expect(cutAddressList('"a \\" , b" <j@x>, b@x, c@x', 2)).toBe('"a \\" , b" <j@x>, b@x');
-    expect(cutAddressList("j@x (Doe (J), K), b@x, c@x", 2)).toBe("j@x (Doe (J), K), b@x");
-    expect(cutAddressList("<@r1,@r2:j@x>, b@x, c@x", 2)).toBe("<@r1,@r2:j@x>, b@x");
-    // Commas inside a group count, so a group cannot hide addresses.
-    expect(cutAddressList("g: a@x, b@x, c@x; d@x", 2)).toBe("g: a@x, b@x");
+    // Every raw separator counts: a display name with a comma keeps fewer addresses, a prefix.
+    expect(cutAddressList('"Doe, J" <j@x>, b@x, c@x', 2)).toBe('"Doe, J" <j@x>');
+    expect(cutAddressList("<@r1,@r2:j@x>, b@x", 2)).toBe("<@r1,@r2:j@x>");
     expect(cutAddressList("a@x, b@x", 50)).toBe("a@x, b@x");
   });
 
