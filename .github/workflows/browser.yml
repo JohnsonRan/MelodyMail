@@ -6,7 +6,12 @@ name: browser
 # night on main, which covers merges that skipped it.
 on:
   pull_request:
-    paths: ["web/**", "package.json", "bun.lock", ".github/workflows/browser.yml"]
+    paths:
+      - "web/**"
+      - "worker/src/telegram/card.html"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/browser.yml"
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:

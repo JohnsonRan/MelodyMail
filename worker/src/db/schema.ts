@@ -348,3 +348,42 @@ export const sendQuota = sqliteTable(
   },
   (t) => [check("send_quota_single_row", sql`${t.id} = 1`)],
 );
+
+// M5b: Telegram notifications (docs/M5b-telegram.md, "Data"). One bound private chat at most. The
+// webhook secret and the pending link code are stored as SHA-256 hex only.
+export const telegram = sqliteTable(
+  "telegram",
+  {
+    id: integer("id").primaryKey(),
+    botUsername: text("bot_username").notNull(),
+    // The https:// origin Connect ran on; message links in cards are built from it.
+    origin: text("origin").notNull(),
+    webhookSecretHash: text("webhook_secret_hash").notNull(),
+    linkCodeHash: text("link_code_hash"),
+    linkExpiresAt: integer("link_expires_at"),
+    chatId: integer("chat_id"),
+    chatLabel: text("chat_label"),
+    language: text("language"),
+    boundAt: integer("bound_at"),
+    // A short code of the last failed send (blocked, rate_limited, failed), cleared on success.
+    lastError: text("last_error"),
+    lastErrorAt: integer("last_error_at"),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [check("telegram_single_row", sql`${t.id} = 1`)],
+);
+
+// One row per card sent; the primary key is the send claim, so a message gets one card.
+export const telegramCards = sqliteTable(
+  "telegram_cards",
+  {
+    messageId: text("message_id")
+      .primaryKey()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    chatId: integer("chat_id").notNull(),
+    // Null until sendWidget returns, and for a card that went out as a plain message.
+    tgMessageId: integer("tg_message_id"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("telegram_cards_chat_message").on(t.chatId, t.tgMessageId)],
+);

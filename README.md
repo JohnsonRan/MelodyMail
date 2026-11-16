@@ -201,6 +201,44 @@ bun run wrangler d1 execute melodymail --remote --command "DELETE FROM push_subs
 Signing a device out, or revoking its session, also ends its notifications until that device
 signs in again.
 
+### Telegram
+
+MelodyMail can also send a card to one private Telegram chat for each new mail: the sender, the
+subject and the address it arrived at, never the message text. The card's buttons open the
+message, mark it read or unread, archive it or move it back to the Inbox, and star it or remove
+the star. Telegram can read these fields, because bot messages are not end-to-end encrypted.
+A card is sent even while a MelodyMail page is open; mute the chat in Telegram to silence it.
+
+Telegram currently refuses widgets from general bots (`INPUT_MEDIA_WIDGET_NOT_ALLOWED`), so cards
+arrive as plain messages: the sender and the subject, with the same four buttons below them. The
+arrival address is shown only on a widget card. Once Telegram allows widgets again, new cards
+arrive as widgets without any change.
+
+Telegram needs the deployed `https://` address: it cannot reach `localhost`, and it delivers
+updates only to ports 443, 80, 88 and 8443 (MelodyMail accepts 443, 88 and 8443, all `https:`).
+
+1. Apply migration 0011 after deploying this version (`bun run --cwd worker db:migrate:remote`).
+2. In Telegram, open [@BotFather](https://t.me/botfather), send `/newbot` and follow the steps.
+   BotFather answers with the bot's token.
+3. Store the token from `worker/`:
+
+   ```sh
+   bun run wrangler secret put TELEGRAM_BOT_TOKEN
+   ```
+
+4. Open Settings > Notifications on the deployed address and choose Connect Telegram. Confirm
+   with your Passkey, then choose Open Telegram and press Start in the chat with the bot (or send
+   the `/start` command the page shows). The code is valid for 10 minutes and works once.
+
+Connect registers the webhook (`/api/webhooks/telegram`) on the address the page is open on, with
+a new secret each time; run it again after moving to another domain or changing the token. After
+upgrading from a version without buttons on plain messages, run Connect again: it registers the
+webhook for button taps (`callback_query`), and until then those buttons do nothing.
+Disconnect removes the webhook and the binding; buttons on old cards then stop working. A
+recovery (`POST /api/auth/recover`) also disconnects Telegram; connect again afterwards. Deleting
+a mail for good does not delete its card in Telegram; its buttons then say the mail was deleted.
+If the bot stops reacting, run Connect again.
+
 ## Sending
 
 MelodyMail sends mail through [Resend](https://resend.com). You write in Markdown; the browser

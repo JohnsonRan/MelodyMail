@@ -16,9 +16,14 @@ export async function sha256Hex(value: string): Promise<string> {
  * depend on where they differ or on the length of the secret.
  */
 export async function secretsEqual(a: string, b: string): Promise<boolean> {
-  const [ha, hb] = await Promise.all([sha256Hex(a), sha256Hex(b)]);
-  let diff = 0;
-  for (let i = 0; i < ha.length; i++) diff |= ha.charCodeAt(i) ^ hb.charCodeAt(i);
+  return hashMatches(a, await sha256Hex(b));
+}
+
+/** Whether `value` hashes to `hash` (SHA-256 hex), compared without an early exit. */
+export async function hashMatches(value: string, hash: string): Promise<boolean> {
+  const hv = await sha256Hex(value);
+  let diff = hv.length ^ hash.length;
+  for (let i = 0; i < hv.length; i++) diff |= hv.charCodeAt(i) ^ hash.charCodeAt(i);
   return diff === 0;
 }
 

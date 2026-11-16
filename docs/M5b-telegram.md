@@ -626,6 +626,64 @@ one.
 5. Permanently deleting a mail does not delete its Telegram message (deferred).
 6. When Telegram refuses the widget, the Worker sends a plain message with an Open button.
 
+## Addendum: widgets refused for general bots (2026-11-16)
+
+### What the tunnel test found
+
+The real-bot test (ruling 1) bound the chat through the webhook, but every `sendWidget` call
+answered `400 Bad Request: INPUT_MEDIA_WIDGET_NOT_ALLOWED`. Telegram stopped general bots from
+sending widgets, private chats included, on 2026-11-13 at about 15:00 UTC. The Bot API maintainer
+confirmed it in tdlib/telegram-bot-api issue 947 ("currently, general bots aren't allowed to use
+widgets even in private chats"). No restoration date is given, and the error is not on the Bot API
+pages. The plain fallback message (ruling 6) arrived, and its Open button opened the mail.
+
+### Owner ruling 7 (2026-11-16)
+
+Keep the widget path unchanged, so cards turn into widgets again on their own once Telegram allows
+it. Upgrade the fallback message to carry the same four actions as inline keyboard buttons.
+
+### The fallback message
+
+- **Send:** `sendMessage` with the caption as plain text (no `parse_mode`), `protect_content:
+  true`, and an inline keyboard. Row 1: Open (a `url` button, as today) and the read button.
+  Row 2: the archive button and the star button.
+- **Labels toggle** like the widget's (ruling 4): Mark as read / Mark as unread, Archive / Move to
+  Inbox, Star / Remove star, in the binding's language, from the same copy the card uses.
+- **Callback data:** `<action>:<value>`, exactly the widget's request format (`read`, `arch`,
+  `star`; `0` or `1`, the target value). It names no message.
+- **Card row:** the fallback stores its Telegram `message_id` in `telegram_cards.tg_message_id`
+  like a widget does. A column `kind` (`widget` or `message`) is not needed: the update type
+  (`widget_query` or `callback_query`) says which edit to make.
+- **The test card** stays a plain message with no action buttons; it names no mail.
+
+### Actions from `callback_query`
+
+- `allowed_updates` becomes `["message", "widget_query", "callback_query"]`. A webhook registered
+  before this change keeps the old list until Connect runs again; the README says so. There is no
+  deployed instance yet.
+- **Checks, in order, the same as for `widget_query`:** a chat is bound; the query has a
+  `message` (a query from an inline message has none and is refused); `message.chat.type` is
+  `private`; `message.chat.id` and `from.id` both equal the bound `chat_id`. Otherwise answer
+  with a short notice and change nothing.
+- **Card lookup** by `(message.chat.id, message.message_id)`; the message comes from the card row,
+  never from the data.
+- **Card not found:** answer "This message was deleted in MelodyMail" and leave the message as it
+  is. No edit, so a card whose send result was lost is not marked deleted (the deferred Low from
+  the review does not arise on this path).
+- **Perform:** the same `updateMessageFlags` the widget path uses; then
+  `notifyHub(env, { type: "changed", id })`.
+- **Answer and update:** `answerCallbackQuery` rides in the webhook response with a short notice
+  (for example "Marked as read"). `editMessageReplyMarkup` sends the keyboard with the new labels
+  as a separate call; `message is not modified` counts as done; a failed edit is logged.
+- **Bad data:** answer a short notice, change nothing.
+
+### Proof
+
+The same bar as the rest of M5b: worker tests against real D1 with the Bot API stubbed for every
+check above, including another chat, another sender, a group, an inline-message query, bad data,
+a missing card, toggling each flag both ways, the keyboard labels after the edit, and the
+`allowed_updates` list. Every behaviour hunk ablated. Then the real-bot tunnel test again.
+
 ## Appendix: measured widget draft
 
 The draft measured above (3,828 bytes, 1,993 after zlib level 9). It is the starting point for

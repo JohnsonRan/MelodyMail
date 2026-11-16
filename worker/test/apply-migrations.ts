@@ -7,6 +7,8 @@ await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 // Storage lives as long as the test file, so each test starts from empty tables.
 // Children before parents: D1 enforces foreign keys.
 const TABLES = [
+  "telegram_cards",
+  "telegram",
   "messages_fts",
   "messages",
   "drafts",

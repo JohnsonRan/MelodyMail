@@ -276,7 +276,11 @@
     "send_rejected": "メールサービスがこのメッセージを拒否しました。宛先と差出人を確認してください。",
     "send_failed": "メールサービスに接続できませんでした。しばらくしてからもう一度送信してください。",
     "already_sent": "この下書きは別のウィンドウで送信済みです。",
-    "draft_conflict": "この下書きは別のウィンドウで変更されました。開き直してください。"
+    "draft_conflict": "この下書きは別のウィンドウで変更されました。開き直してください。",
+    "telegram_not_configured": "このサーバーでは Telegram が設定されていません。設定方法は README の「Notifications」セクションを参照してください。",
+    "telegram_needs_https": "Telegram は、デプロイされた MelodyMail の https:// アドレスにしかアクセスできません。そのアドレスでこのページを開いてください。",
+    "telegram_not_connected": "Telegram が接続されていません。先に接続してください。",
+    "telegram_failed": "Telegram がリクエストを受け付けませんでした。数分後にもう一度お試しください。"
   },
   "common": {
     "cancel": "キャンセル"
@@ -426,6 +430,39 @@
         "title": "最初に MelodyMail をホーム画面に追加してください",
         "description": "iPhone と iPad では、ホーム画面から開いたアプリだけが通知を受け取れます。Safari で [共有] をタップし、[ホーム画面に追加] をタップしてください。"
       }
+    },
+    "telegram": {
+      "sectionTitle": "Telegram",
+      "description": "新着メールごとに、差出人、件名、受信したアドレスを載せたカードを Telegram に送ります。メールの本文は送りません。ボットのメッセージはエンドツーエンドで暗号化されないため、Telegram はこれらの内容を読み取れます。",
+      "notSetUpTitle": "このサーバーでは Telegram が設定されていません",
+      "notSetUpDescription": "先に Worker にボットのトークンを追加してください。設定方法は README の「Notifications」セクションを参照してください。",
+      "httpsTitle": "Telegram にはデプロイ先のアドレスが必要です",
+      "httpsDescription": "Telegram は、デプロイされた MelodyMail の https:// アドレスにしかアクセスできません。接続するには、そのアドレスでこのページを開いてください。",
+      "connect": "Telegram を接続",
+      "openTelegram": "Telegram を開く",
+      "orSend": "次に、ボットとのチャットで [開始] を押すか、次のコマンドをボットに送信してください:",
+      "copy": "コマンドをコピー",
+      "copied": "コマンドをコピーしました",
+      "expires": "このコードの有効期限は {{time}} です。",
+      "codeHidden": "使用待ちのコードがありますが、コードは一度しか表示されません。接続するには新しいコードを作成してください。",
+      "newCode": "新しいコードを作成",
+      "cancel": "キャンセル",
+      "expired": "コードの有効期限が切れました。もう一度接続して新しいコードを取得してください。",
+      "connected": "Telegram を接続しました。",
+      "connectedTo": "{{date}} から {{label}} に接続しています。",
+      "lastErrorTitle": "前回のカードを送信できませんでした",
+      "lastErrorDescription": "{{reason}}テスト カードを送信して確認してください。",
+      "reason": {
+        "blocked": "ボットが Telegram でブロックされています。",
+        "rate_limited": "Telegram から送信の間隔を空けるよう求められました。",
+        "failed": "Telegram がカードを受け付けませんでした。"
+      },
+      "sendTest": "テスト カードを送信",
+      "testSent": "テスト カードを送信しました。数秒後に Telegram に表示されます。",
+      "disconnect": "接続を解除",
+      "disconnectTitle": "Telegram との接続を解除しますか?",
+      "disconnectDescription": "MelodyMail はカードの送信を停止し、チャットにある既存のカードのボタンも使えなくなります。",
+      "disconnected": "Telegram との接続を解除しました。"
     }
   },
   "quota": {

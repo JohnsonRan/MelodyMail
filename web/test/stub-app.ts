@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Server, ServerWebSocket } from "bun";
 import { SendStub } from "./stub-send";
+import { TelegramStub } from "./stub-telegram";
 
 // The built app (web/dist) behind an in-memory stand-in for the Worker API, shared by the end to
 // end suites. It answers like the routes in worker/src; the Worker itself has its own suite.
@@ -117,6 +118,7 @@ export type PushCall = { method: string; path: string; body: unknown };
 export class StubApp {
   store = seed();
   send = new SendStub();
+  telegram = new TelegramStub();
   patches: { path: string; body: Record<string, unknown> }[] = [];
   push: PushCall[] = [];
   /** null answers GET /api/push/key with 404, as a Worker without VAPID keys does. */
@@ -160,6 +162,7 @@ export class StubApp {
   reset(): void {
     this.store = seed();
     this.send = new SendStub();
+    this.telegram = new TelegramStub();
     this.patches = [];
     this.push = [];
     this.pushKey = null;
@@ -202,6 +205,8 @@ export class StubApp {
       }
       return json({ ok: true });
     }
+    const telegram = this.telegram.handle(req, url);
+    if (telegram) return telegram;
     const sending = await this.send.handle(req, url, this.store);
     if (sending) return sending;
     if (path === "/api/messages" && req.method === "GET") {

@@ -1,0 +1,73 @@
+<style>
+#f{font-weight:600}
+#s{margin:2px 0}
+#f,#s,#t{overflow-wrap:anywhere}
+#t,#m{color:var(--tg-theme-hint-color);font-size:.875em}
+#m{margin-top:6px}
+#b{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
+#b button{width:100%}
+.d #b{display:none}
+</style>
+<div id="f"></div><div id="s"></div><div id="t"></div>
+<div id="b"><button id="o"></button><button id="r"></button><button id="a"></button><button id="x"></button></div>
+<div id="m"></div>
+<script>
+const W = window.TelegramWidget;
+const L = {
+  en: {o:"Open",r:["Mark as read","Mark as unread"],a:["Archive","Move to Inbox"],x:["Star","Remove star"],
+    n:"(no subject)",to:"To: ",w:"Working…",g:"This message was deleted in MelodyMail.",
+    u:"Telegram is no longer connected to MelodyMail.",RATE_LIMITED:"Too many taps. Wait a few seconds and try again.",
+    f:"MelodyMail didn't answer. Try again.",k:"This is a test card. The buttons work on cards for real mail.",l:"This link can't be opened."},
+  zh: {o:"打开",r:["标记为已读","标记为未读"],a:["存档","移到收件箱"],x:["加星标","取消星标"],
+    n:"（无主题）",to:"收件人：",w:"正在处理…",g:"这封邮件已在 MelodyMail 中删除。",
+    u:"Telegram 已与 MelodyMail 断开连接。",RATE_LIMITED:"点得太快了。请等几秒后重试。",
+    f:"MelodyMail 没有响应。请重试。",k:"这是测试卡片。真实邮件的卡片上可以使用这些按钮。",l:"无法打开此链接。"},
+  ja: {o:"開く",r:["既読にする","未読にする"],a:["アーカイブ","受信トレイに移動"],x:["スターを付ける","スターを外す"],
+    n:"(件名なし)",to:"宛先: ",w:"処理中…",g:"このメールは MelodyMail で削除されました。",
+    u:"Telegram と MelodyMail の接続は解除されています。",RATE_LIMITED:"操作が多すぎます。数秒待ってからもう一度お試しください。",
+    f:"MelodyMail から応答がありません。もう一度お試しください。",k:"これはテスト用のカードです。ボタンは実際のメールのカードで使えます。",l:"このリンクは開けません。"}
+};
+const T = L[String(navigator.language || "en").slice(0, 2).toLowerCase()] || L.en;
+const $ = (id) => document.getElementById(id);
+let d = {};
+let busy = false;
+
+function parse(text) {
+  try { const v = JSON.parse(text); return v && typeof v === "object" ? v : {}; } catch (e) { return {}; }
+}
+function say(text) { $("m").textContent = text || ""; $("m").hidden = !text; }
+function render() {
+  document.body.className = d.g ? "d" : "";
+  if (d.g) { $("f").textContent = ""; $("s").textContent = ""; $("t").textContent = ""; say(T.g); return; }
+  $("f").textContent = d.f || "";
+  $("s").textContent = d.s || T.n;
+  $("t").textContent = d.t ? T.to + d.t : "";
+  $("o").textContent = T.o;
+  $("r").textContent = T.r[d.r ? 1 : 0];
+  $("a").textContent = T.a[d.a ? 1 : 0];
+  $("x").textContent = T.x[d.st ? 1 : 0];
+  for (const id of ["r", "a", "x"]) $(id).disabled = busy;
+}
+function act(name, on) {
+  if (d.x) return say(T.k);
+  busy = true; say(T.w); render();
+  W.request(name + ":" + (on ? 1 : 0)).then((answer) => {
+    const v = parse(answer.result);
+    if (v.e === "gone") d = { g: 1 };
+    else if (v.e === "unbound") say(T.u);
+    else if (v.e) say(T.f);
+    else { Object.assign(d, v); say(""); }
+  }, (err) => say(T[err && err.code] || T.f)).finally(() => { busy = false; render(); });
+}
+$("o").onclick = () => { try { W.openLink(d.u); } catch (e) { say(T.l); } };
+$("r").onclick = () => act("read", !d.r);
+$("a").onclick = () => act("arch", !d.a);
+$("x").onclick = () => act("star", !d.st);
+if (W) {
+  d = parse(W.chatData);
+  W.onEvent("chatDataChanged", () => { d = parse(W.chatData); render(); });
+}
+say("");
+render();
+</script>
+

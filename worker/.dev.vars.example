@@ -11,3 +11,6 @@ VAPID_SUBJECT=
 RESEND_API_KEY=
 RESEND_WEBHOOK_SECRET=
 UPLOAD_URL_KEY=
+# Telegram notifications (README, "Notifications", "Telegram"). Leave empty to keep Telegram off.
+# Connect needs an https:// address Telegram can reach, so it cannot run on localhost.
+TELEGRAM_BOT_TOKEN=
