@@ -4,7 +4,7 @@ import { fail, log, readJson } from "../http";
 import { notifyHub } from "../mail/hub";
 import { prepare, type SentCopy } from "./outgoing";
 import { callResend, type Quota, type SendError } from "./resend";
-import { signedBlobUrl } from "./signed-url";
+import { SIGNED_URL_TTL_S, signedBlobUrl } from "./signed-url";
 import { idempotencyKey } from "./validate";
 
 // POST /api/messages/send (docs/M5-sending.md, "Sending"). The idempotency key is the client's,
@@ -246,6 +246,17 @@ export function registerSendRoute(messages: Hono<AppEnv>): void {
       await markFailed(db, existing.id, "send_failed");
       return fail(c, 500, "internal");
     }
-    return deliver(c, existing.id, key, await object.json<SentCopy>());
+    let copy = await object.json<SentCopy>();
+    const nowS = Math.floor(now / 1000);
+    if (copy.attachments.length > 0 && copy.attachmentsExpireAt <= nowS) {
+      // Past the expiry, Resend's 24-hour idempotency window has closed too, so a fresh expiry
+      // cannot conflict with the first attempt. It is written back, so later retries stay
+      // byte-identical (owner ruling 2026-11-16).
+      copy = { ...copy, attachmentsExpireAt: nowS + SIGNED_URL_TTL_S };
+      await c.env.MAIL.put(existing.key, JSON.stringify(copy), {
+        httpMetadata: { contentType: "application/json" },
+      });
+    }
+    return deliver(c, existing.id, key, copy);
   });
 }

@@ -56,6 +56,43 @@ describe("retrying a send", () => {
   });
 });
 
+describe("retrying after the signed URLs expired", () => {
+  it("re-signs with a fresh expiry once and keeps later retries identical", async () => {
+    const client = await signedIn();
+    const from = await sender();
+    const fileId = await uploaded(client);
+    const calls = stubResend((n) => (n < 2 ? resendError(500, "application_error") : resendOk()));
+    const body = sendBody(from, { uploadIds: [fileId] });
+    expect((await send(client, body)).status).toBe(502);
+    const exp = (n: number) => {
+      const [a] = (calls[n]?.body.attachments ?? []) as { path: string }[];
+      return Number(new URL(a?.path ?? "").searchParams.get("exp"));
+    };
+
+    // 25 hours later the stored expiry has passed: the retry signs a fresh one.
+    const later = Date.now() + 25 * 3600_000;
+    // The session would have lapsed by then; it is kept alive for the test.
+    await env.DB.prepare("UPDATE sessions SET expires_at = ?, last_seen_at = ?")
+      .bind(later + 86_400_000, later)
+      .run();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(later);
+    expect((await send(client, body)).status).toBe(502);
+    expect(exp(1)).toBe(Math.floor(later / 1000) + 24 * 3600);
+    const row = await env.DB.prepare("SELECT r2_key AS key FROM messages WHERE idempotency_key = ?")
+      .bind(body.idempotencyKey)
+      .first<{ key: string }>();
+    const stored = await (await env.MAIL.get(row?.key ?? ""))?.json<{
+      attachmentsExpireAt: number;
+    }>();
+    expect(stored?.attachmentsExpireAt).toBe(exp(1));
+
+    // The next retry, ten minutes on, sends the same body again.
+    clock.mockReturnValue(later + 10 * 60_000);
+    expect((await send(client, body)).status).toBe(200);
+    expect(JSON.stringify(calls[2]?.body)).toBe(JSON.stringify(calls[1]?.body));
+  });
+});
+
 describe("retrying through another hostname", () => {
   it("signs attachment URLs with the origin of the first attempt", async () => {
     const client = await signedIn();
