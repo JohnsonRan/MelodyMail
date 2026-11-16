@@ -1235,19 +1235,22 @@ language choice of the worker's fallback copy.
 8. **One subscription per session.** A new endpoint on the same session replaces the old row, so
    DELETE "the current session's subscription" is unambiguous.
 
+### Owner rulings (2026-11-16, reply "1. 拆出去 2. 可以 3. 可以。推送测试看看")
+
+1. The PWA suite is split out: `bun run test:pwa`, `.github/workflows/pwa.yml` (nightly, by hand,
+   and on pull requests that touch the service worker or its build). Its limit is 15 s (baseline
+   12.3 s plus 20%).
+2. Notification content stays as built: sender, subject and arrival address, no body.
+3. The icon is approved.
+4. A real push test is allowed: from local `wrangler dev` to the owner's own browser through its
+   push service.
+
 ### Open questions for the owner
 
-1. **Browser-tier limit.** `bun run test:browser` now runs 57 tests in 30.5, 31.3 and 34.3 s wall
-   (3 runs including the build, CPU load about 2%) against the 21 s limit. The suite as it was
-   before M4b measured 20.9–21.7 s on this host today (17.4 s at the recorded baseline). The PWA suite adds about 10 s (a
-   persistent Chromium profile, a reload under the worker, offline recovery, a worker update).
-   Proposed: limit 37 s (baseline 31 s plus 20%), or move the PWA suite to its own nightly job. The
-   limit is unchanged until you decide.
-2. **Notification content** (design question 1): built with the recommended default, sender and
-   subject (plus the arrival address), no body. "Only New mail" is a change in `pushNewMail`.
-3. **Real push test** (design question 2): not done; no request reached a push service.
-4. **Icon**: `web/public/logo.svg`, an envelope with an eighth note, white on the Astryx neutral
-   accent (#1b1b1b); see the screenshots and `web/public/pwa-512x512.png`.
+1. **Browser-tier limit after the split.** `bun run test:browser` (47 tests) measures 21.44,
+   21.59 and 22.30 s against 21 s. Main before M4b measured 19.9 s on the same host the same day,
+   so the host is slower than at the 17.4 s baseline, and the new dark-reading tests add about 2 s.
+   Proposed: 26 s (21.8 s plus 20%). The limit is unchanged until you decide.
 
 ### Deferred
 
