@@ -172,6 +172,10 @@ export function registerAuthRoutes(auth: Hono<AppEnv>): void {
       session.insert,
       db.prepare("DELETE FROM sessions WHERE id != ? RETURNING id").bind(session.id),
       clearFailures(db, ip),
+      // The bound Telegram chat receives subjects and can change flags: an access path a
+      // recovery must not leave open. With the row gone the webhook answers 404.
+      db.prepare("DELETE FROM telegram_cards"),
+      db.prepare("DELETE FROM telegram"),
       audit(c, "recover", now),
     ]);
     await closeHubSessions(

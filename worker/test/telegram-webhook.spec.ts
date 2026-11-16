@@ -1,6 +1,6 @@
 import { env, exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it } from "vitest";
-import { ORIGIN } from "./helpers";
+import { Client, ORIGIN, setupOwner, totpCode } from "./helpers";
 import { seedMessage } from "./mailbox-helpers";
 import { signedIn } from "./send-helpers";
 import {
@@ -105,6 +105,20 @@ describe("binding a chat", () => {
     await cardFor("m1", 5, 999);
     await webhook(message("/start code-2"));
     expect((await telegramRow())?.chatId).toBe(CHAT);
+    expect(await cardRows()).toEqual([]);
+  });
+
+  it("is removed by an account recovery", async () => {
+    const owner = await setupOwner();
+    await seedTelegram();
+    await seedMessage({ id: "m1" });
+    await cardFor("m1");
+    const res = await new Client().request("POST", "/api/auth/recover", {
+      recoveryKey: owner.recoveryKey,
+      totpCode: await totpCode(owner.totpSecret, 1),
+    });
+    expect(res.status).toBe(200);
+    expect(await telegramRow()).toBeNull();
     expect(await cardRows()).toEqual([]);
   });
 });
