@@ -355,9 +355,10 @@ describe("rule routes", () => {
     const off = (await client.json("POST", "/api/rules", named(["X-New"], { enabled: false }), 201))
       .rule as Json;
     expect(await client.json("PUT", `/api/rules/${off.id}`, named(["X-New"]), 409)).toEqual(over);
-    // Replacing a rule does not count its own stored names.
+    // Replacing a rule does not count its own stored names, and the disabled rule's X-New does
+    // not count at all.
     const first = ((await client.json("GET", "/api/rules")).rules as Json[])[0];
-    await client.json("PUT", `/api/rules/${first?.id}`, named(["X-New", ...names.slice(1, 10)]));
+    await client.json("PUT", `/api/rules/${first?.id}`, named(["X-Other", ...names.slice(1, 10)]));
   });
 
   it("reorders only with every rule id exactly once", async () => {

@@ -70,7 +70,6 @@ function columns(r: RuleInput) {
   ];
 }
 
-/** The header block of a raw message (up to its first empty line), as Headers.get reads it. */
 /**
  * True when saving `rule` enabled would make the enabled rules name more than HEADER_NAMES_MAX
  * distinct headers. `id` is the rule being replaced, whose stored conditions do not count.
@@ -88,6 +87,7 @@ async function tooManyHeaderNames(db: D1Database, rule: RuleInput, id: number): 
   return all.size > HEADER_NAMES_MAX;
 }
 
+/** The header block of a raw message (up to its first empty line), as Headers.get reads it. */
 export function headersFromRaw(bytes: Uint8Array): MailSource["headers"] {
   const text = new TextDecoder().decode(bytes);
   const end = text.search(/\r?\n\r?\n/);
