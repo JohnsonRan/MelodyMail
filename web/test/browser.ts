@@ -20,7 +20,9 @@ let context: BrowserContext | null = null;
 
 async function sharedContext(): Promise<BrowserContext> {
   browser ??= await chromium.launch();
-  context ??= await browser.newContext({ acceptDownloads: true });
+  // Service workers are blocked here: a worker answering from its cache would hide requests from
+  // the capture above. The PWA suite runs its own context with them allowed.
+  context ??= await browser.newContext({ acceptDownloads: true, serviceWorkers: "block" });
   return context;
 }
 

@@ -7,6 +7,7 @@ import { EnvelopeIcon } from "@heroicons/react/24/outline";
 import type { CSSProperties, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { PreferenceSelectors } from "../preferences";
+import { SystemBanners } from "./SystemBanners";
 
 // From the Astryx login-card template: the page paints its own body background, and the column
 // is capped at the template's readable width but shrinks on narrow screens.
@@ -30,6 +31,7 @@ export function AuthFrame({
   return (
     <Center axis="both" padding={6} style={pageStyle}>
       <VStack gap={4} hAlign="center" style={columnStyle}>
+        <SystemBanners container="card" />
         <VStack gap={2} hAlign="center">
           <Icon icon={EnvelopeIcon} size="lg" />
           <Text type="body" weight="bold" size="lg">

@@ -55,6 +55,7 @@
     "reader": "閲覧ウィンドウ",
     "nothingOpen": "読むメッセージを選択してください",
     "listFailed": "メッセージを読み込めませんでした。",
+    "offlineList": "オンラインに戻るとメールが読み込まれます。",
     "threadFailed": "このスレッドを読み込めませんでした。再試行してください。",
     "readFailed": "このメッセージを読み取れませんでした",
     "readFailedDescription": "元のメッセージをダウンロードして、別のメール アプリで開いてください。",
@@ -323,5 +324,16 @@
     "removeDescription": "このアドレスにはメールが転送されなくなります。",
     "removeInUse": "次のアドレスから削除されます: {{addresses}}。この操作は元に戻せません。",
     "switchesToStore": "{{addresses}} の最後の転送先アドレスのため、これらのアドレスは転送のみではなくなり、MelodyMail にコピーを保存します。"
+  },
+  "system": {
+    "offlineTitle": "オフラインです",
+    "offlineDescription": "ネットワークが回復すると、MelodyMail は自動的に再接続します。",
+    "updateTitle": "新しいバージョンを利用できます",
+    "updateDescription": "再読み込みすると使用できます。",
+    "reload": "再読み込み"
+  },
+  "notification": {
+    "newMail": "新着メール",
+    "testBody": "このデバイスで通知を受け取れます。"
   }
 }

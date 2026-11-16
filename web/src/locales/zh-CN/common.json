@@ -55,6 +55,7 @@
     "reader": "阅读窗格",
     "nothingOpen": "选择一封邮件进行阅读",
     "listFailed": "无法加载邮件。",
+    "offlineList": "恢复联网后会加载你的邮件。",
     "threadFailed": "无法加载此会话。请重试。",
     "readFailed": "无法读取此邮件",
     "readFailedDescription": "下载原始邮件，用其他邮件应用打开。",
@@ -323,5 +324,16 @@
     "removeDescription": "不会再有邮件转发到此地址。",
     "removeInUse": "它将从以下地址中移除：{{addresses}}。此操作无法撤消。",
     "switchesToStore": "它是 {{addresses}} 的最后一个转发地址，因此这些地址将不再只转发，而是在 MelodyMail 中保存副本。"
+  },
+  "system": {
+    "offlineTitle": "你已离线",
+    "offlineDescription": "网络恢复后，MelodyMail 会自动重新连接。",
+    "updateTitle": "有新版本可用",
+    "updateDescription": "重新加载即可开始使用。",
+    "reload": "重新加载"
+  },
+  "notification": {
+    "newMail": "新邮件",
+    "testBody": "此设备可以正常接收通知。"
   }
 }

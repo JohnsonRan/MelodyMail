@@ -6,7 +6,7 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { RootLayout } from "./App";
-import { getAuthState } from "./api";
+import { routeAuthState } from "./api";
 import type { AstryxMessages, Locale } from "./i18n";
 
 type MailSearch = { m?: string; q?: string };
@@ -24,7 +24,8 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
     id: "shell",
     component: lazyRouteComponent(() => import("./components/MailShell"), "MailShell"),
     beforeLoad: async () => {
-      const state = await getAuthState();
+      const state = await routeAuthState();
+      if (!state) return;
       if (!state.initialized) throw redirect({ to: "/setup" });
       if (!state.authenticated) throw redirect({ to: "/login" });
     },
@@ -79,7 +80,8 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
     path: "/setup",
     component: lazyRouteComponent(() => import("./pages/SetupPage"), "SetupPage"),
     beforeLoad: async () => {
-      const state = await getAuthState();
+      const state = await routeAuthState();
+      if (!state) return;
       if (state.initialized) throw redirect({ to: state.authenticated ? "/" : "/login" });
     },
   });
@@ -88,7 +90,8 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
     path: "/login",
     component: lazyRouteComponent(() => import("./pages/LoginPage"), "LoginPage"),
     beforeLoad: async () => {
-      const state = await getAuthState();
+      const state = await routeAuthState();
+      if (!state) return;
       if (!state.initialized) throw redirect({ to: "/setup" });
       if (state.authenticated) throw redirect({ to: "/" });
     },
@@ -98,7 +101,8 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
     path: "/recover",
     component: lazyRouteComponent(() => import("./pages/RecoverPage"), "RecoverPage"),
     beforeLoad: async () => {
-      const state = await getAuthState();
+      const state = await routeAuthState();
+      if (!state) return;
       if (!state.initialized) throw redirect({ to: "/setup" });
       if (state.authenticated) throw redirect({ to: "/" });
     },

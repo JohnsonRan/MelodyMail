@@ -55,6 +55,7 @@
     "reader": "Reading pane",
     "nothingOpen": "Select a message to read it",
     "listFailed": "The messages could not be loaded.",
+    "offlineList": "Your mail loads when you're back online.",
     "threadFailed": "This conversation could not be loaded. Try again.",
     "readFailed": "This message could not be read",
     "readFailedDescription": "Download the original message to open it in another mail app.",
@@ -323,5 +324,16 @@
     "removeDescription": "No mail is forwarded to this address any more.",
     "removeInUse": "It is removed from these addresses: {{addresses}}. This cannot be undone.",
     "switchesToStore": "This was the last forwarding address of {{addresses}}, so they stop being forward-only and keep a copy in MelodyMail."
+  },
+  "system": {
+    "offlineTitle": "You're offline",
+    "offlineDescription": "MelodyMail reconnects when the network is back.",
+    "updateTitle": "A new version is available",
+    "updateDescription": "Reload to start using it.",
+    "reload": "Reload"
+  },
+  "notification": {
+    "newMail": "New mail",
+    "testBody": "Notifications work on this device."
   }
 }

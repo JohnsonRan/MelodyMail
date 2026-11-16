@@ -156,6 +156,17 @@ The browser security suite needs Chromium for Playwright once:
 bun run --cwd web test:browser
 ```
 
+## Install and offline
+
+MelodyMail is an installable web app. In Chrome or Edge, choose Install in the address bar; on
+iPhone and iPad, choose Share, then Add to Home Screen. Its service worker caches only the app
+itself, never mail or API answers, so the app opens without a network and says it is offline;
+reading mail needs the network. After a deploy, open pages show "A new version is available"
+with a Reload action.
+
+The icons in `web/public` are generated from `web/public/logo.svg`. After changing the logo,
+run `bun run --cwd web icons` and commit the PNG files.
+
 ## Notifications
 
 MelodyMail sends a Web Push notification for new mail while no MelodyMail page is open. The

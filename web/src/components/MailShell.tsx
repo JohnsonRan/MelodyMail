@@ -18,12 +18,14 @@ import {
   StarIcon,
   TrashIcon,
 } from "@heroicons/react/24/outline";
-import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Outlet, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Folder } from "../mailbox/api";
 import { MailboxProvider, useMailbox } from "../mailbox/MailboxContext";
+import { useNetwork } from "../network";
 import { PreferenceSelectors } from "../preferences";
+import { SystemBanners } from "./SystemBanners";
 
 const FOLDER_NAV: { folder: Folder; path: string; icon: typeof InboxIcon }[] = [
   { folder: "inbox", path: "/", icon: InboxIcon },
@@ -140,12 +142,22 @@ function MailNav() {
   );
 }
 
-/** The signed-in frame: app bar with search, folder and address navigation, the page outlet. */
+/**
+ * The signed-in frame: app bar with search, folder and address navigation, the page outlet.
+ * When the network comes back the route guard runs again and the mailbox state is rebuilt, so
+ * the counts, the socket and the open page load afresh.
+ */
 export function MailShell() {
   const { t } = useTranslation();
+  const router = useRouter();
+  const { epoch } = useNetwork();
+  useEffect(() => {
+    if (epoch > 0) void router.invalidate();
+  }, [epoch, router]);
   return (
-    <MailboxProvider>
+    <MailboxProvider key={epoch}>
       <AppShell
+        banner={<SystemBanners />}
         contentPadding={6}
         style={{ height: "100dvh", minHeight: 0 }}
         topNav={

@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["bun"]
   },
-  "include": ["./**/*.ts", "../src/reader"]
+  "include": ["./**/*.ts", "../src/reader", "../src/pwa/notification.ts"]
 }
