@@ -2128,13 +2128,14 @@ against `web/dist` and the in-memory API stand-in. Found and fixed from them: th
 button was cut off beside the To field (now under it), and the status badge in a Sent row shrank
 to an ellipsis (it keeps its width now; the recipients are cut instead).
 
-## M5b: Telegram notifications (built 2026-11-16, branch `m5b-telegram`, not pushed)
+## M5b: Telegram notifications (done 2026-11-16, PR #7, merge `791ba73`)
 
 Design: `docs/M5b-telegram.md`, with the owner's rulings of 2026-11-16 at its end. Risk class
 High (a public webhook that changes flags, the bot token, a table linking the mailbox to a chat,
 Worker requests to the Bot API carrying sender, subject and address). Both reviews passed, both
 real-bot tunnel tests ran (see "Real-bot tunnel tests"), and screenshots were sent to the owner.
-Waits for the pull request's CI and the owner's go to merge.
+PR #7 CI passed (merge-gate 48 s, browser 52 s) after a CI fix: the runner now installs Python
+3.13 before the widget size check. Merged on the owner's go.
 
 Commits on `339d865`: `36cab01` migration 0011; `97e7c95` Worker: Connect, webhook, cards;
 `952436d` recovery disconnects Telegram; `b07dc98` widget size check; `7dab8d5` benchmark;
