@@ -2,8 +2,8 @@ import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../src/env";
 import { handleScheduled, MAX_ATTEMPTS, requeueStored, STUCK_AFTER_MS } from "../src/mail/consumer";
-import { FORWARDED_HEADER, handleEmail, parseRecipient } from "../src/mail/inbound";
-import { addAddress, asMessage, inbound, messageRows, r2Keys } from "./mail-helpers";
+import { FORWARD_MAX, FORWARDED_HEADER, handleEmail, parseRecipient } from "../src/mail/inbound";
+import { addAddress, addRule, asMessage, inbound, messageRows, r2Keys } from "./mail-helpers";
 
 /** env with an R2 bucket whose writes fail. */
 function r2Down(): Env {
@@ -375,5 +375,122 @@ describe("email() failures", () => {
       handleScheduled({ scheduledTime: Date.now() } as ScheduledController, env),
     ).rejects.toThrow("1 cron job(s) failed");
     expect(error.mock.calls.join(" ")).toContain('"job":"requeue_stored"');
+  });
+});
+
+describe("email() with rules", () => {
+  const fromGithub = [{ field: "from", op: "contains", value: "github" }];
+  const github = (to = "shop@example.com", headers: Record<string, string> = {}) =>
+    inbound(to, undefined, { From: "GitHub <noreply@github.com>", ...headers });
+  const forwardedTo = (m: ReturnType<typeof inbound>) => m.forward.mock.calls.map((c) => c[0]);
+  const flags = async () =>
+    (await messageRows()).map((r) => [r.read, r.starred, r.archived, r.trashed]);
+
+  it("writes the flags in the INSERT and forwards to a rule target once beside the defaults", async () => {
+    await addAddress("shop", { targets: ["a@dest.example", "b@dest.example"] });
+    await addRule({ conditions: fromGithub, markRead: true, targets: ["b@dest.example"] });
+    await addRule({
+      conditions: fromGithub,
+      star: true,
+      archive: true,
+      targets: ["c@dest.example"],
+    });
+    await addRule({
+      conditions: fromGithub,
+      trash: true,
+      enabled: false,
+      targets: ["d@dest.example"],
+    });
+    const message = github();
+    await handleEmail(asMessage(message), env);
+    expect(forwardedTo(message)).toEqual(["a@dest.example", "b@dest.example", "c@dest.example"]);
+    expect(await flags()).toEqual([[1, 1, 1, 0]]);
+    const unmatched = inbound("shop@example.com");
+    await handleEmail(asMessage(unmatched), env);
+    expect(forwardedTo(unmatched)).toEqual(["a@dest.example", "b@dest.example"]);
+  });
+
+  it("uses the rules as they are when each message arrives", async () => {
+    await addAddress("shop");
+    const id = await addRule({ conditions: fromGithub, trash: true });
+    await handleEmail(asMessage(github()), env);
+    await env.DB.prepare("UPDATE rules SET enabled = 0 WHERE id = ?").bind(id).run();
+    await handleEmail(asMessage(github()), env);
+    expect((await flags()).map((f) => f[3])).toEqual([1, 0]);
+  });
+
+  it("keeps the loop guard for rule targets but still applies the flags", async () => {
+    await addAddress("shop");
+    await addRule({ conditions: fromGithub, trash: true, targets: ["a@dest.example"] });
+    const message = github("shop@example.com", { [FORWARDED_HEADER]: "1" });
+    await handleEmail(asMessage(message), env);
+    expect(message.forward).not.toHaveBeenCalled();
+    expect(await flags()).toEqual([[0, 0, 0, 1]]);
+  });
+
+  it("forward-only: forwards to defaults and rule targets and stores nothing", async () => {
+    const id = await addAddress("fwd", { forwardOnly: true, targets: ["a@dest.example"] });
+    await addRule({ conditions: fromGithub, archive: true, targets: ["b@dest.example"] });
+    const message = github("fwd@example.com");
+    await handleEmail(asMessage(message), env);
+    expect(forwardedTo(message)).toEqual(["a@dest.example", "b@dest.example"]);
+    expect(await messageRows()).toEqual([]);
+    expect(await auditDetails()).toEqual([`address ${id}: 2/2`]);
+  });
+
+  it("forward-only: stores with the flags when every forward fails", async () => {
+    await addAddress("fwd", { forwardOnly: true, targets: ["a@dest.example"] });
+    await addRule({ conditions: fromGithub, star: true, targets: ["b@dest.example"] });
+    const message = github("fwd@example.com");
+    message.forward.mockRejectedValue(new Error("destination address not verified"));
+    await handleEmail(asMessage(message), env);
+    expect(message.forward).toHaveBeenCalledTimes(2);
+    expect(await flags()).toEqual([[0, 1, 0, 0]]);
+    expect((await messageRows())[0]?.forward_failed).toBe(2);
+  });
+
+  it("forwards to rule targets instead when storage fails", async () => {
+    const id = await addAddress("shop");
+    await addRule({ conditions: fromGithub, targets: ["a@dest.example"] });
+    const message = github();
+    await handleEmail(asMessage(message), r2Down());
+    expect(forwardedTo(message)).toEqual(["a@dest.example"]);
+    expect(await unstoredAudit()).toEqual([`address ${id}: 1/1`]);
+  });
+
+  it("forwards to the first 10 distinct targets and audits the count", async () => {
+    const defaults = ["d1", "d2", "d3"].map((n) => `${n}@dest.example`);
+    const id = await addAddress("shop", { targets: defaults });
+    const ruled = Array.from({ length: 10 }, (_, i) => `r${i}@dest.example`);
+    await addRule({ conditions: fromGithub, targets: [defaults[0] ?? "", ...ruled.slice(0, 4)] });
+    await addRule({ conditions: fromGithub, targets: ruled.slice(4, 9) });
+    await addRule({ conditions: fromGithub, targets: ruled.slice(9) });
+    const message = github();
+    await handleEmail(asMessage(message), env);
+    expect(forwardedTo(message)).toEqual([...defaults, ...ruled.slice(0, FORWARD_MAX - 3)]);
+    const capped = await env.DB.prepare(
+      "SELECT detail FROM audit_log WHERE event = 'mail_forward_capped'",
+    ).all();
+    expect(capped.results).toEqual([{ detail: `address ${id}: 13` }]);
+  });
+
+  it("reads no rules for a rejected recipient, and stores without rules when they cannot be read", async () => {
+    await addAddress("shop", { targets: ["a@dest.example"] });
+    await addRule({ conditions: fromGithub, trash: true, targets: ["b@dest.example"] });
+    const prepare = vi.spyOn(env.DB, "prepare");
+    await handleEmail(asMessage(github("nobody@example.com")), env);
+    expect(prepare.mock.calls.some(([sql]) => sql.includes("FROM rules"))).toBe(false);
+
+    await env.DB.exec("ALTER TABLE rules RENAME TO rules_away");
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const message = github();
+      await handleEmail(asMessage(message), env);
+      expect(forwardedTo(message)).toEqual(["a@dest.example"]);
+      expect(await flags()).toEqual([[0, 0, 0, 0]]);
+      expect(error.mock.calls.join(" ")).toContain("rules_load_failed");
+    } finally {
+      await env.DB.exec("ALTER TABLE rules_away RENAME TO rules");
+    }
   });
 });

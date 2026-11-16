@@ -1,6 +1,7 @@
 import { auditRow } from "../auth/store";
 import type { Env } from "../env";
 import { errorText, log } from "../http";
+import { type Decision, evaluateRules, loadRules, type Rule } from "../rules/evaluate";
 
 // The email() handler (docs/M3-inbound.md). It never reads message content in JS: the raw
 // message is piped natively into R2 and parsed later by the queue consumer.
@@ -73,11 +74,53 @@ async function findAddress(db: D1Database, r: Recipient): Promise<Address | null
 }
 
 /**
- * Where this message is forwarded. M3 has the address's default targets only; M6 adds the
- * targets of matching forwarding rules here (envelope and headers only, no body).
+ * At most this many distinct targets per message: Workers Free allows 50 subrequests per
+ * invocation, and whether forward() counts as one is not documented (docs/M6-rules-api.md).
  */
-function forwardTargets(address: Address): string[] {
-  return address.targets;
+export const FORWARD_MAX = 10;
+
+/**
+ * Where this message is forwarded: the address's default targets, then the targets of matching
+ * rules in rule order, each once (stored targets are lowercase), cut to FORWARD_MAX. `total` is
+ * the number of distinct targets before the cut.
+ */
+function forwardTargets(address: Address, ruleTargets: string[]) {
+  const all = [...new Set([...address.targets, ...ruleTargets])];
+  return { targets: all.slice(0, FORWARD_MAX), total: all.length };
+}
+
+const NO_RULES: Decision = {
+  targets: [],
+  read: false,
+  starred: false,
+  archived: false,
+  trashed: false,
+};
+
+/**
+ * Runs the enabled rules once for this message (Decision 1). A failed rule read is logged and
+ * the message is handled as if no rule matched: it is still stored and forwarded to the defaults.
+ */
+async function decide(
+  env: Env,
+  message: ForwardableEmailMessage,
+  recipient: Recipient,
+  addressId: number,
+): Promise<Decision> {
+  let rules: Rule[];
+  try {
+    rules = await loadRules(env.DB);
+  } catch (err) {
+    log("error", "rules_load_failed", { addressId, error: errorText(err) });
+    return NO_RULES;
+  }
+  if (rules.length === 0) return NO_RULES;
+  return evaluateRules(rules, {
+    envelopeFrom: message.from,
+    headers: message.headers,
+    recipient: `${recipient.localPart}@${recipient.domain}`,
+    tag: recipient.tag,
+  });
 }
 
 /** Forwards to each target once; returns how many failed. A failure never throws. */
@@ -142,8 +185,19 @@ export async function handleEmail(message: ForwardableEmailMessage, env: Env): P
     return;
   }
   const now = Date.now();
-  // A message MelodyMail forwarded earlier is kept, never forwarded again.
-  const targets = message.headers.has(FORWARDED_HEADER) ? [] : forwardTargets(address);
+  const rules = await decide(env, message, recipient, address.id);
+  // A message MelodyMail forwarded earlier is kept, never forwarded again, rule targets included.
+  const looped = message.headers.has(FORWARDED_HEADER);
+  const { targets, total } = looped
+    ? { targets: [], total: 0 }
+    : forwardTargets(address, rules.targets);
+  if (total > targets.length) {
+    try {
+      await auditRow(env.DB, "mail_forward_capped", now, `address ${address.id}: ${total}`).run();
+    } catch (err) {
+      log("error", "mail_audit_failed", { addressId: address.id, error: errorText(err) });
+    }
+  }
 
   let forwardFailed = 0;
   if (address.forwardOnly && targets.length > 0) {
@@ -175,8 +229,9 @@ export async function handleEmail(message: ForwardableEmailMessage, env: Env): P
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO messages (id, address_id, direction, status, envelope_from, envelope_to,
-           subaddress_tag, raw_size, r2_key, forward_failed, received_at)
-         VALUES (?, ?, 'in', 'stored', ?, ?, ?, ?, ?, ?, ?)`,
+           subaddress_tag, raw_size, r2_key, forward_failed, read, starred, archived, trashed,
+           received_at)
+         VALUES (?, ?, 'in', 'stored', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         id,
         address.id,
@@ -186,6 +241,10 @@ export async function handleEmail(message: ForwardableEmailMessage, env: Env): P
         message.rawSize,
         key,
         forwardFailed,
+        Number(rules.read),
+        Number(rules.starred),
+        Number(rules.archived),
+        Number(rules.trashed),
         now,
       ),
       env.DB.prepare("UPDATE addresses SET last_received_at = ? WHERE id = ?").bind(

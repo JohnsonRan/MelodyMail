@@ -85,3 +85,53 @@ export async function messageRows(): Promise<MessageRow[]> {
 export async function r2Keys(): Promise<string[]> {
   return (await env.MAIL.list()).objects.map((o) => o.key);
 }
+
+type RuleSeed = {
+  conditions: object[];
+  match?: "all" | "any";
+  enabled?: boolean;
+  markRead?: boolean;
+  star?: boolean;
+  archive?: boolean;
+  trash?: boolean;
+  stop?: boolean;
+  /** Target emails; each is added to forward_targets when missing. */
+  targets?: string[];
+};
+
+/** A rule written straight to D1, appended after the existing ones; returns its id. */
+export async function addRule(seed: RuleSeed): Promise<number> {
+  const now = Date.now();
+  const bit = (v: boolean | undefined) => (v ? 1 : 0);
+  const row = await env.DB.prepare(
+    `INSERT INTO rules (name, enabled, position, match, conditions, mark_read, star, archive,
+       trash, stop, created_at, updated_at)
+     VALUES ('rule', ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM rules), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     RETURNING id`,
+  )
+    .bind(
+      seed.enabled === false ? 0 : 1,
+      seed.match ?? "all",
+      JSON.stringify(seed.conditions),
+      bit(seed.markRead),
+      bit(seed.star),
+      bit(seed.archive),
+      bit(seed.trash),
+      bit(seed.stop),
+      now,
+      now,
+    )
+    .first<{ id: number }>();
+  const id = row?.id ?? 0;
+  for (const email of seed.targets ?? []) {
+    await env.DB.prepare("INSERT OR IGNORE INTO forward_targets (email, created_at) VALUES (?, ?)")
+      .bind(email, now)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO rule_forwards (rule_id, target_id) SELECT ?, id FROM forward_targets WHERE email = ?",
+    )
+      .bind(id, email)
+      .run();
+  }
+  return id;
+}

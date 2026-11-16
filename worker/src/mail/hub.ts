@@ -23,8 +23,9 @@ const SESSION_HEADER = "x-melodymail-session";
 /** Close code a page reads as "signed out": it goes to sign-in instead of reconnecting. */
 export const SESSION_ENDED = 4001;
 
-/** "message": new inbound mail (pushed to devices without a page). "changed": a sent message or
- * its delivery status changed; pages refetch, nothing is pushed. */
+/** "message": new inbound mail (pushed to devices without a page). "changed": a sent message,
+ * its delivery status, or new mail a rule marked read, archived or trashed; pages refetch, nothing
+ * is pushed. */
 export type HubEvent = { type: "message" | "changed"; id: string };
 
 /**

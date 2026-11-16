@@ -28,6 +28,7 @@
     "db:migrate:remote": "wrangler d1 migrations apply melodymail --remote",
     "bench:auth": "bun bench/auth.ts",
     "bench:parse": "bun bench/parse.ts",
+    "bench:rules": "bun bench/rules.ts",
     "bench:telegram": "bun bench/telegram.ts",
     "vapid": "bun scripts/vapid.ts",
     "upload-key": "bun scripts/upload-key.ts",
