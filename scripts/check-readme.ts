@@ -2,8 +2,9 @@
 /**
  * Fail when the three READMEs drift apart (docs/M7-ops.md, "README in three languages"): they
  * must have the same sequence of heading levels, the same fenced code blocks (commands are never
- * translated), and the same link targets in the same order. A link to one of the three README
- * files counts as the same target, so each file can link to the other two languages.
+ * translated), the same inline code spans in any order (secret names, paths, values), and the
+ * same link targets in the same order. A link to one of the three README files counts as the same
+ * target, so each file can link to the other two languages.
  *
  * Exit codes: 0 in sync, 1 violations found, 2 could not run (a file missing, empty or without
  * a heading).
@@ -15,11 +16,11 @@ import { join } from "node:path";
 export const FILES = ["README.md", "README.zh-CN.md", "README.ja-JP.md"];
 const LANGUAGE_LINK = "<README>";
 
-export type Outline = { headings: number[]; blocks: string[]; links: string[] };
+export type Outline = { headings: number[]; blocks: string[]; code: string[]; links: string[] };
 
 export class CannotRun extends Error {}
 
-/** Heading levels, fenced code blocks and link targets of one Markdown file, in order. */
+/** Heading levels, fenced code blocks and links of one Markdown file in order; inline code sorted. */
 export function outline(text: string): Outline {
   const headings: number[] = [];
   const blocks: string[] = [];
@@ -46,7 +47,9 @@ export function outline(text: string): Outline {
     prose.push(line);
   }
   if (fence) blocks.push(fence.lines.join("\n"));
-  const body = prose.join("\n").replace(/`[^`\n]*`/g, "");
+  const prosed = prose.join("\n");
+  const code = [...prosed.matchAll(/`([^`\n]+)`/g)].map((m) => m[1] as string).sort();
+  const body = prosed.replace(/`[^`\n]*`/g, "");
   const links: string[] = [];
   const link =
     /!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)|<(https?:\/\/[^>\s]+)>|^\s*\[[^\]]+\]:\s*(\S+)/gm;
@@ -54,7 +57,17 @@ export function outline(text: string): Outline {
     const target = (m[1] ?? m[2] ?? m[3]) as string;
     links.push(FILES.includes(target.replace(/^\.\//, "")) ? LANGUAGE_LINK : target);
   }
-  return { headings, blocks, links };
+  return { headings, blocks, code, links };
+}
+
+/** The items of `list` left after removing one occurrence of each item of `remove`. */
+function without(list: string[], remove: string[]): string[] {
+  const left = [...list];
+  for (const item of remove) {
+    const at = left.indexOf(item);
+    if (at !== -1) left.splice(at, 1);
+  }
+  return left;
 }
 
 /** Differences between the reference outline (the first file) and each other file. */
@@ -77,6 +90,11 @@ export function compare(files: Map<string, Outline>): string[] {
         if (other.blocks[i] !== block) problems.push(`${name}: code block ${i + 1} differs`);
       });
     }
+    const missing = without(ref.code, other.code);
+    const extra = without(other.code, ref.code);
+    if (missing.length > 0) problems.push(`${name}: inline code missing: ${missing.join(", ")}`);
+    if (extra.length > 0)
+      problems.push(`${name}: inline code not in ${refName}: ${extra.join(", ")}`);
     if (other.links.length !== ref.links.length) {
       problems.push(`${name}: ${other.links.length} links, ${refName} has ${ref.links.length}`);
     } else {

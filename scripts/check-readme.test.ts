@@ -18,7 +18,7 @@ A mail service.
    bun install
    \`\`\`
 
-See [the runbook](docs/RUNBOOK.md) and \`[not](a-link)\`.
+See [the runbook](docs/RUNBOOK.md), set \`UPLOAD_URL_KEY\` and \`[not](a-link)\`.
 
 \`\`\`sh
 bun run deploy:prod
@@ -39,7 +39,7 @@ const ZH = `# MelodyMail
    bun install
    \`\`\`
 
-请参阅[运行手册](docs/RUNBOOK.md)。
+请参阅[运行手册](docs/RUNBOOK.md)，设置 \`UPLOAD_URL_KEY\` 和 \`[not](a-link)\`。
 
 \`\`\`sh
 bun run deploy:prod
@@ -98,6 +98,11 @@ describe("check-readme", () => {
     expect(
       run({ "README.ja-JP.md": JA.replace(/\n```sh\nbun run deploy:prod\n```\n/, "\n") }),
     ).toBe(1);
+  });
+
+  test("a dropped or renamed inline code span fails", () => {
+    expect(run({ "README.zh-CN.md": ZH.replace(" `UPLOAD_URL_KEY` 和", "") })).toBe(1);
+    expect(run({ "README.ja-JP.md": JA.replace("`UPLOAD_URL_KEY`", "`UPLOAD_KEY`") })).toBe(1);
   });
 
   test("a different link target fails", () => {
