@@ -20,6 +20,24 @@ const LONG_MAIL = [
   "Hello.",
   "",
 ].join("\r\n");
+// A newsletter laid out for 640 px: a fixed table, a 600 px picture, two fixed columns and a
+// preformatted line, the shapes that ran off a phone's frame.
+const NEWSLETTER = [
+  "From: News <news@example.org>",
+  "To: shop@example.com",
+  "Subject: Wide newsletter",
+  "Message-ID: <wide@example.org>",
+  "Content-Type: text/html; charset=utf-8",
+  "",
+  '<table width="640" style="width:640px" cellpadding="12"><tr><td>',
+  '<p id="wide">Weekly digest</p>',
+  '<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" width="600" height="200" style="width:600px;height:200px">',
+  '<table width="100%"><tr><td width="300" style="width:300px">Left</td><td width="300" style="width:300px">Right</td></tr></table>',
+  `<pre>${"x".repeat(120)}</pre>`,
+  "</td></tr></table>",
+  "",
+].join("\r\n");
+
 const ADDRESSES = [
   { id: 1, address: "shop@example.com", note: "Main", enabled: true },
   { id: 2, address: LONG, note: "", enabled: false },
@@ -45,6 +63,7 @@ beforeAll(async () => {
       from: `Newsletter <${SENDER}>`,
     }),
   );
+  app.store.set("wide", message("wide", NEWSLETTER, "Wide newsletter", Date.now() + 2000));
   s = await openSession(app.origin, "/", { touch: PHONE });
   // Settings > Addresses with a long address; the stand-in knows only shop@example.com.
   const settings: Record<string, unknown> = {
@@ -234,6 +253,25 @@ describe("phone end to end", () => {
     await go("/?m=long", "text=Hello.");
     expect(await s.page.getByText(SENDER, { exact: true }).count()).toBeGreaterThan(0);
     expect(await cutText(SENDER)).toBe(0);
+  });
+
+  test("reflows a 640 px newsletter to the width of the mail frame", async () => {
+    await go("/?m=wide", "iframe");
+    const frame = s.page.frameLocator("iframe");
+    await frame.locator("#wide").waitFor();
+    const iframe = s.page.locator("iframe");
+    expect(await iframe.getAttribute("sandbox")).toBe("allow-popups allow-popups-to-escape-sandbox");
+    const widths = await frame
+      .locator("html")
+      .evaluate((html) => ({ scroll: html.scrollWidth, client: html.clientWidth }));
+    expect(widths.client).toBeLessThan(PHONE.width);
+    expect(widths.scroll).toBeLessThanOrEqual(widths.client);
+    // The narrowed picture keeps its 3:1 shape.
+    const picture = await frame.locator("img").evaluate((img) => {
+      const r = img.getBoundingClientRect();
+      return r.width / r.height;
+    });
+    expect(picture).toBeCloseTo(3, 1);
   });
 
   test("puts the rarer reader actions under More", async () => {

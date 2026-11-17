@@ -106,9 +106,12 @@ matched.
 ## Mailbox
 
 Messages are parsed in the browser. Sender HTML is shown in a sandboxed frame without scripts,
-remote images stay blocked until "Show remote images" is chosen for that message, and
-attachments are always downloaded, never opened in the app. In the dark theme, "Dark reading" in
-the reader shows one HTML message inverted; it is off for every message you open.
+which has a fixed height and scrolls inside: auto height would need scripts or same origin in the
+frame, and was declined to keep it isolated. In a frame up to 640 px wide, mail laid out for a
+wider screen reflows to the frame width. Remote images stay blocked until "Show remote images"
+is chosen for that message, and attachments are always downloaded, never opened in the app. In
+the dark theme, "Dark reading" in the reader shows one HTML message inverted; it is off for every
+message you open.
 
 On a phone (narrower than 768 px):
 
