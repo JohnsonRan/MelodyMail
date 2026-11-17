@@ -108,6 +108,8 @@ are the rules those values must satisfy.
 
 - Every action works with the keyboard alone, with visible focus.
 - After a route change, focus starts at the page title.
+- Where the primary pointer is coarse, every interactive target is at least the touch-target size
+  in `REQUIREMENTS.md`.
 - WCAG AA contrast in every theme (if present): 4.5:1 for normal text, 3:1 for large text, 3:1 for
   UI components and focus indicators against their surroundings.
 

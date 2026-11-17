@@ -25,4 +25,20 @@ export const melodyTheme = defineTheme({
       },
     },
   },
+  // Touch targets (REQUIREMENTS.md, "Touch target, coarse pointer"): where the primary pointer
+  // is a finger, every control size is at least 44 CSS px tall; icon buttons are square.
+  adaptations: {
+    rules: [
+      {
+        when: { pointer: "coarse" },
+        value: {
+          tokens: {
+            "--size-element-sm": "44px",
+            "--size-element-md": "44px",
+            "--size-element-lg": "44px",
+          },
+        },
+      },
+    ],
+  },
 });

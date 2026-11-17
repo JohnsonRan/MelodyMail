@@ -68,6 +68,63 @@ afterAll(async () => {
 });
 
 /**
+ * Visible targets whose hit area is smaller than 44 x 44 CSS px. A field's target is its whole
+ * frame (a tap anywhere in it focuses the input), a list row's checkbox is its selection cell,
+ * and a list item's link is the whole row (Astryx's invisible anchor pattern). A smaller box is measured by where a tap still lands on it: Astryx grows a checkbox or a
+ * switch under a coarse pointer with an invisible hit area around its press box.
+ */
+const measureTargets = () =>
+  s.page.evaluate(() => {
+    const small: string[] = [];
+    const TARGETS =
+      "button, a[href], input:not([type=hidden]), select, textarea, [role=button], [role=checkbox], [role=switch], [role=tab], [role=menuitem], [role=option]";
+    const targets = document.querySelectorAll(TARGETS);
+    for (const el of targets) {
+      const box =
+        el.closest(
+          ".astryx-selector, .astryx-tokenizer, .astryx-text-input, .astryx-text-area, [data-select-cell]",
+        ) ??
+        (el.matches("a") ? el.closest(".astryx-list-item") : null) ??
+        el;
+      const r = box.getBoundingClientRect();
+      // Visually hidden inputs and the skip link: their visible control is checked instead.
+      if (r.width <= 2 || r.height <= 2 || getComputedStyle(el).visibility === "hidden") continue;
+      if (r.bottom <= 0 || r.top >= innerHeight) continue;
+      if (r.width >= 44 && r.height >= 44) continue;
+      // A press box counts only when it holds this one target (a checkbox, a switch), not a
+      // group such as a segmented control's track.
+      const box0 = el.closest("[data-astryx-press-box]");
+      const press = box0 && box0.querySelectorAll(TARGETS).length === 1 ? box0 : null;
+      const owns = (hit: Element | null) =>
+        hit !== null && (box.contains(hit) || press?.contains(hit) === true);
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const reach = (dx: number, dy: number) => {
+        let d = 0;
+        while (d < 30 && owns(document.elementFromPoint(cx + dx * (d + 1), cy + dy * (d + 1)))) d++;
+        return d;
+      };
+      const width = reach(-1, 0) + reach(1, 0) + 1;
+      const height = reach(0, -1) + reach(0, 1) + 1;
+      if (width < 44 || height < 44) {
+        const name = el.getAttribute("aria-label") ?? el.textContent?.trim().slice(0, 30);
+        small.push(`${el.tagName.toLowerCase()} "${name}" ${width}x${height}`);
+      }
+    }
+    return small;
+  });
+
+/** The small targets once layout has settled: Astryx sizes a hit area after it measures. */
+async function smallTargets(): Promise<string[]> {
+  let small = await measureTargets();
+  for (let i = 0; i < 20 && small.length > 0; i++) {
+    await s.page.waitForTimeout(100);
+    small = await measureTargets();
+  }
+  return small;
+}
+
+/**
  * Elements showing exactly `text` that are cut: past the viewport, past an ancestor that clips,
  * or wider than their own box.
  */
@@ -100,6 +157,31 @@ const rect = (selector: ReturnType<Session["page"]["locator"]>) =>
   });
 
 describe("phone end to end", () => {
+  test("gives every target at least 44 x 44 px under a coarse pointer", async () => {
+    expect(await s.page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+    expect(await smallTargets()).toEqual([]);
+    // A tap beside the 24 px checkbox selects the row and does not open the message.
+    const cell = s.page.locator(`[data-message-row="note1"] [data-select-cell]`);
+    expect(await cell.count()).toBe(1);
+    const box = await rect(cell);
+    await s.page.touchscreen.tap(box.left + 4, box.top + 4);
+    await s.page.getByText("Selected: 1").waitFor();
+    expect(s.page.url()).toBe(`${app.origin}/`);
+    await s.page.getByRole("button", { name: "Open navigation" }).click();
+    await s.page.getByRole("link", { name: "Settings" }).waitFor();
+    expect(await smallTargets()).toEqual([]);
+    await s.page.keyboard.press("Escape");
+    for (const [path, ready] of [
+      ["/?m=long", "text=Hello."],
+      ["/?compose=phone", "[data-compose]"],
+      ["/settings/addresses", `text=${LONG}`],
+      ["/settings", "text=API keys"],
+    ] as [string, string][]) {
+      await go(path, ready);
+      expect([path, await smallTargets()]).toEqual([path, []]);
+    }
+  });
+
   test("keeps the app name whole, with language and theme in the drawer", async () => {
     await go("/", `[data-message-row="note3"]`);
     const bar = s.page.getByRole("navigation", { name: "Main navigation" });
