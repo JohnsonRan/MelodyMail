@@ -102,7 +102,7 @@ tagged rule marked as not applying needs the owner's approval, quoted in the com
 | AGENTS.md: Tests (if present) | `bun run test` | `REVIEW.md`, "Every finding has evidence" |  |
 | AGENTS.md: Merging |  | `REVIEW.md`, "Report" |  |
 | AGENTS.md: Model usage |  | `REVIEW.md`, "Before you start" |  |
-| AGENTS.md: Documentation |  | `REVIEW.md`, "CI, docs and commits" |  |
+| AGENTS.md: Documentation | `bun run check:readme` | `REVIEW.md`, "CI, docs and commits" |  |
 | AGENTS.md: Writing (docs, comments, reports, PR and issue text) |  | `REVIEW.md`, "CI, docs and commits" |  |
 | AGENTS.md: Commits and pull requests |  | `REVIEW.md`, "CI, docs and commits" |  |
 | AGENTS.md: Frontend–backend mapping (when both exist) |  | `REVIEW.md`, "Checking against the rules", Authorization |  |

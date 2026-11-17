@@ -11,6 +11,7 @@ const STEPS = [
   "test",
   "test:scripts",
   "check:i18n",
+  "check:readme",
   "build",
   "check:requirements",
 ];
