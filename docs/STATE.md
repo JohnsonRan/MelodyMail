@@ -4166,10 +4166,47 @@ Not verified (added): rclone `-M` keeping R2 custom metadata on a local file sys
 attributes; Windows unknown); the auth and API loops against production; the Telegram backup alert
 against the real Bot API.
 
-## Next: the first deploy (M7 acceptance)
+## First deploy (M7 acceptance, 2026-11-17)
 
-PR #12 merged as `bfeeaee` on the owner's go (CI: merge-gate 46 s, browser 58 s, pwa 40 s, send
-43 s, settings 48 s). The owner runs every production command from `docs/RUNBOOK.md`, "Deploy";
-the coordinator checks each step and holds no credential. Then the 23-item production
-verification checklist in the runbook. Record each result here.
+The owner signed wrangler in and handed every further command to the coordinator ("剩下的你自己来吧"),
+which overrides the earlier "owner runs every production command". The owner created the Passkey
+in `/setup`, set the third-party secrets themselves, and gave the go for each destructive step.
 
+- **Deploy.** `bun run check` passed (14.9 s). Resources created as in the runbook, step 4;
+  `deploy.local.jsonc` written; `migrate:prod` applied 0000 to 0015; `deploy:prod` served the
+  custom domain. The coordinator generated `VAPID_*`, `UPLOAD_URL_KEY` and `SETUP_TOKEN` and piped
+  them to `wrangler secret put` without printing them; the token was deleted after setup.
+- **Email Routing.** `wrangler email routing rules update ... catch-all` refuses a Worker action
+  ("Catch-all rule only supports 'forward' or 'drop'"), although the API accepts it. Both zones'
+  catch-all was switched with `PUT /zones/{zone}/email/routing/rules/catch_all`
+  (`{"type":"worker","value":["melodymail"]}`). The runbook's dashboard path (step 8) stays the
+  documented way.
+- **Migration from the previous service (cloud-mail).** It kept no raw message, only parsed fields
+  and attachments, so each kept message was rebuilt as MIME by a one-off script outside the repo
+  (scratchpad), parsed with MelodyMail's own `parseSlice`, and loaded as `parsed` rows with FTS
+  rows; sent mail became SentCopy JSON plus `uploads`. Owner rulings: skip deleted mail, import
+  sent mail, drop SAVING/NOONE rows, single user. Loaded 4 received and 2 sent messages,
+  9 uploads, 15 R2 objects (48 MiB); `INSERT OR IGNORE` with deterministic ids, verified twice
+  in memory (idempotent, FK clean, every message parsed back). Inline images over the reader's
+  2 MiB limit became attachments. Lost: original headers and DKIM, the real Date, the MIME layout.
+  The R2 objects carry no custom metadata (`wrangler r2 object put` has no flag for it); only the
+  gap tool reads it, and the imported mail predates every restore point. The owner checked the
+  mailbox ("全部正常"), then the old Worker, D1, R2 bucket and KV namespace were deleted on the
+  owner's instruction.
+
+### Production verification checklist
+
+| # | Result |
+| --- | --- |
+| 1 | pass: deploy succeeded; `/api/health` 200 `{"ok":true}` |
+| 2 | pass: setup once with a real Passkey; `POST /api/auth/setup/options` again answers 409 `already_initialized`; the owner signs in |
+| 3 | pass: the owner's session row has an IP and a city |
+| 4 | pass, with a finding: sequential loops of 20 and 150 never hit 429. This host's egress alternates between two Cloudflare locations (and sometimes IPv4), and the limiter counts per location. In parallel: auth 23 of 100 answered 429; API 22 of 600 answered 429 (none of 300). The limiter is approximate, as documented |
+| 5 | pass: the owner's outside test mail arrived (owner report) |
+| 6, 7 | not run: need outside mail to an unadded address and a forward target |
+| 8, 16 | not run: need `wrangler tail` during real traffic |
+| 9, 14, 17, 20, 21, 22 | wait for time: a week of use, an idle hour, the first export (tomorrow) |
+| 10, 11 | not run: Resend not configured yet |
+| 12, 15, 18, 23 | not run: need the owner's devices or an SMTPUTF8 sender |
+| 13 | partial: the owner connected Telegram; the buttons are not checked yet |
+| 19 | pass: the Worker's subdomain API reports `enabled: false`, `previews_enabled: false` |
