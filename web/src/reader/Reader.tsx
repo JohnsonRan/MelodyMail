@@ -21,6 +21,9 @@ import { MessageView } from "./MessageView";
 import { type ReaderAction, ReaderToolbar } from "./ReaderToolbar";
 import { SentStatus } from "./SentStatus";
 
+// A sender address longer than the line wraps rather than running off a phone screen.
+const WRAP_ANYWHERE = { overflowWrap: "anywhere" } as const;
+
 type Props = {
   id: string;
   folder: Folder | "search";
@@ -200,7 +203,7 @@ export default function Reader({
                     <HStack gap={2} vAlign="center" wrap="wrap">
                       <Text weight={m.read ? "normal" : "semibold"}>{senderName(m.from)}</Text>
                       {senderAddress(m.from) !== senderName(m.from) && (
-                        <Text type="supporting" color="secondary">
+                        <Text type="supporting" color="secondary" style={WRAP_ANYWHERE}>
                           {senderAddress(m.from)}
                         </Text>
                       )}

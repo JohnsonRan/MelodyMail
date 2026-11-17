@@ -147,4 +147,10 @@ describe("phone end to end", () => {
     await s.page.touchscreen.tap(row.left + 2, row.top + 2);
     await s.page.waitForURL("**/settings/rules");
   });
+
+  test("keeps a long sender address on screen in the reader", async () => {
+    await go("/?m=long", "text=Hello.");
+    expect(await s.page.getByText(SENDER, { exact: true }).count()).toBeGreaterThan(0);
+    expect(await cutText(SENDER)).toBe(0);
+  });
 });
