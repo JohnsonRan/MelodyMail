@@ -3985,3 +3985,18 @@ subdomain and whether it shows in the dashboard.
   to the account for the session; needs `wrangler login`.
 - README: must stop naming `bun run deploy` and `db:migrate:remote` before M7 merges (both
   refuse now).
+
+### Third gap-tool review (PASS, four Lows) and fixes
+
+- `parseSince` refused nothing that Date could roll over: `2026-02-30T0300Z` became 2026-03-02,
+  moving the restore point two days later. It now rebuilds the date from its parts and refuses one
+  that does not round-trip (02-30, 02-29 in 2026, 24:00), an offset beyond ±14:59, and any digit
+  run other than 13 digits of milliseconds (`20261118` was 1970-01-01T05:37Z).
+- `parseArgs` (extracted from main()) refuses `--local` with `--remote`, a missing out file or one
+  starting with `--`, and `--persist-to` or `--config` without a value.
+- Correction to the re-review section above: two guards had no distinguishing test then. The
+  `=== undefined` no_metadata check is now tested by an object whose `addressId` and `envelopeTo`
+  are present but empty (bad metadata, not "before M7"), and the `receivedAt` digit check by
+  `receivedAt: ""`.
+- Ablation, one at a time: the two gap guards (load 1% and 7%), the round trip, the 13-digit rule,
+  both locations, the flag-like out file and the offset range (load 0–3%) each turn a test red.

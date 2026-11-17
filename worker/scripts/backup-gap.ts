@@ -13,8 +13,8 @@
  *   bun run wrangler d1 execute melodymail --file <out.sql> (--local ... | --remote --config ...)
  *
  * Usage: bun scripts/backup-gap.ts <since> <out.sql> <where> [--config <file>] [--dry-run]
- *   <since>  an export id (2026-11-18T0300Z), an ISO time with Z or an offset, or milliseconds
- *            since 1970; the report echoes it in UTC
+ *   <since>  an export id (2026-11-18T0300Z), an ISO time with Z or an offset, or 13 digits
+ *            of milliseconds since 1970; the report echoes it in UTC
  *   <where>  --local --persist-to <path>, or --remote (needs `wrangler login`; wrangler uploads a
  *            temporary preview Worker to the account that proxies the remote bindings)
  *   --dry-run  prints the report and writes no file
@@ -39,18 +39,68 @@ type Report = {
   sql: string;
 };
 
+/** An export id (2026-11-18T0300Z) or an ISO time with seconds optional and a zone. */
+const EXPORT_ID = /^(\d{4})-(\d{2})-(\d{2})T(\d{2})(\d{2})()()(Z)$/;
+const ISO =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:\d{2})$/;
+
 /**
- * Milliseconds from an export id, an ISO time with its zone (Z or an offset), or a number; null
- * otherwise. A time without a zone is refused, since it would be read in the machine's zone.
+ * Milliseconds from an export id, an ISO time with its zone (Z or an offset), or 13 digits of
+ * milliseconds; null otherwise. A time without a zone is refused, since it would be read in the
+ * machine's zone, and so is a date or time that does not exist (02-30, 24:00), which Date would
+ * roll over into a later restore point and so leave the mail in between unlisted.
  */
 export function parseSince(value: string): number | null {
-  const id = /^(\d{4}-\d{2}-\d{2})T(\d{2})(\d{2})Z$/.exec(value);
-  let ms: number;
-  if (id) ms = Date.parse(`${id[1]}T${id[2]}:${id[3]}:00Z`);
-  else if (/^\d+$/.test(value)) ms = Number(value);
-  else if (/^\d{4}-\d{2}-\d{2}T[\d:.]+(Z|[+-]\d{2}:\d{2})$/.test(value)) ms = Date.parse(value);
-  else return null;
-  return Number.isSafeInteger(ms) ? ms : null;
+  if (/^\d{13}$/.test(value)) return Number(value);
+  const m = EXPORT_ID.exec(value) ?? ISO.exec(value);
+  if (!m) return null;
+  const [y, mo, d, h, mi, s] = m.slice(1, 7).map((p) => Number(p || 0)) as number[];
+  const frac = Number((m[7] || "0").padEnd(3, "0"));
+  const utc = Date.UTC(y as number, (mo as number) - 1, d, h, mi, s, frac);
+  const back = new Date(utc);
+  const exists =
+    back.getUTCFullYear() === y &&
+    back.getUTCMonth() + 1 === mo &&
+    back.getUTCDate() === d &&
+    back.getUTCHours() === h &&
+    back.getUTCMinutes() === mi &&
+    back.getUTCSeconds() === s;
+  if (!exists) return null;
+  const zone = m[8] as string;
+  if (zone === "Z") return utc;
+  const [, sign, oh, om] = /^([+-])(\d{2}):(\d{2})$/.exec(zone) as RegExpExecArray;
+  if (Number(oh) > 14 || Number(om) > 59) return null;
+  return utc - (sign === "-" ? -1 : 1) * (Number(oh) * 60 + Number(om)) * 60_000;
+}
+
+export type GapArgs = {
+  since: number;
+  out: string;
+  dryRun: boolean;
+  remote: boolean;
+  persistPath: string | undefined;
+  configPath: string | undefined;
+};
+
+/** The command line, or null when it is unusable (main() then prints the usage and exits 2). */
+export function parseArgs(argv: string[]): GapArgs | null {
+  const [sinceText, out] = argv;
+  const since = sinceText ? parseSince(sinceText) : null;
+  const value = (flag: string) => {
+    const at = argv.indexOf(flag);
+    if (at === -1) return undefined;
+    const next = argv[at + 1];
+    return next && !next.startsWith("--") ? next : null;
+  };
+  const remote = argv.includes("--remote");
+  const local = argv.includes("--local");
+  const persistPath = value("--persist-to");
+  const configPath = value("--config");
+  if (since === null || !out || out.startsWith("--") || remote === local) return null;
+  if (persistPath === null || configPath === null) return null;
+  // Without --persist-to the Worker would read an empty state in the temporary directory.
+  if (local && persistPath === undefined) return null;
+  return { since, out, dryRun: argv.includes("--dry-run"), remote, persistPath, configPath };
 }
 
 /** The gap Worker's config: the D1 and R2 bindings of `base`, remote when asked, nothing else. */
@@ -79,25 +129,16 @@ function stop(child: { pid: number; kill: () => void }) {
 }
 
 async function main(argv: string[]): Promise<number> {
-  const [sinceText, out] = argv;
-  const since = sinceText ? parseSince(sinceText) : null;
-  const dryRun = argv.includes("--dry-run");
-  const remote = argv.includes("--remote");
-  const persistAt = argv.indexOf("--persist-to");
-  const persistPath = persistAt === -1 ? undefined : argv[persistAt + 1];
-  // Without --persist-to the Worker would read an empty state in the temporary directory.
-  const local = argv.includes("--local") && !remote && persistPath !== undefined;
-  if (since === null || !out || (!remote && !local)) {
+  const args = parseArgs(argv);
+  if (!args) {
     console.error(
-      "usage: backup-gap.ts <since> <out.sql> (--local --persist-to <path> | --remote) [--config <file>] [--dry-run]\n  <since>: an export id, an ISO time with Z or an offset, or milliseconds",
+      "usage: backup-gap.ts <since> <out.sql> (--local --persist-to <path> | --remote) [--config <file>] [--dry-run]\n  <since>: an export id, an ISO time with Z or an offset, or 13 digits of milliseconds",
     );
     return 2;
   }
-  const configAt = argv.indexOf("--config");
+  const { since, out, dryRun, remote, persistPath } = args;
   // Relative paths are the caller's; wrangler itself runs from worker/.
-  const configPath = resolve(
-    configAt === -1 ? join(WORKER, "wrangler.jsonc") : (argv[configAt + 1] ?? ""),
-  );
+  const configPath = resolve(args.configPath ?? join(WORKER, "wrangler.jsonc"));
   if (!existsSync(configPath)) {
     console.error(`no config at ${configPath}`);
     return 2;

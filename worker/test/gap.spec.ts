@@ -114,6 +114,8 @@ describe("gap tool", () => {
       decode: `raw/${month()}/${id()}.eml`,
       nul: `raw/${month()}/${id()}.eml`,
       to: `raw/${month()}/${id()}.eml`,
+      received: `raw/${month()}/${id()}.eml`,
+      empty: `raw/${month()}/${id()}.eml`,
     };
     await put(bad.key, meta());
     // Number("") is 0, a safe integer: only the digit check refuses it.
@@ -121,6 +123,9 @@ describe("gap tool", () => {
     await put(bad.decode, meta({ envelopeTo: "%E0%A4%A" }));
     await put(bad.nul, meta({ envelopeFrom: "a%00b" }));
     await put(bad.to, meta({ envelopeTo: "" }));
+    await put(bad.received, meta({ receivedAt: "" }));
+    // Fields present but empty are bad metadata; only absent fields mean "before M7".
+    await put(bad.empty, meta({ addressId: "", envelopeTo: "" }));
     const report = await findGap(env, since);
     expect(report.rows.map((r) => [r.key, r.envelopeFrom])).toEqual([[good, ""]]);
     const reasons = Object.fromEntries(report.skipped.map((s) => [s.key, s.reason]));
@@ -130,6 +135,8 @@ describe("gap tool", () => {
       [bad.decode]: "bad_metadata",
       [bad.nul]: "bad_metadata",
       [bad.to]: "bad_metadata",
+      [bad.received]: "bad_metadata",
+      [bad.empty]: "bad_metadata",
     });
     await apply(gapSql(report.rows));
     expect((await messageRows())[0]).toMatchObject({ envelope_from: "", status: "stored" });
