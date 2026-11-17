@@ -159,7 +159,15 @@ describe("compose end to end", () => {
     );
     expect(overflow).toBe(0);
     await compose(s).getByLabel("Subject").fill("Suggested");
-    await compose(s).getByRole("button", { name: "Send", exact: true }).click();
+    // As a page, Send sits in the title row: still on screen with the body focused and a
+    // keyboard taking half the screen (402 x 500).
+    expect(await compose(s).getByRole("button", { name: "Send", exact: true }).count()).toBe(0);
+    await s.page.setViewportSize({ width: 402, height: 500 });
+    await compose(s).locator("textarea").focus();
+    const send = s.page.getByRole("button", { name: "Send", exact: true });
+    const box = await send.boundingBox();
+    expect(box && box.y >= 0 && box.y + box.height <= 500).toBe(true);
+    await send.click();
     await s.page.getByText("Message sent", { exact: true }).first().waitFor();
     expect(app.send.sends[0]).toMatchObject({
       to: ["alice@example.org"],

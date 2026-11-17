@@ -12,7 +12,7 @@ import { TextArea } from "@astryxdesign/core/TextArea";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useToast } from "@astryxdesign/core/Toast";
 import { XMarkIcon } from "@heroicons/react/24/outline";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../api";
 import { errorMessage } from "../errors";
@@ -21,7 +21,8 @@ import { MailFrame } from "../reader/MailFrame";
 import { sanitizeMailHtml } from "../reader/sanitize";
 import { AttachmentField } from "./AttachmentField";
 import type { ComposeKind } from "./api";
-import { ComposeActions } from "./ComposeActions";
+import { ComposeActions, SendButton } from "./ComposeActions";
+import { ComposePageFrame } from "./ComposePageFrame";
 import { emailHtml } from "./markdown";
 import { QuotaLine, quotaLevel } from "./QuotaLine";
 import { RecipientField } from "./RecipientField";
@@ -99,6 +100,25 @@ export default function ComposeView({ draftId, source, onClose, isPanel }: Props
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  // As a page, Close and Send sit in the title row (ComposePageFrame); beside the list the panel
+  // draws its own heading and keeps Send with the other actions.
+  const ready = c.status === "ready" && setup !== null;
+  const send = (
+    <SendButton
+      onSend={() => sendRef.current()}
+      sending={c.sending}
+      blocked={ready ? blocked : ""}
+    />
+  );
+  const framed = (body: ReactNode) =>
+    isPanel ? (
+      body
+    ) : (
+      <ComposePageFrame kind={source?.kind} onClose={onClose} send={send}>
+        {body}
+      </ComposePageFrame>
+    );
+
   // Closing keeps the draft: a pending save runs when compose unmounts.
   const heading = isPanel && (
     <HStack hAlign="between" vAlign="center" gap={2}>
@@ -114,7 +134,7 @@ export default function ComposeView({ draftId, source, onClose, isPanel }: Props
   );
 
   if (c.status !== "ready" || !setup) {
-    return (
+    return framed(
       <VStack gap={4} hAlign="stretch" padding={isPanel ? 4 : 0}>
         {heading}
         {c.status === "failed" ? (
@@ -122,11 +142,11 @@ export default function ComposeView({ draftId, source, onClose, isPanel }: Props
         ) : (
           [0, 1, 2, 3].map((i) => <Skeleton key={i} height="var(--size-control-lg)" index={i} />)
         )}
-      </VStack>
+      </VStack>,
     );
   }
 
-  return (
+  return framed(
     <VStack gap={4} hAlign="stretch" padding={isPanel ? 4 : 0} data-compose="">
       {heading}
       {source?.kind === "again" && (
@@ -238,9 +258,7 @@ export default function ComposeView({ draftId, source, onClose, isPanel }: Props
       )}
       {c.quota && <QuotaLine quota={c.quota} />}
       <ComposeActions
-        onSend={() => sendRef.current()}
-        sending={c.sending}
-        blocked={blocked}
+        send={isPanel ? send : null}
         onSave={() => void c.saveNow(true)}
         save={c.save}
         onDiscard={() => setConfirmDiscard(true)}
@@ -258,6 +276,6 @@ export default function ComposeView({ draftId, source, onClose, isPanel }: Props
           onClose();
         }}
       />
-    </VStack>
+    </VStack>,
   );
 }

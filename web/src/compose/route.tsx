@@ -2,6 +2,7 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { lazy, Suspense, useCallback } from "react";
 import { ListSkeleton } from "../mailbox/ListBody";
 import type { ComposeKind } from "./api";
+import { ComposePageFrame } from "./ComposePageFrame";
 
 // Compose lives in the URL of the mailbox page it opens on: `compose` names the draft, `src` and
 // `kind` the message replied to or forwarded. Back closes it; a reload reopens the same draft.
@@ -62,8 +63,15 @@ export function ComposeSlot({
   onClose: () => void;
   isPanel: boolean;
 }) {
+  const loading = isPanel ? (
+    <ListSkeleton />
+  ) : (
+    <ComposePageFrame kind={source?.kind} onClose={onClose} send={null}>
+      <ListSkeleton />
+    </ComposePageFrame>
+  );
   return (
-    <Suspense fallback={<ListSkeleton />}>
+    <Suspense fallback={loading}>
       <ComposeView
         key={draftId}
         draftId={draftId}

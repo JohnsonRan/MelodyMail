@@ -47,18 +47,8 @@ export function DraftsPage() {
       isPanel={sideBySide}
     />
   );
-  if (!sideBySide && composer) {
-    return (
-      <PageFrame
-        title={t(`mail.composeTitle.${compose.source?.kind ?? "new"}`)}
-        actions={
-          <Button label={t("mail.closeCompose")} variant="secondary" onClick={compose.close} />
-        }
-      >
-        {composer}
-      </PageFrame>
-    );
-  }
+  // As a page, compose draws its own frame with Close and Send in the title row.
+  if (!sideBySide && composer) return composer;
 
   return (
     <PageFrame
