@@ -1,6 +1,6 @@
 import { InternationalizationProvider } from "@astryxdesign/core/i18n";
 import { LinkProvider } from "@astryxdesign/core/Link";
-import { Theme } from "@astryxdesign/core/theme";
+import { Theme, useTheme } from "@astryxdesign/core/theme";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { type AnchorHTMLAttributes, useEffect, useLayoutEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
@@ -61,6 +61,29 @@ function DocumentMeta({ locale }: { locale: Locale }) {
   return null;
 }
 
+/**
+ * The browser's bar colour (theme-color) follows the resolved theme, so a manual light or dark
+ * choice changes it too. index.html carries a light and a dark tag for the first paint; this
+ * keeps one, with the page's --color-background-body.
+ */
+function ThemeColor() {
+  const { mode } = useTheme();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mode is the trigger, not an input.
+  useEffect(() => {
+    // The next frame: Theme writes the mode to the root element in its own effect.
+    const frame = requestAnimationFrame(() => {
+      const root = getComputedStyle(document.documentElement);
+      const color = root.getPropertyValue("--color-background-body").trim();
+      const [meta, ...rest] = document.querySelectorAll('meta[name="theme-color"]');
+      for (const extra of rest) extra.remove();
+      meta?.removeAttribute("media");
+      if (color) meta?.setAttribute("content", color);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [mode]);
+  return null;
+}
+
 export function RootLayout({
   initialLocale,
   initialMessages,
@@ -78,6 +101,7 @@ export function RootLayout({
           <InternationalizationProvider locale={locale} messages={astryxMessages}>
             <LinkProvider component={RouterLink}>
               <DocumentMeta locale={locale} />
+              <ThemeColor />
               <Outlet />
             </LinkProvider>
           </InternationalizationProvider>

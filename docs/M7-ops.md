@@ -142,7 +142,7 @@ Exported (table: why):
   whole queue budget; exporting it is cheaper. Its shadow tables (`messages_fts_data`, `_idx`,
   `_content`, `_docsize`, `_config`) are not exported;
 - `drafts`, `uploads`: unsent work and the R2 keys of its attachments;
-- `send_quota`: the last quota Resend reported;
+- `send_quota`: the quota counts of the current UTC day and month;
 - `telegram_cards`: maps cards to messages so old buttons keep working after a reconnect;
 - `audit_log`: history; its `detail` column holds no secret by rule (`worker/AGENTS.md`,
   "Sensitive values").
@@ -638,7 +638,8 @@ runs them in this order after the from-zero deploy; the coordinator records each
 10. Sending through Resend from the deployed origin (M5): a send with an attachment. Expected:
     Resend fetches the signed URL (`GET /api/uploads/:id/blob` in the logs, 200); the recipient
     receives the attachment; the webhook moves the row to "Delivered". The quota shown matches
-    Resend's dashboard (M4 deferred item: may read one low).
+    Resend's dashboard (the stored count adds one per accepted send, because Resend's header
+    lags).
 11. Resend webhook signature (M5): the Resend dashboard's "send test event" or a real event.
     Expected: 200 and a `webhook_events` row. A wrongly signed request cannot be produced from the
     dashboard; that case stays covered by the tests only, and is recorded so.

@@ -67,6 +67,16 @@ export class SendStub {
     addresses: [{ id: 1, address: "shop@example.com", displayName: "Shop" }],
   };
   quota = { daily: { used: 12, limit: 100 }, monthly: { used: 340, limit: 3000 }, seenAt: 1 };
+  contacts = [
+    { address: "alice@example.org", name: "Alice Liddell" },
+    { address: "albert.long-address-for-a-narrow-screen@subdomain.example.org", name: "" },
+    {
+      address: "alberta.another-long-address@deeply.nested.subdomain.example.org",
+      name: "Alberta",
+    },
+  ];
+  /** The q of each GET /api/contacts, in order. */
+  contactQueries: string[] = [];
   drafts = new Map<string, Record<string, unknown>>();
   draftSaves: Record<string, unknown>[] = [];
   uploads = new Map<string, Upload>();
@@ -81,6 +91,14 @@ export class SendStub {
     const method = req.method;
     if (path === "/api/send/from") return json(this.setup);
     if (path === "/api/send/quota") return json(this.quota);
+    if (path === "/api/contacts") {
+      const q = (url.searchParams.get("q") ?? "").toLowerCase();
+      this.contactQueries.push(q);
+      const contacts = this.contacts.filter((c) =>
+        `${c.address} ${c.name}`.toLowerCase().includes(q),
+      );
+      return json({ contacts });
+    }
     if (path === "/api/drafts" && method === "GET") {
       const drafts = [...this.drafts.values()].map(({ text, ...d }) => ({
         ...d,

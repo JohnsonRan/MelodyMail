@@ -754,7 +754,7 @@ Record no account id, hostname or secret.
 | 7 | Forwarding | forward to a verified destination (one verified in mixed case too); a rule with a forward action; a forward-only address | each target gets one copy with `X-MelodyMail-Forwarded: 1`; forward-only keeps no R2 object; note whether `forward()` counts as a subrequest in the invocation log |
 | 8 | Production CPU time | invocation logs for `email()` with 50 rules, the consumer, a cron run with an export, the Resend webhook, the Telegram webhook, a send, a v1 request, a Passkey sign-in | every one under 10 ms; record the highest in `REQUIREMENTS.md`, "Numbers" |
 | 9 | Queue retry | a week of normal use | no message stays `stored` longer than 30 minutes |
-| 10 | Sending | a send with an attachment | the logs show `GET /api/uploads/:id/blob` with 200; the recipient gets the attachment; the message shows "Delivered"; the quota matches Resend's dashboard (it may read one low) |
+| 10 | Sending | a send with an attachment | the logs show `GET /api/uploads/:id/blob` with 200; the recipient gets the attachment; the message shows "Delivered"; the quota matches Resend's dashboard (sends made outside MelodyMail on the same Resend account show only once Resend reports them) |
 | 11 | Resend webhook signature | "send test event" in Resend, or a real event | 200 and a `webhook_events` row; a wrongly signed request stays covered by tests only |
 | 12 | Web Push | Chrome, Firefox, Safari on macOS, iOS from the Home Screen | the test and a new-mail notification arrive; a click opens the message |
 | 13 | Telegram | Connect, a new mail, each button | the card arrives as a plain message; every button changes it and answers the tap |

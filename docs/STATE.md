@@ -4210,3 +4210,58 @@ in `/setup`, set the third-party secrets themselves, and gave the go for each de
 | 12, 15, 18, 23 | not run: need the owner's devices or an SMTPUTF8 sender |
 | 13 | partial: the owner connected Telegram; the buttons are not checked yet |
 | 19 | pass: the Worker's subdomain API reports `enabled: false`, `previews_enabled: false` |
+
+#### Checklist results added after the first deploy
+
+| # | Result |
+| --- | --- |
+| 8 | partial: one `wrangler tail` sample. Over 10 ms: `GET /api/auth/state` 11 ms, `POST /api/messages/send` 13 ms, `/api/events` upgrade 14 ms; outcome ok for all, one sample each, cold starts possible. Everything else 1 to 7 ms, cron 4 ms. Watch before acting |
+| 10 | partial: a send succeeded and showed "Delivered"; no attachment yet, so the blob fetch is unchecked |
+| 11 | pass: two Resend webhooks (`email.sent`, `email.delivered`) answered 200 after `RESEND_WEBHOOK_SECRET` was set |
+| 16 | partial: no `Authorization` header and no `sig=` in the tail; no API key request was made |
+
+## Post-launch fixes (owner requests 2026-11-17, branch `post-launch-fixes`)
+
+The owner reported three problems after the deploy: the app is poorly adapted to phones (iPhone 16
+Pro, 402x874) with a black iOS status bar, the daily send count reads low, and compose does not
+remember recipients.
+
+- **Send quota.** Resend's `x-resend-daily-quota` lags (3 sends, header 1). Each accepted send now
+  stores max(header, same-UTC-day count + 1), monthly likewise; a refusal keeps the higher value.
+- **Recipient suggestions.** `GET /api/contacts` reads at most 2,000 recent messages through
+  `messages_direction_received`, parses at most 30 matching rows per direction, skips Trash and the
+  owner's addresses, and ranks by recency. The compose To/Cc/Bcc fields are comboboxes. The address
+  scan is linear (two review rounds found quadratic backtracking; "@" is now excluded from both
+  parts). Owner approved a 3 ms p95 budget (`bench:contacts`, worst input 1.6 to 1.8 ms).
+- **Phones.** Settings index at `/settings`; language and theme as icon buttons in the app bar at
+  every width; long values wrap in stacked settings rows with actions below; reader shows Back,
+  Reply, Archive, Trash and puts the rest under More (Dark reading as a checkbox item); compose
+  keeps Close and Send in the title row as a page; 44 px targets under a coarse pointer
+  (`REQUIREMENTS.md`); `viewport-fit=cover`, `black-translucent`, safe-area padding including the
+  MobileNav drawer; one `theme-color` kept in sync with the resolved mode; wide HTML mail reflows
+  by CSS inside the unchanged sandbox.
+- **Owner rulings.**
+  1. HTML mail frame: CSS reflow only, fixed height kept. Auto height needs the parent to measure
+     the frame, which the sandbox forbids; declined to keep isolation.
+  2. Addresses may wrap where they cannot fit (`web/AGENTS.md`, "Values never break", amended).
+  3. Browser tier limit 36 s to 42 s (the 402 px phone suite adds about 4.5 to 7 s).
+  4. Contacts p95 budget 3 ms.
+  5. Phone reader: common actions as icons, the rest under More; Send in the compose top bar.
+- **Reviews.** Two fresh-context review rounds on the quota and contacts commits (FIX FIRST twice,
+  then PASS), two on the phone commits (FIX FIRST: drawer safe area, Dark reading state; then PASS).
+- **Not verified.** A real installed iPhone: painting under the status bar, every safe-area inset,
+  the keyboard with Send, and white status-bar text over the light theme's app bar.
+
+### Deferred (post-launch batch)
+
+| Item | Source | Why it waits |
+| --- | --- | --- |
+| `send_quota.seen_at` can move back when two sends straddle UTC midnight | review 1 (Low) | rare; display only, Resend enforces the real quota |
+| `LIKE` folds case for ASCII only in contact matching | review 1 (Low) | SQLite limitation; substring still matches same case |
+| Phone star/unread in More have no loading state | review 2 (Low) | cosmetic |
+| Compose Send appears after the chunk loads (Suspense fallback) | review 2 (Low) | small layout shift |
+| DNS record values (DKIM keys) wrap in stacked settings rows | phone fixes | codes must not wrap; needs a truncate-and-reveal design |
+| Menu rows (reader More popover, theme and language menus) not swept for 44 px | reviews 2 and 3 (hypothesis, Low) | the sweep never opens a menu |
+| Sign-in pages and desktop app bar have no own test for the icon menus | review 3 (Low) | same shared component as the tested phone app bar |
+| Truncated receiving address in the drawer has no touch reveal | phone audit | existed before |
+| CPU over 10 ms on three routes in one tail sample | checklist 8 | one sample; watch more logs first |

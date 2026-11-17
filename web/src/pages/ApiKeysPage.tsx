@@ -158,7 +158,7 @@ function ApiKeysBody() {
             {
               key: "key",
               header: t("key"),
-              render: (k) => <Value>{`mmk_${k.publicId}_…`}</Value>,
+              render: (k) => <Value isCode>{`mmk_${k.publicId}_…`}</Value>,
             },
             {
               key: "scopes",

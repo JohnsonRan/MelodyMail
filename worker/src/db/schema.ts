@@ -341,7 +341,8 @@ export const webhookEvents = sqliteTable(
   (t) => [index("webhook_events_received").on(t.receivedAt)],
 );
 
-// The last quota counts Resend reported (x-resend-daily-quota, x-resend-monthly-quota).
+// The quota counts of the UTC day and month of seen_at: each accepted send adds one, and a higher
+// count Resend reports (x-resend-daily-quota, x-resend-monthly-quota) replaces it.
 export const sendQuota = sqliteTable(
   "send_quota",
   {

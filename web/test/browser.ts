@@ -35,22 +35,30 @@ export async function shutdown(): Promise<void> {
 /**
  * A new page on `origin`; close it with `session.page.close()`. `isolated` gives the page a
  * context of its own, closed with the page, for a test that changes context-wide state such as
- * the clock. `prepare` runs before the first navigation, for init scripts.
+ * the clock. `touch` gives it a context of its own as a phone: that viewport, a coarse primary
+ * pointer and touch events. `prepare` runs before the first navigation, for init scripts.
  */
 export async function openSession(
   origin: string,
   path = "/",
   {
     isolated = false,
+    touch,
     prepare,
-  }: { isolated?: boolean; prepare?: (page: Page) => Promise<void> } = {},
+  }: {
+    isolated?: boolean;
+    touch?: { width: number; height: number };
+    prepare?: (page: Page) => Promise<void>;
+  } = {},
 ): Promise<Session> {
   const shared = await sharedContext();
-  const page = isolated
-    ? await (await shared.browser()?.newContext({ serviceWorkers: "block" }))?.newPage()
+  const own = isolated || touch !== undefined;
+  const phone = touch && { viewport: touch, isMobile: true, hasTouch: true };
+  const page = own
+    ? await (await shared.browser()?.newContext({ serviceWorkers: "block", ...phone }))?.newPage()
     : await shared.newPage();
   if (!page) throw new Error("no browser");
-  if (isolated) page.on("close", () => void page.context().close());
+  if (own) page.on("close", () => void page.context().close());
   const remote: string[] = [];
   const remoteFromFrames: string[] = [];
   const popups: Page[] = [];

@@ -2,9 +2,12 @@
 <html lang="en" data-astryx-theme="melody">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- Installed on iOS, the app paints under the status bar; AppShell pads by the safe area. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>MelodyMail</title>
-    <!-- Address bar colours: the melody theme --color-background-body (neutral's), light and dark. -->
+    <!-- Address bar colours: the melody theme --color-background-body (neutral's), light and dark.
+         Until the app starts they follow the system; then App.tsx keeps one, set from the theme. -->
     <meta name="theme-color" content="#f1f1f1" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#1b1b1b" media="(prefers-color-scheme: dark)" />
     <link rel="icon" href="/favicon.ico" sizes="48x48" />

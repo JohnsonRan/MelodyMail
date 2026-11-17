@@ -14,7 +14,7 @@ function phrase(term: string): string {
 }
 
 /** A LIKE pattern that matches the term literally anywhere, with \ as the escape character. */
-function contains(term: string): string {
+export function contains(term: string): string {
   return `%${term.replace(/[\\%_]/g, "\\$&")}%`;
 }
 

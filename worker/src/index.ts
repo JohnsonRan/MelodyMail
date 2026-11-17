@@ -17,6 +17,7 @@ import { registerMailboxRoutes, registerMessageRoutes } from "./mail/routes";
 import { registerPushRoutes } from "./push/routes";
 import { publicRoute, requireAuthorization, requireSameOrigin } from "./routing";
 import { registerRuleRoutes } from "./rules/routes";
+import { registerContactRoutes } from "./send/contacts";
 import { registerDraftRoutes } from "./send/drafts";
 import { registerSendInfoRoutes } from "./send/info";
 import { registerSendRoute } from "./send/send";
@@ -57,6 +58,7 @@ registerPushRoutes(app.basePath("/push"));
 // webhook; each checks its own signature.
 registerSendRoute(app.basePath("/messages"));
 registerSendInfoRoutes(app.basePath("/send"));
+registerContactRoutes(app.basePath("/contacts"));
 registerDraftRoutes(app.basePath("/drafts"));
 registerUploadRoutes(app.basePath("/uploads"));
 registerUploadBlobRoute(app);

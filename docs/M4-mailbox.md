@@ -70,10 +70,13 @@ Migration 0007 adds the index the folder queries need, for example
      above a size cap (2 MiB) show a placeholder.
    - **Remote images:** a "Show remote images" action re-renders that message with
      `img-src data: https:`. The choice is not remembered in M4.
-   - The frame height follows its content through `ResizeObserver` on the parent side. The frame
-     cannot run scripts, so the parent measures the srcdoc document after load.
-     `allow-same-origin` must never be added. If measuring is not possible without it, use a fixed
-     height with a scrollable frame and record the trade-off.
+   - The frame has a fixed height and scrolls inside. Without scripts or same origin the parent
+     cannot measure the srcdoc document, and `allow-same-origin` must never be added. Auto height
+     was declined to keep this isolation (owner ruling 2026-11-17); so was letting the frame run a
+     script that reports its size.
+   - In a frame up to 640 px wide, the frame stylesheet reflows mail laid out for a fixed width:
+     every element is capped at the frame width, tables use the fixed layout, cell widths and
+     picture heights are freed, and `<pre>` wraps. Wider frames keep the sender's layout.
 4. **Attachments** are always downloaded and never opened in the app's origin:
    - create the Blob with type `application/octet-stream`;
    - download through an `<a download="<sanitized filename>">`;

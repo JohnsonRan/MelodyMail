@@ -1,13 +1,17 @@
+import { Text } from "@astryxdesign/core/Text";
 import { Tokenizer } from "@astryxdesign/core/Tokenizer";
-import type { SearchSource } from "@astryxdesign/core/Typeahead";
+import type { SearchableItem, SearchSource } from "@astryxdesign/core/Typeahead";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { searchContacts } from "./api";
 
 // To, Cc and Bcc as address chips (docs/M5-sending.md, "Screens"). Typed or pasted text becomes
 // chips on Enter; a paste of several addresses splits on commas, semicolons and spaces. An entry
-// that is not an address stays out and is named in the field's error.
+// that is not an address stays out and is named in the field's error. Typing also suggests
+// addresses from sent and received mail (GET /api/contacts); a pick adds its address as a chip.
 
-type Item = { id: string; label: string };
+/** label is the address; name is the contact's display name, "" when none is known. */
+type Item = SearchableItem<{ name: string }>;
 
 /** The Worker's check (worker/src/send/validate.ts, isEmail), so a chip is never refused later. */
 export function isEmail(value: string): boolean {
@@ -17,8 +21,62 @@ export function isEmail(value: string): boolean {
   );
 }
 
-// No address book yet: the field only creates chips from what is typed.
-const NO_SUGGESTIONS: SearchSource<Item> = { search: () => [], bootstrap: () => [] };
+const SUGGEST_DELAY_MS = 150;
+
+async function fetchContacts(query: string): Promise<Item[]> {
+  try {
+    const { contacts } = await searchContacts(query);
+    return contacts.map((c) => ({
+      id: c.address.toLowerCase(),
+      label: c.address,
+      auxiliaryData: { name: c.name },
+    }));
+  } catch {
+    // Suggestions are optional: a failed request shows none, and typing still adds chips.
+    return [];
+  }
+}
+
+/**
+ * The field offers its "create" row for the typed text only once the search has answered, so
+ * text that is already complete addresses answers at once with no suggestions: Enter right
+ * after typing or pasting adds exactly what was typed. Other text waits SUGGEST_DELAY_MS (the
+ * field's own debounce is off) and asks the Worker only for the last query typed.
+ */
+const contactSource = (): SearchSource<Item> => {
+  let latest = 0;
+  return {
+    search(query) {
+      const call = ++latest;
+      const q = query.trim();
+      const typed = q.split(/[\s,;]+/).filter(Boolean);
+      if (typed.length === 0 || typed.every(isEmail)) return [];
+      return new Promise((resolve) => setTimeout(resolve, SUGGEST_DELAY_MS)).then(() =>
+        call === latest ? fetchContacts(q) : [],
+      );
+    },
+    cancel() {
+      latest++;
+    },
+    bootstrap: () => [],
+  };
+};
+
+/**
+ * The name over the address when a name is known. An address wider than the row wraps instead of
+ * being cut, so its full value shows without hover on a phone (minWidth lets the row shrink).
+ */
+function Suggestion({ item }: { item: Item }) {
+  const name = item.auxiliaryData?.name;
+  return (
+    <div style={{ minWidth: 0 }}>
+      {name && <Text display="block">{name}</Text>}
+      <Text display="block" type={name ? "supporting" : "body"}>
+        {item.label}
+      </Text>
+    </div>
+  );
+}
 
 export function RecipientField({
   label,
@@ -33,11 +91,13 @@ export function RecipientField({
 }) {
   const { t } = useTranslation("compose");
   const [invalid, setInvalid] = useState<string | null>(null);
+  const [contacts] = useState(contactSource);
   const items = value.map((address) => ({ id: address.toLowerCase(), label: address }));
   return (
     <Tokenizer<Item>
       label={label}
-      searchSource={NO_SUGGESTIONS}
+      searchSource={contacts}
+      renderItem={(item) => <Suggestion item={item} />}
       value={items}
       hasCreate
       debounceMs={0}

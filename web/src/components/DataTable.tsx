@@ -4,7 +4,7 @@ import { List, ListItem } from "@astryxdesign/core/List";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { type ColumnWidth, Table, type TableColumn } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
-import type { ReactNode } from "react";
+import { createContext, type ReactNode, useContext } from "react";
 import { SELECTABLE } from "../selection";
 
 export type DataColumn<T> = {
@@ -19,10 +19,16 @@ export type DataColumn<T> = {
 // stacks; laptop (1280 px) and wide (1920 px) get the table.
 const STACKED = "(max-width: 639.98px)";
 
+// A stacked row is one column as wide as the screen; an address that does not fit wraps there
+// instead of running under the next field or off the screen (owner ruling 2026-11-17).
+const StackedContext = createContext(false);
+const WRAP_ANYWHERE = { ...SELECTABLE, overflowWrap: "anywhere" } as const;
+
 /**
  * A settings table that spans the frame at desktop width and stacks at phone width, so no value
  * is cut off and nothing scrolls sideways (web/AGENTS.md, Phone width). The first column is the
- * row's label; `actions` sits at the row's end in both layouts.
+ * row's label; `actions` sits at the row's end: the last column of the table, or below the
+ * fields of a stacked row, so they never share a line with a long value.
  */
 export function DataTable<T extends { id: string | number }>({
   rows,
@@ -39,29 +45,31 @@ export function DataTable<T extends { id: string | number }>({
   if (stacked) {
     const [first, ...rest] = columns;
     return (
-      <List>
-        {rows.map((row) => (
-          <ListItem
-            key={row.id}
-            itemKey={row.id}
-            align="start"
-            label={first?.render(row)}
-            description={
-              <VStack gap={1}>
-                {rest.map((c) => (
-                  <VStack key={c.key} gap={0}>
-                    <Text type="supporting" color="secondary">
-                      {c.header}
-                    </Text>
-                    {c.render(row)}
-                  </VStack>
-                ))}
-              </VStack>
-            }
-            endContent={actions?.(row)}
-          />
-        ))}
-      </List>
+      <StackedContext.Provider value={true}>
+        <List>
+          {rows.map((row) => (
+            <ListItem
+              key={row.id}
+              itemKey={row.id}
+              align="start"
+              label={first?.render(row)}
+              description={
+                <VStack gap={1} hAlign="stretch">
+                  {rest.map((c) => (
+                    <VStack key={c.key} gap={0}>
+                      <Text type="supporting" color="secondary">
+                        {c.header}
+                      </Text>
+                      {c.render(row)}
+                    </VStack>
+                  ))}
+                  {actions?.(row)}
+                </VStack>
+              }
+            />
+          ))}
+        </List>
+      </StackedContext.Provider>
     );
   }
   type Row = T & Record<string, unknown>;
@@ -100,9 +108,16 @@ export function TableSkeleton() {
   );
 }
 
-/** An address, domain or host: it never wraps in the middle (web/AGENTS.md, Values never break). */
-export function Value({ children }: { children: string }) {
-  return (
+/**
+ * A value to copy: an address, domain, host or IP address, or with `isCode` an id or code. In
+ * the table it stays on one line. In a stacked row an address that cannot fit wraps where it must,
+ * so the whole value stays on screen; a code never wraps (web/AGENTS.md, Values never break).
+ */
+export function Value({ children, isCode = false }: { children: string; isCode?: boolean }) {
+  const stacked = useContext(StackedContext);
+  return stacked && !isCode ? (
+    <Text style={WRAP_ANYWHERE}>{children}</Text>
+  ) : (
     <Text textWrap="nowrap" style={SELECTABLE}>
       {children}
     </Text>

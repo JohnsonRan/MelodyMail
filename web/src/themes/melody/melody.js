@@ -514,6 +514,18 @@ export const melodyTheme = {
             }
           }
         }
+      },
+      {
+        "when": {
+          "pointer": "coarse"
+        },
+        "value": {
+          "tokens": {
+            "--size-element-sm": "44px",
+            "--size-element-md": "44px",
+            "--size-element-lg": "44px"
+          }
+        }
       }
     ]
   },

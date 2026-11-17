@@ -44,6 +44,7 @@
     "retry": "Try again",
     "listActions": "Actions on selected messages",
     "messageActions": "Message actions",
+    "moreActions": "More actions",
     "selected": "Selected: {{count}}",
     "trashNote": "Mail in Trash for 30 days is deleted forever.",
     "archive": "Archive",
@@ -129,8 +130,8 @@
     "closeCompose": "Close"
   },
   "settings": {
-    "language": "Language",
-    "theme": "Theme",
+    "languageButton": "Language: {{language}}",
+    "themeButton": "Theme: {{mode}}",
     "quotaTitle": "Sending quota"
   },
   "language": {

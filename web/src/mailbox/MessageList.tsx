@@ -1,3 +1,4 @@
+import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { Icon } from "@astryxdesign/core/Icon";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Layout";
 import {
@@ -12,7 +13,7 @@ import {
 } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { PaperClipIcon, StarIcon } from "@heroicons/react/24/solid";
-import { type Dispatch, type SetStateAction, useCallback, useMemo } from "react";
+import { type Dispatch, type MouseEvent, type SetStateAction, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { type MessageItem, senderName } from "./api";
 import { formatListDate } from "./format";
@@ -29,8 +30,23 @@ const NO_SHRINK = { flexShrink: 0 };
 const OPEN_CELL_STYLE = { backgroundColor: "var(--color-accent-muted)" };
 
 // The row opens the message; its checkbox only selects it. Clicks and keys that start inside
-// another control in the row (the selection checkbox) are not the row's own.
-const INTERACTIVE = "input, button, a, label, [role='checkbox']";
+// another control in the row (the selection checkbox) are not the row's own. Under a coarse
+// pointer the whole selection cell, at least TOUCH_TARGET wide, selects: the 24 px box gets a
+// 44 px target (REQUIREMENTS.md, "Touch target, coarse pointer") and a near miss does not open
+// the message.
+const INTERACTIVE = "input, button, a, label, [role='checkbox'], [data-select-cell]";
+const COARSE = "(pointer: coarse)";
+const TOUCH_TARGET = 44;
+// The selection plugin's column: SELECTION_COLUMN_KEY in Astryx's useTableSelection, which the
+// package does not export. The phone suite fails if it changes (web/test/mobile.test.ts).
+const SELECTION_COLUMN = "__xds_selection";
+
+function selectFromCell(event: MouseEvent<HTMLElement>) {
+  if ((event.target as Element).closest("input")) return;
+  event.currentTarget.querySelector<HTMLInputElement>("input[type=checkbox]")?.click();
+}
+const selectCell = { "data-select-cell": "", onClick: selectFromCell };
+
 function isRowItself(event: { target: EventTarget | null; currentTarget: EventTarget }) {
   const target = event.target as Element | null;
   const control = target?.closest(INTERACTIVE);
@@ -61,6 +77,7 @@ export function MessageList({
   onCursor: (index: number) => void;
 }) {
   const { t, i18n } = useTranslation();
+  const coarse = useMediaQuery(COARSE);
   const rows = messages as Row[];
   const { selectionConfig } = useTableSelectionState<Row>({
     data: rows,
@@ -82,6 +99,23 @@ export function MessageList({
 
   const rowBehaviour = useMemo<TablePlugin<Row>>(
     () => ({
+      transformColumns: (columns) =>
+        coarse
+          ? columns.map((c) =>
+              c.key === SELECTION_COLUMN ? { ...c, width: pixel(TOUCH_TARGET) } : c,
+            )
+          : columns,
+      transformHeaderCell: (props, column) =>
+        coarse && column.key === SELECTION_COLUMN
+          ? {
+              ...props,
+              htmlProps: {
+                ...props.htmlProps,
+                ...selectCell,
+                style: { ...props.htmlProps.style, height: TOUCH_TARGET },
+              },
+            }
+          : props,
       transformBodyRow: (props, item) => ({
         ...props,
         htmlProps: {
@@ -100,18 +134,14 @@ export function MessageList({
           },
         },
       }),
-      transformBodyCell: (props, _column, item) =>
-        item.id === openId
-          ? {
-              ...props,
-              htmlProps: {
-                ...props.htmlProps,
-                style: { ...props.htmlProps.style, ...OPEN_CELL_STYLE },
-              },
-            }
-          : props,
+      transformBodyCell: (props, column, item) => {
+        const htmlProps = { ...props.htmlProps };
+        if (item.id === openId) htmlProps.style = { ...htmlProps.style, ...OPEN_CELL_STYLE };
+        if (coarse && column.key === SELECTION_COLUMN) Object.assign(htmlProps, selectCell);
+        return { ...props, htmlProps };
+      },
     }),
-    [messages, onCursor, onOpen, openId],
+    [coarse, messages, onCursor, onOpen, openId],
   );
 
   const columns = useMemo<TableColumn<Row>[]>(

@@ -44,6 +44,7 @@
     "retry": "重试",
     "listActions": "对所选邮件的操作",
     "messageActions": "邮件操作",
+    "moreActions": "更多操作",
     "selected": "已选择：{{count}}",
     "trashNote": "在“已删除”中满 30 天的邮件会被永久删除。",
     "archive": "存档",
@@ -129,8 +130,8 @@
     "closeCompose": "关闭"
   },
   "settings": {
-    "language": "语言",
-    "theme": "主题",
+    "languageButton": "语言：{{language}}",
+    "themeButton": "主题：{{mode}}",
     "quotaTitle": "发信额度"
   },
   "language": {

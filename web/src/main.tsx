@@ -2,6 +2,8 @@ import "@astryxdesign/core/reset.css";
 import "@astryxdesign/core/astryx.css";
 // Figtree from this origin. The local melody theme (src/themes/melody) loads no fonts itself.
 import "./fonts.css";
+// The phone navigation drawer inside the safe area (see the file).
+import "./mobileNav.css";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

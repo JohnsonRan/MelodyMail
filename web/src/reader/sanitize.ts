@@ -141,6 +141,15 @@ export const DARK_READING_STYLE =
   "<style>html{filter:invert(1) hue-rotate(180deg)}" +
   'img,svg image,[background],[style*="url(" i]{filter:invert(1) hue-rotate(180deg)}</style>';
 
+// Mail laid out for a fixed width (a 600-640 px newsletter) reflows to a narrow frame instead of
+// running off its right edge (owner ruling 2026-11-17). Only frames up to 640 px wide get it, so
+// mail that already fits a desktop reading pane keeps its layout. Without allow-same-origin or
+// scripts the frame cannot be measured, so it keeps its fixed height (docs/M4-mailbox.md).
+export const NARROW_FRAME_STYLE =
+  "<style>pre{white-space:pre-wrap}@media (max-width:640px){" +
+  "body *{max-width:100%!important;min-width:0!important;box-sizing:border-box}" +
+  "table{table-layout:fixed}td,th{width:auto!important}img,video{height:auto!important}}</style>";
+
 /**
  * The frame document: the CSP first, then no referrer, then a light page whatever the app
  * theme is, because senders design mail for a white background. Dark reading adds one more
@@ -154,6 +163,7 @@ export function frameSrcdoc(body: string, remoteImages: boolean, darkReading = f
     '<meta charset="utf-8">',
     "<style>:root{color-scheme:light}body{margin:0;padding:1em;background:white;color:black;",
     "font-family:system-ui,sans-serif;overflow-wrap:anywhere}img{max-width:100%;height:auto}</style>",
+    NARROW_FRAME_STYLE,
     darkReading ? DARK_READING_STYLE : "",
     `</head><body>${body}</body></html>`,
   ].join("");

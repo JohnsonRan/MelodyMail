@@ -28,7 +28,7 @@ import { useTranslation } from "react-i18next";
 import type { Folder } from "../mailbox/api";
 import { MailboxProvider, useMailbox } from "../mailbox/MailboxContext";
 import { useNetwork } from "../network";
-import { PreferenceSelectors } from "../preferences";
+import { PreferenceMenus } from "../preferences";
 import { AppLogo } from "./AppLogo";
 import { SystemBanners } from "./SystemBanners";
 
@@ -98,7 +98,7 @@ function MailNav() {
           label={t("nav.settings")}
           icon={Cog6ToothIcon}
           isSelected={false}
-          href="/settings/domains"
+          href="/settings"
         />
       }
     >
@@ -132,7 +132,7 @@ function MailNav() {
   );
 }
 
-const SETTINGS_NAV: {
+export const SETTINGS_NAV: {
   title: string;
   items: { key: string; path: string; icon: typeof InboxIcon }[];
 }[] = [
@@ -208,7 +208,7 @@ export function MailShell() {
             label={t("nav.main")}
             heading={<TopNavHeading heading={t("app.name")} logo={<AppLogo size="md" />} />}
             centerContent={<SearchField />}
-            endContent={<PreferenceSelectors />}
+            endContent={<PreferenceMenus />}
           />
         }
         sideNav={inSettings ? <SettingsNav /> : <MailNav />}

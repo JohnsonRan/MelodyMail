@@ -65,7 +65,10 @@ are the rules those values must satisfy.
   - Icon and text inside a control are vertically centred. Check this with CJK text, whose metrics
     differ from Latin.
 - **Values never break.**
-  - Dates, times, ids, addresses and codes never wrap in the middle.
+  - Dates, times, ids and codes never wrap in the middle.
+  - An address (mail, domain, host, IP) stays on one line where it fits its column. Where it
+    cannot fit, as on a phone, it may wrap anywhere instead of being cut (owner ruling
+    2026-11-17).
   - Truncated text shows its full value on hover, on focus and on touch (a phone has no hover).
 - **Skeletons.** Page-level loading uses the page's skeleton; an action on a control (a button, a
   row) shows its loading state on that control. Neither uses a full-page spinner.
@@ -108,6 +111,8 @@ are the rules those values must satisfy.
 
 - Every action works with the keyboard alone, with visible focus.
 - After a route change, focus starts at the page title.
+- Where the primary pointer is coarse, every interactive target is at least the touch-target size
+  in `REQUIREMENTS.md`.
 - WCAG AA contrast in every theme (if present): 4.5:1 for normal text, 3:1 for large text, 3:1 for
   UI components and focus indicators against their surroundings.
 

@@ -4,15 +4,22 @@ import { VStack } from "@astryxdesign/core/Layout";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import type { CSSProperties, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { PreferenceSelectors } from "../preferences";
+import { PreferenceMenus } from "../preferences";
 import { AppLogo } from "./AppLogo";
 import { SystemBanners } from "./SystemBanners";
 
 // From the Astryx login-card template: the page paints its own body background, and the column
-// is capped at the template's readable width but shrinks on narrow screens.
+// is capped at the template's readable width but shrinks on narrow screens. The page reaches
+// under an installed iPhone app's status bar (viewport-fit=cover), so the padding is at least
+// the safe area on every side.
+const inset = (side: string) => `max(var(--spacing-6), env(safe-area-inset-${side}, 0px))`;
 const pageStyle: CSSProperties = {
   minHeight: "100dvh",
   backgroundColor: "var(--color-background-body)",
+  paddingTop: inset("top"),
+  paddingRight: inset("right"),
+  paddingBottom: inset("bottom"),
+  paddingLeft: inset("left"),
 };
 const columnStyle: CSSProperties = { width: "100%", maxWidth: 400 };
 
@@ -50,7 +57,7 @@ export function AuthFrame({
             {children}
           </VStack>
         </Card>
-        <PreferenceSelectors />
+        <PreferenceMenus />
       </VStack>
     </Center>
   );

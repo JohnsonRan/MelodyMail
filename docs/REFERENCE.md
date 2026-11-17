@@ -106,9 +106,26 @@ matched.
 ## Mailbox
 
 Messages are parsed in the browser. Sender HTML is shown in a sandboxed frame without scripts,
-remote images stay blocked until "Show remote images" is chosen for that message, and
-attachments are always downloaded, never opened in the app. In the dark theme, "Dark reading" in
-the reader shows one HTML message inverted; it is off for every message you open.
+which has a fixed height and scrolls inside: auto height would need scripts or same origin in the
+frame, and was declined to keep it isolated. In a frame up to 640 px wide, mail laid out for a
+wider screen reflows to the frame width. Remote images stay blocked until "Show remote images"
+is chosen for that message, and attachments are always downloaded, never opened in the app. In
+the dark theme, "Dark reading" in the reader shows one HTML message inverted; it is off for every
+message you open.
+
+The language and theme buttons in the app bar open menus of their choices. The theme button's
+icon shows the current mode: system, light or dark.
+
+On a phone (narrower than 768 px):
+
+- the reader shows Back, Reply, Archive and Move to Trash as icons, and the other actions,
+  Dark reading included, under "More actions";
+- the list shows Archive and Move to Trash, with star and read state under "More actions";
+- Settings opens a list of its sections; wider screens open Domains.
+
+Compose opened as a page (narrower than 1280 px) keeps Close and Send in its title row, so both
+stay on screen while the fields scroll. Where the primary pointer is a finger, every control is
+at least 44 x 44 CSS px.
 
 Open pages receive new-mail events from the `Hub` Durable Object (SQLite-backed, as Workers Free
 requires), which the deploy creates.
@@ -129,7 +146,8 @@ requires), which the deploy creates.
 ## Install and offline
 
 MelodyMail is an installable web app. In Chrome or Edge, choose Install in the address bar; on
-iPhone and iPad, choose Share, then Add to Home Screen. Its service worker caches only the app
+iPhone and iPad, choose Share, then Add to Home Screen; installed there, the app bar draws under
+the status bar. Its service worker caches only the app
 itself, never mail or API answers, so the app opens without a network and says it is offline;
 reading mail needs the network. After a deploy, open pages show "A new version is available"
 with a Reload action.
@@ -210,14 +228,21 @@ renders it, and the mail carries both the Markdown source (plain text) and the H
 off until the Worker has a Resend API key; compose then says sending is not set up. The Resend
 set-up is in `docs/RUNBOOK.md`, "Sending through Resend".
 
+While you type in To, Cc or Bcc, compose suggests addresses you sent to or received mail from,
+newest first, matching the address or the display name (`GET /api/contacts`). It reads the newest
+1,000 sent and 1,000 received messages; mail in Trash does not count, and your own addresses are
+left out. Text that is already a complete address gets no suggestions, and Enter adds it as typed.
+
 Each secret switches on one part: without `UPLOAD_URL_KEY` compose sends without attachments, and
 without `RESEND_WEBHOOK_SECRET` sent mail stays at "Sent" instead of showing delivery. Resend
 fetches attachments from a signed URL on your origin that is valid for 24 hours; it cannot reach
 `wrangler dev` on localhost, so attachments work only on a deployed Worker. For `wrangler dev`,
 put the values in `worker/.dev.vars`.
 
-The quota shown in compose and Settings is the count Resend last reported, against the limits in
-`wrangler.jsonc` (`RESEND_DAILY_LIMIT` 100, `RESEND_MONTHLY_LIMIT` 3000, the Free plan). Change the
+The quota shown in compose and Settings counts the sends of the current UTC day and month. Each
+accepted send adds one; when Resend's own reported count is higher, that count is shown. Resend's
+reported count can lag behind, so the local count is often the one shown. The limits come
+from `wrangler.jsonc` (`RESEND_DAILY_LIMIT` 100, `RESEND_MONTHLY_LIMIT` 3000, the Free plan). Change the
 vars there for another plan.
 
 ## REST API

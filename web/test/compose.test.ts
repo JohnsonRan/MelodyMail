@@ -57,6 +57,8 @@ describe("compose end to end", () => {
     // Not an address: refused and named.
     const to = compose(s).getByRole("combobox", { name: "To" });
     await to.fill("nope");
+    // Text that is not yet an address waits for the suggestions before Enter can add it.
+    await s.page.getByRole("option", { name: /nope/ }).waitFor();
     await to.press("Enter");
     await compose(s).getByText("Not an email address: nope").waitFor();
     await compose(s).getByLabel("Subject").fill("Plans");
@@ -107,6 +109,70 @@ describe("compose end to end", () => {
       .locator('[data-message-row="sent-1"]')
       .getByText("To: friend@example.org")
       .waitFor();
+  });
+
+  test("suggests recipients from mail, by keyboard and by pointer at phone width", async () => {
+    const s = await open("/", 402);
+    await s.page.keyboard.press("c");
+    const to = compose(s).getByRole("combobox", { name: "To" });
+    await to.pressSequentially("lidd");
+    const alice = s.page.getByRole("option", { name: /Alice Liddell/ });
+    await alice.waitFor();
+    expect(await alice.textContent()).toContain("alice@example.org");
+    expect(app.send.contactQueries).toEqual(["lidd"]);
+    await to.press("Escape");
+    await alice.waitFor({ state: "detached" });
+    await to.press("ArrowDown");
+    await alice.waitFor();
+    const active = () => to.getAttribute("aria-activedescendant");
+    const aliceId = await alice.getAttribute("id");
+    expect(await active()).toBe(aliceId);
+    await to.press("ArrowDown");
+    expect(await active()).not.toBe(aliceId);
+    await to.press("ArrowUp");
+    expect(await active()).toBe(aliceId);
+    await to.press("Enter");
+    await compose(s).getByText("alice@example.org", { exact: true }).waitFor();
+    expect(await to.inputValue()).toBe("");
+
+    const cc = compose(s).getByRole("combobox", { name: "Cc", exact: true });
+    await compose(s).getByRole("button", { name: "Cc and Bcc" }).click();
+    await cc.pressSequentially("albert");
+    const albert = s.page.getByRole("option", { name: /albert\.long-address/ });
+    await albert.waitFor();
+    // A long address wraps instead of being cut: a phone has no hover to show the rest.
+    const clipped = await s.page
+      .getByRole("option", { name: /albert/ })
+      .evaluateAll(
+        (options) =>
+          options
+            .flatMap((o) => [...o.querySelectorAll("*")])
+            .filter((e) => e.scrollWidth > e.clientWidth).length,
+      );
+    expect(clipped).toBe(0);
+    await albert.click();
+    await compose(s)
+      .getByText(/^albert\.long-address/)
+      .waitFor();
+    const overflow = await s.page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBe(0);
+    await compose(s).getByLabel("Subject").fill("Suggested");
+    // As a page, Send sits in the title row: still on screen with the body focused and a
+    // keyboard taking half the screen (402 x 500).
+    expect(await compose(s).getByRole("button", { name: "Send", exact: true }).count()).toBe(0);
+    await s.page.setViewportSize({ width: 402, height: 500 });
+    await compose(s).locator("textarea").focus();
+    const send = s.page.getByRole("button", { name: "Send", exact: true });
+    const box = await send.boundingBox();
+    expect(box && box.y >= 0 && box.y + box.height <= 500).toBe(true);
+    await send.click();
+    await s.page.getByText("Message sent", { exact: true }).first().waitFor();
+    expect(app.send.sends[0]).toMatchObject({
+      to: ["alice@example.org"],
+      cc: ["albert.long-address-for-a-narrow-screen@subdomain.example.org"],
+    });
   });
 
   test("replies, replies all and forwards with the source in the request", async () => {

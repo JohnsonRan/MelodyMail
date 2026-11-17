@@ -33,6 +33,7 @@
     "backup-gap": "bun scripts/backup-gap.ts",
     "bench:auth": "bun bench/auth.ts",
     "bench:backup": "bun bench/backup.ts",
+    "bench:contacts": "bun bench/contacts.ts",
     "bench:parse": "bun bench/parse.ts",
     "bench:rules": "bun bench/rules.ts",
     "bench:telegram": "bun bench/telegram.ts",
