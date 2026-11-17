@@ -70,6 +70,10 @@ export class SendStub {
   contacts = [
     { address: "alice@example.org", name: "Alice Liddell" },
     { address: "albert.long-address-for-a-narrow-screen@subdomain.example.org", name: "" },
+    {
+      address: "alberta.another-long-address@deeply.nested.subdomain.example.org",
+      name: "Alberta",
+    },
   ];
   /** The q of each GET /api/contacts, in order. */
   contactQueries: string[] = [];

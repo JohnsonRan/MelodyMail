@@ -6,7 +6,9 @@
  * per direction. Inputs, each MATCH_ROWS received and MATCH_ROWS sent messages: plain headers;
  * received From headers of 998 characters (the stored cut) dense with short addresses, which a
  * sender controls; sent To, Cc and Bcc holding 50 addresses (RECIPIENTS_MAX) of 252 characters each
- * (near the 254-character limit); and one contact repeated in every row.
+ * (near the 254-character limit); one contact repeated in every row; and received From headers
+ * that hold a long run without "@": a quoted 990-character name, or a 980-character name, before
+ * the address.
  * Exits 1 when the p95 of any input reaches the budget.
  *
  * Usage: bun bench/contacts.ts [iterations]
@@ -43,6 +45,14 @@ const INPUTS: Record<string, ContactRow[]> = {
   "dense From, 50 long recipients": rows(
     () => dense,
     (i) => [list(i, 0, 20), list(i, 20, 20), list(i, 40, 10)],
+  ),
+  "quoted 990-character name": rows(
+    () => `"${"a".repeat(990)}" <x@y.io>`,
+    () => [null, null, null],
+  ),
+  "980-character name": rows(
+    () => `${"n".repeat(980)} <x@y.io>`,
+    () => [null, null, null],
   ),
   "one contact in every row": rows(
     () => "Same Person <same@example.org>",

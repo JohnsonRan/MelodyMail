@@ -1,9 +1,6 @@
+import { Text } from "@astryxdesign/core/Text";
 import { Tokenizer } from "@astryxdesign/core/Tokenizer";
-import {
-  type SearchableItem,
-  type SearchSource,
-  TypeaheadItem,
-} from "@astryxdesign/core/Typeahead";
+import type { SearchableItem, SearchSource } from "@astryxdesign/core/Typeahead";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { searchContacts } from "./api";
@@ -66,20 +63,17 @@ const contactSource = (): SearchSource<Item> => {
 };
 
 /**
- * The name over the address when a name is known. A row narrower than the address ends it with
- * an ellipsis (minWidth lets the row shrink); the title shows it on hover, and a pick shows it
- * whole as a chip.
+ * The name over the address when a name is known. An address wider than the row wraps instead of
+ * being cut, so its full value shows without hover on a phone (minWidth lets the row shrink).
  */
 function Suggestion({ item }: { item: Item }) {
   const name = item.auxiliaryData?.name;
-  const shown = name ? { ...item, label: name } : item;
   return (
-    <div title={item.label} style={{ minWidth: 0 }}>
-      <TypeaheadItem
-        item={shown}
-        description={name ? item.label : undefined}
-        style={{ minWidth: 0 }}
-      />
+    <div style={{ minWidth: 0 }}>
+      {name && <Text display="block">{name}</Text>}
+      <Text display="block" type={name ? "supporting" : "body"}>
+        {item.label}
+      </Text>
     </div>
   );
 }

@@ -35,6 +35,16 @@ describe("contacts", () => {
     ]);
   });
 
+  // A scan that retries a run without "@" at every character takes minutes on this input; the
+  // linear scan takes milliseconds, far inside the timeout.
+  it("parses a long run without @ in linear time", { timeout: 3000 }, () => {
+    const run = "a".repeat(200_000);
+    expect(headerAddresses(`"${run}" <x@y.io>, ${run} b@y.io`)).toEqual([
+      { address: "x@y.io", name: run },
+      { address: "b@y.io", name: "" },
+    ]);
+  });
+
   it("suggests sent-to and received-from addresses, newest first", async () => {
     const client = await signedIn();
     await sender("me");

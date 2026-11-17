@@ -21,8 +21,12 @@ export type Contact = { address: string; name: string };
 export type ContactRow = { at: number; headers: (string | null)[] };
 
 // A stored header is a list of "Name <a@x>" and bare addresses, joined by ", " (the parse in
-// worker/src/mail/parse.ts, and the sent copy's bare addresses).
-const ADDRESS = /<([^<>\s]+@[^<>\s]+)>|([^\s<>,;:()"]+@[^\s<>,;:()"]+)/g;
+// worker/src/mail/parse.ts, and the sent copy's bare addresses). The header comes from a sender,
+// so the scan stays linear: a bare address starts only where a run of address characters starts
+// (the lookbehind), so a long run without "@" is tried once, not once per character, and every
+// part is bounded by the 254-character address limit.
+const ADDRESS =
+  /<([^<>\s]{1,254}@[^<>\s]{1,254})>|(?<![^\s<>,;:()"])([^\s<>,;:()"]{1,254}@[^\s<>,;:()"]{1,254})/g;
 
 /** The addresses of one stored header with their display names ("" when none). */
 export function headerAddresses(header: string): Contact[] {

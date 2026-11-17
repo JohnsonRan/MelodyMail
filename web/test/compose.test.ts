@@ -139,6 +139,17 @@ describe("compose end to end", () => {
     await compose(s).getByRole("button", { name: "Cc and Bcc" }).click();
     await cc.pressSequentially("albert");
     const albert = s.page.getByRole("option", { name: /albert\.long-address/ });
+    await albert.waitFor();
+    // A long address wraps instead of being cut: a phone has no hover to show the rest.
+    const clipped = await s.page
+      .getByRole("option", { name: /albert/ })
+      .evaluateAll(
+        (options) =>
+          options
+            .flatMap((o) => [...o.querySelectorAll("*")])
+            .filter((e) => e.scrollWidth > e.clientWidth).length,
+      );
+    expect(clipped).toBe(0);
     await albert.click();
     await compose(s)
       .getByText(/^albert\.long-address/)
