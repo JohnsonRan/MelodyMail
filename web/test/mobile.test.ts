@@ -153,4 +153,41 @@ describe("phone end to end", () => {
     expect(await s.page.getByText(SENDER, { exact: true }).count()).toBeGreaterThan(0);
     expect(await cutText(SENDER)).toBe(0);
   });
+
+  test("puts the rarer reader actions under More", async () => {
+    await go("/?m=long", "text=Hello.");
+    const bar = s.page.getByRole("toolbar", { name: "Message actions" });
+    expect(await bar.getByRole("button").evaluateAll((b) => b.map((e) => e.ariaLabel))).toEqual([
+      "Back to the list",
+      "Reply",
+      "Archive",
+      "Move to Trash",
+      "More actions",
+    ]);
+    await bar.getByRole("button", { name: "More actions" }).click();
+    // On a phone the menu is a bottom sheet of buttons.
+    const sheet = s.page.getByRole("dialog").filter({ hasText: "More actions" });
+    const items = sheet.getByRole("list").getByRole("button");
+    await items.first().waitFor();
+    expect(await items.allTextContents()).toEqual([
+      "Reply all",
+      "Forward",
+      "Star",
+      "Mark as unread",
+    ]);
+    await items.filter({ hasText: "Star" }).click();
+    await sheet.waitFor({ state: "hidden" });
+    await s.page.waitForFunction(() => document.querySelector('[aria-label="Unstar"]') === null);
+    expect(app.patches.at(-1)).toEqual({ path: "/api/messages/long", body: { starred: true } });
+  });
+
+  test("puts star and read state in the list's More menu", async () => {
+    await go("/", `[data-message-row="note3"]`);
+    const bar = s.page.getByRole("toolbar", { name: "Actions on selected messages" });
+    expect(await bar.getByRole("button").evaluateAll((b) => b.map((e) => e.ariaLabel))).toEqual([
+      "Archive",
+      "Move to Trash",
+      "More actions",
+    ]);
+  });
 });

@@ -44,6 +44,7 @@
     "retry": "再試行",
     "listActions": "選択したメッセージの操作",
     "messageActions": "メッセージの操作",
+    "moreActions": "その他の操作",
     "selected": "選択済み: {{count}}",
     "trashNote": "ごみ箱に入ってから 30 日たったメールは完全に削除されます。",
     "archive": "アーカイブ",

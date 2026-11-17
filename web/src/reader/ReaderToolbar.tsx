@@ -1,3 +1,5 @@
+import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { ToggleButton } from "@astryxdesign/core/ToggleButton";
@@ -7,6 +9,8 @@ import {
   ArrowLeftIcon,
   ArrowUturnLeftIcon,
   ArrowUturnRightIcon,
+  CheckIcon,
+  EllipsisHorizontalIcon,
   EnvelopeIcon,
   InboxArrowDownIcon,
   MoonIcon,
@@ -18,14 +22,9 @@ import {
 } from "@heroicons/react/24/outline";
 import { StarIcon } from "@heroicons/react/24/solid";
 import { useTranslation } from "react-i18next";
+import { NARROW } from "../breakpoints";
 import type { SourceKind } from "../compose/api";
 import type { MessageDetail } from "../mailbox/api";
-
-const COMPOSE_ACTIONS: { kind: SourceKind; icon: typeof ReplyIcon }[] = [
-  { kind: "reply", icon: ReplyIcon },
-  { kind: "replyAll", icon: UsersIcon },
-  { kind: "forward", icon: ArrowUturnRightIcon },
-];
 
 export type ReaderAction =
   | "archive"
@@ -37,7 +36,20 @@ export type ReaderAction =
   | "unread"
   | "delete";
 
-/** The reader's action row for the open message. */
+type Action = {
+  key: string;
+  label: string;
+  icon: typeof ReplyIcon;
+  onClick: () => void;
+  isLoading?: boolean;
+  /** Shown as an icon on a phone too; the rest go to the More menu there. */
+  isCommon?: boolean;
+};
+
+/**
+ * The reader's action row for the open message. On a phone only the common actions are icons
+ * and the rest sit in a More menu with text labels, as in the Gmail and Outlook apps.
+ */
 export function ReaderToolbar({
   current,
   inTrash,
@@ -68,6 +80,67 @@ export function ReaderToolbar({
   onCompose: (kind: SourceKind) => void;
 }) {
   const { t } = useTranslation();
+  const compact = useMediaQuery(NARROW);
+  const compose = (kind: SourceKind, icon: typeof ReplyIcon, isCommon = false): Action => ({
+    key: kind,
+    label: t(`mail.${kind}`),
+    icon,
+    onClick: () => onCompose(kind),
+    isCommon,
+  });
+  const actions: Action[] = current
+    ? [
+        compose("reply", ReplyIcon, true),
+        compose("replyAll", UsersIcon),
+        compose("forward", ArrowUturnRightIcon),
+        ...(inTrash
+          ? []
+          : [
+              {
+                key: "archive",
+                label: current.archived ? t("mail.moveToInbox") : t("mail.archive"),
+                icon: current.archived ? InboxArrowDownIcon : ArchiveBoxIcon,
+                onClick: () => run(current.archived ? "unarchive" : "archive"),
+                isLoading: busy === "archive" || busy === "unarchive",
+                isCommon: true,
+              },
+            ]),
+        {
+          key: "trash",
+          label: inTrash ? t("mail.restore") : t("mail.trash"),
+          icon: inTrash ? ArrowUturnLeftIcon : TrashIcon,
+          onClick: () => run(inTrash ? "restore" : "trash"),
+          isLoading: busy === "trash" || busy === "restore",
+          isCommon: true,
+        },
+        {
+          key: "star",
+          label: current.starred ? t("mail.unstar") : t("mail.star"),
+          icon: current.starred ? StarIcon : StarOutline,
+          onClick: () => run(current.starred ? "unstar" : "star"),
+          isLoading: busy === "star" || busy === "unstar",
+        },
+        {
+          key: "unread",
+          label: t("mail.markUnread"),
+          icon: EnvelopeIcon,
+          onClick: () => run("unread"),
+          isLoading: busy === "unread",
+        },
+        ...(canShowRemote
+          ? [
+              {
+                key: "remote",
+                label: t("mail.showRemoteImages"),
+                icon: PhotoIcon,
+                onClick: onShowRemote,
+              },
+            ]
+          : []),
+      ]
+    : [];
+  const shown = compact ? actions.filter((a) => a.isCommon) : actions;
+  const more = compact ? actions.filter((a) => !a.isCommon) : [];
   return (
     <Toolbar
       label={t("mail.messageActions")}
@@ -82,73 +155,51 @@ export function ReaderToolbar({
               onClick={onBack}
             />
           )}
-          {current &&
-            COMPOSE_ACTIONS.map(({ kind, icon }) => (
-              <IconButton
-                key={kind}
-                label={t(`mail.${kind}`)}
-                tooltip={t(`mail.${kind}`)}
-                icon={<Icon icon={icon} />}
-                variant="ghost"
-                onClick={() => onCompose(kind)}
-              />
-            ))}
-          {current && !inTrash && (
+          {shown.map((a) => (
             <IconButton
-              label={current.archived ? t("mail.moveToInbox") : t("mail.archive")}
-              tooltip={current.archived ? t("mail.moveToInbox") : t("mail.archive")}
-              icon={<Icon icon={current.archived ? InboxArrowDownIcon : ArchiveBoxIcon} />}
+              key={a.key}
+              label={a.label}
+              tooltip={a.label}
+              icon={<Icon icon={a.icon} />}
               variant="ghost"
-              isLoading={busy === "archive" || busy === "unarchive"}
-              onClick={() => run(current.archived ? "unarchive" : "archive")}
+              isLoading={a.isLoading}
+              onClick={a.onClick}
             />
-          )}
-          {current && (
-            <IconButton
-              label={inTrash ? t("mail.restore") : t("mail.trash")}
-              tooltip={inTrash ? t("mail.restore") : t("mail.trash")}
-              icon={<Icon icon={inTrash ? ArrowUturnLeftIcon : TrashIcon} />}
-              variant="ghost"
-              isLoading={busy === "trash" || busy === "restore"}
-              onClick={() => run(inTrash ? "restore" : "trash")}
-            />
-          )}
-          {current && (
-            <IconButton
-              label={current.starred ? t("mail.unstar") : t("mail.star")}
-              tooltip={current.starred ? t("mail.unstar") : t("mail.star")}
-              icon={<Icon icon={current.starred ? StarIcon : StarOutline} />}
-              variant="ghost"
-              isLoading={busy === "star" || busy === "unstar"}
-              onClick={() => run(current.starred ? "unstar" : "star")}
-            />
-          )}
-          {current && (
-            <IconButton
-              label={t("mail.markUnread")}
-              tooltip={t("mail.markUnread")}
-              icon={<Icon icon={EnvelopeIcon} />}
-              variant="ghost"
-              isLoading={busy === "unread"}
-              onClick={() => run("unread")}
-            />
-          )}
-          {current && canShowRemote && (
-            <IconButton
-              label={t("mail.showRemoteImages")}
-              tooltip={t("mail.showRemoteImages")}
-              icon={<Icon icon={PhotoIcon} />}
-              variant="ghost"
-              onClick={onShowRemote}
-            />
-          )}
-          {current && darkReading !== null && (
+          ))}
+          {current && !compact && darkReading !== null && (
             <ToggleButton
               label={t("mail.darkReading")}
               icon={<Icon icon={MoonIcon} />}
               isIconOnly
               isPressed={darkReading}
               onPressedChange={onDarkReading}
+            />
+          )}
+          {current && compact && (
+            <DropdownMenu
+              presentation="adaptive"
+              alignment="end"
+              renderTrigger={(props) => (
+                <IconButton
+                  {...props}
+                  label={t("mail.moreActions")}
+                  icon={<Icon icon={EllipsisHorizontalIcon} />}
+                  variant="ghost"
+                />
+              )}
+              items={[
+                ...more.map((a) => ({ label: a.label, icon: a.icon, onClick: a.onClick })),
+                ...(darkReading === null
+                  ? []
+                  : [
+                      {
+                        label: t("mail.darkReading"),
+                        icon: MoonIcon,
+                        endContent: darkReading ? <Icon icon={CheckIcon} /> : undefined,
+                        onClick: () => onDarkReading(!darkReading),
+                      },
+                    ]),
+              ]}
             />
           )}
         </>
