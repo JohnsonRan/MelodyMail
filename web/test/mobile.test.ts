@@ -272,4 +272,32 @@ describe("phone end to end", () => {
       "More actions",
     ]);
   });
+
+  test("keeps one browser bar colour that follows a manual theme", async () => {
+    const metas = () =>
+      s.page.evaluate(() =>
+        [...document.querySelectorAll('meta[name="theme-color"]')].map((m) => [
+          m.getAttribute("content"),
+          m.getAttribute("media"),
+        ]),
+      );
+    expect(await metas()).toEqual([["#f1f1f1", null]]);
+    await s.page.evaluate(() => localStorage.setItem("melodymail.mode", "dark"));
+    await go("/", `[data-message-row="note3"]`);
+    await s.page.waitForFunction(
+      () =>
+        document.querySelector('meta[name="theme-color"]')?.getAttribute("content") !== "#f1f1f1",
+    );
+    expect(await metas()).toEqual([["#1b1b1b", null]]);
+    const head = await s.page.evaluate(() => ({
+      viewport: document.querySelector('meta[name="viewport"]')?.getAttribute("content"),
+      statusBar: document
+        .querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
+        ?.getAttribute("content"),
+    }));
+    expect(head).toEqual({
+      viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
+      statusBar: "black-translucent",
+    });
+  });
 });

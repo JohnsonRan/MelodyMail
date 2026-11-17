@@ -9,10 +9,17 @@ import { AppLogo } from "./AppLogo";
 import { SystemBanners } from "./SystemBanners";
 
 // From the Astryx login-card template: the page paints its own body background, and the column
-// is capped at the template's readable width but shrinks on narrow screens.
+// is capped at the template's readable width but shrinks on narrow screens. The page reaches
+// under an installed iPhone app's status bar (viewport-fit=cover), so the padding is at least
+// the safe area on every side.
+const inset = (side: string) => `max(var(--spacing-6), env(safe-area-inset-${side}, 0px))`;
 const pageStyle: CSSProperties = {
   minHeight: "100dvh",
   backgroundColor: "var(--color-background-body)",
+  paddingTop: inset("top"),
+  paddingRight: inset("right"),
+  paddingBottom: inset("bottom"),
+  paddingLeft: inset("left"),
 };
 const columnStyle: CSSProperties = { width: "100%", maxWidth: 400 };
 
