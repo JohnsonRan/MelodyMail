@@ -27,14 +27,35 @@ function sentKey(id: string, now: number): string {
   return `sent/${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${id}.json`;
 }
 
-export function quotaUpsert(db: D1Database, quota: Quota, now: number): D1PreparedStatement {
+/**
+ * Stores the quota counts after Resend answered for message `id`. Resend's headers lag behind
+ * its own count. An accepted send therefore adds one to the stored count of the same UTC day
+ * and month, but only while the row is still "sending", so a second answer for the same message
+ * adds nothing; the higher of that and the header is kept. A refusal keeps the higher of the
+ * header and the stored count. One statement, so concurrent sends cannot lose a count.
+ */
+function quotaUpsert(
+  db: D1Database,
+  id: string,
+  quota: Quota | null,
+  accepted: boolean,
+  now: number,
+): D1PreparedStatement {
   return db
     .prepare(
-      `INSERT INTO send_quota (id, daily_used, monthly_used, seen_at) VALUES (1, ?, ?, ?)
-       ON CONFLICT (id) DO UPDATE SET daily_used = excluded.daily_used,
-         monthly_used = excluded.monthly_used, seen_at = excluded.seen_at`,
+      `INSERT INTO send_quota (id, daily_used, monthly_used, seen_at)
+       SELECT 1, max(?1, ?3), max(?2, ?3), ?4
+       WHERE ?3 = 0 OR EXISTS (SELECT 1 FROM messages WHERE id = ?5 AND status = 'sending')
+       ON CONFLICT (id) DO UPDATE SET
+         daily_used = max(excluded.daily_used, ?3 + CASE
+           WHEN date(send_quota.seen_at / 1000, 'unixepoch') = date(?4 / 1000, 'unixepoch')
+             THEN send_quota.daily_used ELSE 0 END),
+         monthly_used = max(excluded.monthly_used, ?3 + CASE
+           WHEN strftime('%Y-%m', send_quota.seen_at / 1000, 'unixepoch')
+             = strftime('%Y-%m', ?4 / 1000, 'unixepoch') THEN send_quota.monthly_used ELSE 0 END),
+         seen_at = ?4`,
     )
-    .bind(quota.dailyUsed, quota.monthlyUsed, now);
+    .bind(quota?.dailyUsed ?? 0, quota?.monthlyUsed ?? 0, accepted ? 1 : 0, now, id);
 }
 
 /** Inserts the "sending" row; null when a row with this key already exists. */
@@ -129,7 +150,6 @@ async function deliver(c: Context<AppEnv>, id: string, key: string, copy: SentCo
     key,
   );
   const now = Date.now();
-  const quota = outcome.quota ? [quotaUpsert(db, outcome.quota, now)] : [];
   if (!outcome.ok) {
     const fields = { messageId: id, status: outcome.status, name: outcome.name };
     if (outcome.code === "send_in_progress") {
@@ -145,11 +165,14 @@ async function deliver(c: Context<AppEnv>, id: string, key: string, copy: SentCo
         ? [db.prepare("UPDATE uploads SET message_id = NULL WHERE message_id = ?").bind(id)]
         : [];
     const unknown = outcome.code === "send_failed";
+    const quota = outcome.quota ? [quotaUpsert(db, id, outcome.quota, false, now)] : [];
     await db.batch([...quota, failedUpdate(db, id, outcome.code, unknown), ...release]);
     await notifyHub(env, { type: "changed", id });
     return c.json({ error: outcome.code, id }, HTTP_STATUS[outcome.code]);
   }
   await db.batch([
+    // Before the status update, which ends the "sending" state the quota statement checks.
+    quotaUpsert(db, id, outcome.quota, true, now),
     // The search row only while the row is still "sending", so a repeat adds no second one.
     db
       .prepare(
@@ -162,7 +185,6 @@ async function deliver(c: Context<AppEnv>, id: string, key: string, copy: SentCo
         "UPDATE messages SET status = 'sent', resend_id = ?, error = NULL WHERE id = ? AND status = 'sending'",
       )
       .bind(outcome.resendId, id),
-    ...quota,
     db.prepare("DELETE FROM drafts WHERE idempotency_key = ?").bind(key),
   ]);
   log("info", "send_ok", { messageId: id });

@@ -216,8 +216,10 @@ fetches attachments from a signed URL on your origin that is valid for 24 hours;
 `wrangler dev` on localhost, so attachments work only on a deployed Worker. For `wrangler dev`,
 put the values in `worker/.dev.vars`.
 
-The quota shown in compose and Settings is the count Resend last reported, against the limits in
-`wrangler.jsonc` (`RESEND_DAILY_LIMIT` 100, `RESEND_MONTHLY_LIMIT` 3000, the Free plan). Change the
+The quota shown in compose and Settings counts the sends of the current UTC day and month. Each
+accepted send adds one; when Resend's own reported count is higher, that count is shown. Resend's
+reported count can lag behind, so the local count is often the one shown. The limits come
+from `wrangler.jsonc` (`RESEND_DAILY_LIMIT` 100, `RESEND_MONTHLY_LIMIT` 3000, the Free plan). Change the
 vars there for another plan.
 
 ## REST API
