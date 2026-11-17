@@ -211,6 +211,24 @@ describe("phone end to end", () => {
     const drawer = s.page.getByRole("dialog");
     await drawer.getByRole("combobox", { name: "Language" }).waitFor();
     expect(await drawer.getByRole("combobox", { name: "Theme" }).count()).toBe(1);
+    // The drawer panel pads by the safe area on the top, the bottom and its screen edge. A
+    // browser here reports every inset as 0, so this reads the rules that apply to the panel.
+    const insets = await drawer.evaluate((dialog) => {
+      const panel = dialog.querySelector(":scope > [tabindex='-1']");
+      const found = new Set<string>();
+      for (const sheet of document.styleSheets) {
+        for (const rule of sheet.cssRules) {
+          if (!(rule instanceof CSSStyleRule) || !panel?.matches(rule.selectorText)) continue;
+          for (const side of ["top", "bottom", "left", "right"]) {
+            const value = rule.style.getPropertyValue(`padding-${side}`);
+            if (value.includes(`safe-area-inset-${side}`)) found.add(side);
+          }
+        }
+      }
+      const edge = dialog.getAttribute("data-side") === "start" ? "left" : "right";
+      return { edge, found: [...found].sort() };
+    });
+    expect(insets.found).toEqual(["bottom", insets.edge, "top"].sort());
     await s.page.keyboard.press("Escape");
   });
 
