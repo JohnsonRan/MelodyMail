@@ -313,20 +313,37 @@ describe("phone end to end", () => {
       "More actions",
     ]);
     await bar.getByRole("button", { name: "More actions" }).click();
-    // On a phone the menu is a bottom sheet of buttons.
-    const sheet = s.page.getByRole("dialog").filter({ hasText: "More actions" });
-    const items = sheet.getByRole("list").getByRole("button");
-    await items.first().waitFor();
-    expect(await items.allTextContents()).toEqual([
+    const menu = s.page.getByRole("menu");
+    await menu.waitFor();
+    expect(await menu.getByRole("menuitem").allTextContents()).toEqual([
       "Reply all",
       "Forward",
       "Star",
       "Mark as unread",
     ]);
-    await items.filter({ hasText: "Star" }).click();
-    await sheet.waitFor({ state: "hidden" });
+    await menu.getByRole("menuitem", { name: "Star" }).click();
+    await menu.waitFor({ state: "hidden" });
     await s.page.waitForFunction(() => document.querySelector('[aria-label="Unstar"]') === null);
     expect(app.patches.at(-1)).toEqual({ path: "/api/messages/long", body: { starred: true } });
+  });
+
+  test("names the dark reading state in the phone More menu", async () => {
+    await s.page.evaluate(() => localStorage.setItem("melodymail.mode", "dark"));
+    await go("/?m=wide", "iframe");
+    await s.page.frameLocator("iframe").locator("#wide").waitFor();
+    const more = s.page
+      .getByRole("toolbar", { name: "Message actions" })
+      .getByRole("button", { name: "More actions" });
+    const dark = s.page.getByRole("menuitemcheckbox", { name: "Dark reading" });
+    await more.click();
+    expect(await dark.getAttribute("aria-checked")).toBe("false");
+    await dark.click();
+    await s.page.keyboard.press("Escape");
+    await s.page.getByRole("menu").waitFor({ state: "hidden" });
+    await more.click();
+    expect(await dark.getAttribute("aria-checked")).toBe("true");
+    await s.page.keyboard.press("Escape");
+    await s.page.evaluate(() => localStorage.removeItem("melodymail.mode"));
   });
 
   test("puts star and read state in the list's More menu", async () => {

@@ -1,4 +1,8 @@
-import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuItem,
+} from "@astryxdesign/core/DropdownMenu";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
@@ -9,7 +13,6 @@ import {
   ArrowLeftIcon,
   ArrowUturnLeftIcon,
   ArrowUturnRightIcon,
-  CheckIcon,
   EllipsisHorizontalIcon,
   EnvelopeIcon,
   InboxArrowDownIcon,
@@ -176,8 +179,9 @@ export function ReaderToolbar({
             />
           )}
           {current && compact && (
+            // Children, not items: Dark reading is a checkbox row whose state a screen reader
+            // hears. Astryx renders compound children as a popover only, not a bottom sheet.
             <DropdownMenu
-              presentation="adaptive"
               alignment="end"
               renderTrigger={(props) => (
                 <IconButton
@@ -187,20 +191,19 @@ export function ReaderToolbar({
                   variant="ghost"
                 />
               )}
-              items={[
-                ...more.map((a) => ({ label: a.label, icon: a.icon, onClick: a.onClick })),
-                ...(darkReading === null
-                  ? []
-                  : [
-                      {
-                        label: t("mail.darkReading"),
-                        icon: MoonIcon,
-                        endContent: darkReading ? <Icon icon={CheckIcon} /> : undefined,
-                        onClick: () => onDarkReading(!darkReading),
-                      },
-                    ]),
-              ]}
-            />
+            >
+              {more.map((a) => (
+                <DropdownMenuItem key={a.key} label={a.label} icon={a.icon} onClick={a.onClick} />
+              ))}
+              {darkReading !== null && (
+                <DropdownMenuCheckboxItem
+                  label={t("mail.darkReading")}
+                  icon={MoonIcon}
+                  value={darkReading}
+                  onChange={onDarkReading}
+                />
+              )}
+            </DropdownMenu>
           )}
         </>
       }
