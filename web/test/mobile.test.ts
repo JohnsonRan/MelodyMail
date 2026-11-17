@@ -228,6 +228,14 @@ describe("phone end to end", () => {
     expect(await s.page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
   });
 
+  test("keeps a code on one line in a stacked row", async () => {
+    await go("/settings/domains/example.com", "text=mx.test.example");
+    const type = s.page.getByText("MX", { exact: true });
+    expect(await type.evaluate((el) => getComputedStyle(el).whiteSpace)).toBe("nowrap");
+    const host = s.page.getByText("mx.test.example", { exact: true });
+    expect(await host.evaluate((el) => getComputedStyle(el).whiteSpace)).not.toBe("nowrap");
+  });
+
   test("lists the settings sections at /settings", async () => {
     await go("/settings", "text=API keys");
     expect(s.page.url()).toBe(`${app.origin}/settings`);

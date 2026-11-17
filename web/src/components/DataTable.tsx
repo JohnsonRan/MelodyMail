@@ -19,8 +19,8 @@ export type DataColumn<T> = {
 // stacks; laptop (1280 px) and wide (1920 px) get the table.
 const STACKED = "(max-width: 639.98px)";
 
-// A stacked row is one column as wide as the screen; a value that does not fit wraps there
-// instead of running under the next field or off the screen (owner ruling for phones).
+// A stacked row is one column as wide as the screen; an address that does not fit wraps there
+// instead of running under the next field or off the screen (owner ruling 2026-11-17).
 const StackedContext = createContext(false);
 const WRAP_ANYWHERE = { ...SELECTABLE, overflowWrap: "anywhere" } as const;
 
@@ -109,12 +109,13 @@ export function TableSkeleton() {
 }
 
 /**
- * An address, domain or host. In the table it never wraps in the middle (web/AGENTS.md, Values
- * never break); in a stacked row it wraps where it must, so the whole value stays on screen.
+ * A value to copy: an address, domain, host or IP address, or with `isCode` an id or code. In
+ * the table it stays on one line. In a stacked row an address that cannot fit wraps where it must,
+ * so the whole value stays on screen; a code never wraps (web/AGENTS.md, Values never break).
  */
-export function Value({ children }: { children: string }) {
+export function Value({ children, isCode = false }: { children: string; isCode?: boolean }) {
   const stacked = useContext(StackedContext);
-  return stacked ? (
+  return stacked && !isCode ? (
     <Text style={WRAP_ANYWHERE}>{children}</Text>
   ) : (
     <Text textWrap="nowrap" style={SELECTABLE}>

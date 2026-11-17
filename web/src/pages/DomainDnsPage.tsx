@@ -73,7 +73,7 @@ export function DomainDnsPage() {
         <DataTable
           rows={data.receive}
           columns={[
-            { key: "type", header: t("dns.type"), render: (r) => <Value>{r.type}</Value> },
+            { key: "type", header: t("dns.type"), render: (r) => <Value isCode>{r.type}</Value> },
             { key: "name", header: t("dns.name"), render: (r) => <Value>{r.name ?? ""}</Value> },
             {
               key: "value",
@@ -134,7 +134,7 @@ export function DomainDnsPage() {
               header: t("dns.record"),
               render: (r) => <Text>{t(`dns.send_${r.id}`)}</Text>,
             },
-            { key: "type", header: t("dns.type"), render: (r) => <Value>{r.type}</Value> },
+            { key: "type", header: t("dns.type"), render: (r) => <Value isCode>{r.type}</Value> },
             {
               key: "value",
               header: t("dns.value"),
