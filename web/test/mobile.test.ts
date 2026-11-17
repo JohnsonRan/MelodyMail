@@ -79,6 +79,19 @@ const rect = (selector: ReturnType<Session["page"]["locator"]>) =>
   });
 
 describe("phone end to end", () => {
+  test("keeps the app name whole, with language and theme in the drawer", async () => {
+    await go("/", `[data-message-row="note3"]`);
+    const bar = s.page.getByRole("navigation", { name: "Main navigation" });
+    expect(await bar.getByRole("combobox").count()).toBe(0);
+    const name = bar.getByText("MelodyMail", { exact: true });
+    expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await s.page.getByRole("button", { name: "Open navigation" }).click();
+    const drawer = s.page.getByRole("dialog");
+    await drawer.getByRole("combobox", { name: "Language" }).waitFor();
+    expect(await drawer.getByRole("combobox", { name: "Theme" }).count()).toBe(1);
+    await s.page.keyboard.press("Escape");
+  });
+
   test("lists the settings sections at /settings", async () => {
     await go("/settings", "text=API keys");
     expect(s.page.url()).toBe(`${app.origin}/settings`);

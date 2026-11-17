@@ -1,5 +1,5 @@
+import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { Selector } from "@astryxdesign/core/Selector";
-import { HStack } from "@astryxdesign/core/Stack";
 import i18next from "i18next";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -56,30 +56,39 @@ export function usePreferences(): Preferences {
   return prefs;
 }
 
-/** Language and theme selectors, shared by the app bar and the sign-in pages. */
-export function PreferenceSelectors() {
+/**
+ * Language and theme selectors, shared by the app bar and the sign-in pages. `isStacked` lays
+ * them out one per row with visible labels, for the navigation drawer on phones.
+ */
+export function PreferenceSelectors({ isStacked = false }: { isStacked?: boolean }) {
   const { t } = useTranslation();
   const { locale, mode, setLocale, setMode } = usePreferences();
-  return (
-    <HStack gap={2}>
+  const look = isStacked
+    ? ({ variant: "input", size: "md", width: "100%" } as const)
+    : ({ variant: "ghost", size: "sm", isLabelHidden: true } as const);
+  const selectors = (
+    <>
       <Selector
         label={t("settings.language")}
-        isLabelHidden
-        variant="ghost"
-        size="sm"
+        {...look}
         value={locale}
         onChange={(value: string) => setLocale(value as Locale)}
         options={LOCALES.map((l) => ({ value: l, label: t(`language.${l}`) }))}
       />
       <Selector
         label={t("settings.theme")}
-        isLabelHidden
-        variant="ghost"
-        size="sm"
+        {...look}
         value={mode}
         onChange={(value: string) => setMode(value as Mode)}
         options={MODES.map((m) => ({ value: m, label: t(`theme.${m}`) }))}
       />
-    </HStack>
+    </>
+  );
+  return isStacked ? (
+    <VStack gap={2} hAlign="stretch">
+      {selectors}
+    </VStack>
+  ) : (
+    <HStack gap={2}>{selectors}</HStack>
   );
 }
