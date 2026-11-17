@@ -268,7 +268,9 @@ describe("phone end to end", () => {
     const frame = s.page.frameLocator("iframe");
     await frame.locator("#wide").waitFor();
     const iframe = s.page.locator("iframe");
-    expect(await iframe.getAttribute("sandbox")).toBe("allow-popups allow-popups-to-escape-sandbox");
+    expect(await iframe.getAttribute("sandbox")).toBe(
+      "allow-popups allow-popups-to-escape-sandbox",
+    );
     const widths = await frame
       .locator("html")
       .evaluate((html) => ({ scroll: html.scrollWidth, client: html.clientWidth }));
