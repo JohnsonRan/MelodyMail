@@ -64,6 +64,7 @@ const GUARDED = [
   "POST /api/messages/send",
   "GET /api/send/from",
   "GET /api/send/quota",
+  "GET /api/contacts",
   "GET /api/drafts",
   "GET /api/drafts/:id",
   "PUT /api/drafts/:id",

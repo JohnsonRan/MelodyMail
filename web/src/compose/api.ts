@@ -43,6 +43,12 @@ export const getSendSetup = () => api<SendSetup>("GET", "/send/from");
 export const getQuota = () => api<Quota>("GET", "/send/quota");
 export const listDrafts = () => api<{ drafts: DraftSummary[] }>("GET", "/drafts");
 
+/** An address the owner sent to or received from; `name` is "" when none is known. */
+export type Contact = { address: string; name: string };
+
+export const searchContacts = (query: string) =>
+  api<{ contacts: Contact[] }>("GET", `/contacts?q=${encodeURIComponent(query)}`);
+
 export async function getDraft(
   id: string,
 ): Promise<(Draft & { attachments: Attachment[] }) | null> {

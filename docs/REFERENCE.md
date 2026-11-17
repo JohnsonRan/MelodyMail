@@ -210,6 +210,11 @@ renders it, and the mail carries both the Markdown source (plain text) and the H
 off until the Worker has a Resend API key; compose then says sending is not set up. The Resend
 set-up is in `docs/RUNBOOK.md`, "Sending through Resend".
 
+While you type in To, Cc or Bcc, compose suggests addresses you sent to or received mail from,
+newest first, matching the address or the display name (`GET /api/contacts`). It reads the newest
+1,000 sent and 1,000 received messages; mail in Trash does not count, and your own addresses are
+left out. Text that is already a complete address gets no suggestions, and Enter adds it as typed.
+
 Each secret switches on one part: without `UPLOAD_URL_KEY` compose sends without attachments, and
 without `RESEND_WEBHOOK_SECRET` sent mail stays at "Sent" instead of showing delivery. Resend
 fetches attachments from a signed URL on your origin that is valid for 24 hours; it cannot reach
