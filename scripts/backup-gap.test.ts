@@ -90,6 +90,12 @@ describe("gapConfig", () => {
     expect(remote.r2_buckets).toEqual([expect.objectContaining({ remote: true })]);
   });
 
+  test("keeps the account id of the production config", () => {
+    const id = "0123456789abcdef0123456789abcdef";
+    expect(gapConfig({ ...base, account_id: id }, true).account_id).toBe(id);
+    expect("account_id" in gapConfig(base, true)).toBe(false);
+  });
+
   test("refuses a config without the bindings", () => {
     expect(() => gapConfig({ ...base, r2_buckets: [] }, false)).toThrow("no MAIL binding");
   });

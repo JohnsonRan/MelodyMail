@@ -103,7 +103,7 @@ export function parseArgs(argv: string[]): GapArgs | null {
   return { since, out, dryRun: argv.includes("--dry-run"), remote, persistPath, configPath };
 }
 
-/** The gap Worker's config: the D1 and R2 bindings of `base`, remote when asked, nothing else. */
+/** The gap Worker's config: the D1 and R2 bindings of `base`, remote when asked, and its account. */
 export function gapConfig(base: Record<string, unknown>, remote: boolean): Record<string, unknown> {
   const pick = (list: unknown, binding: string) => {
     const entry = (list as Record<string, unknown>[] | undefined)?.find(
@@ -113,6 +113,8 @@ export function gapConfig(base: Record<string, unknown>, remote: boolean): Recor
     return { ...entry, ...(remote ? { remote: true } : {}) };
   };
   return {
+    // With several accounts, the remote bindings must reach the account the config names.
+    ...(base.account_id === undefined ? {} : { account_id: base.account_id }),
     name: "melodymail-gap",
     main: join(WORKER, "scripts", "gap-worker.ts"),
     compatibility_date: base.compatibility_date,

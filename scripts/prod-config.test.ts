@@ -62,6 +62,7 @@ describe("mergeConfig", () => {
     ]);
     expect(config.routes).toEqual([{ pattern: "mail.example.com", custom_domain: true }]);
     expect(config.workers_dev).toBe(false);
+    expect(config.preview_urls).toBe(false);
     // Everything else is the tracked file's.
     expect(config.main).toBe(base.main);
     expect(config.triggers).toEqual(base.triggers);
