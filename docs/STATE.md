@@ -3660,7 +3660,7 @@ Not verified (added, the reviewer's hypotheses):
 - Not verified: the layout by screenshot (the owner checks on local `wrangler dev`).
 
 
-## M7: backups, Trash clean-up, production config (phases A and B done 2026-11-17, not merged)
+## M7: backups, Trash clean-up, production config (code and docs done 2026-11-17, PR #12, merge `bfeeaee`; the from-zero deploy is next)
 
 Design: `docs/M7-ops.md` with its owner rulings of 2026-11-17. Risk class High. Phase A is code;
 phase B (the three READMEs, `docs/REFERENCE.md`, `docs/RUNBOOK.md`, the README sync check) is a
@@ -4165,3 +4165,11 @@ Proof:
 Not verified (added): rclone `-M` keeping R2 custom metadata on a local file system (extended
 attributes; Windows unknown); the auth and API loops against production; the Telegram backup alert
 against the real Bot API.
+
+## Next: the first deploy (M7 acceptance)
+
+PR #12 merged as `bfeeaee` on the owner's go (CI: merge-gate 46 s, browser 58 s, pwa 40 s, send
+43 s, settings 48 s). The owner runs every production command from `docs/RUNBOOK.md`, "Deploy";
+the coordinator checks each step and holds no credential. Then the 23-item production
+verification checklist in the runbook. Record each result here.
+
