@@ -4261,6 +4261,7 @@ remember recipients.
 | Phone star/unread in More have no loading state | review 2 (Low) | cosmetic |
 | Compose Send appears after the chunk loads (Suspense fallback) | review 2 (Low) | small layout shift |
 | DNS record values (DKIM keys) wrap in stacked settings rows | phone fixes | codes must not wrap; needs a truncate-and-reveal design |
-| Reader phone More popover rows not swept for 44 px | review 2 (hypothesis) | the sweep never opens that menu |
+| Menu rows (reader More popover, theme and language menus) not swept for 44 px | reviews 2 and 3 (hypothesis, Low) | the sweep never opens a menu |
+| Sign-in pages and desktop app bar have no own test for the icon menus | review 3 (Low) | same shared component as the tested phone app bar |
 | Truncated receiving address in the drawer has no touch reveal | phone audit | existed before |
 | CPU over 10 ms on three routes in one tail sample | checklist 8 | one sample; watch more logs first |
