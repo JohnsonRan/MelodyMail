@@ -4113,3 +4113,55 @@ phase did not touch; it passed in the runs before and after.
   as written, with scratchpad paths in place of `~/melodymail-drill`.
 - The README translations were not reviewed by a native speaker.
 - The full browser tiers were not rerun; only the screenshot script drove the built app.
+
+### Phase B review ("FIX FIRST", three Mediums and Lows) and fixes
+
+Fixed in the commits after `ce1a3bb`:
+
+- M1: the monthly drill on a production export opened two local databases. Wrangler names a local
+  D1 database after the config's `database_id`, so migrations and the import with the default
+  config and `verify --config .wrangler-production.jsonc` met different databases (exit 2). The
+  two `--local` commands now pass the production config too; nothing in the drill writes to the
+  account. Re-run below.
+- M2: restore B now says the `database_id` switch takes effect only when `bun run prod-config`
+  writes the config again, checks it with `grep database_id .wrangler-production.jsonc` before
+  anything is written, and stops when `migrate:prod` does not list all 16 migrations. The import
+  is its own step, marked as writing into the database the config names.
+- M3: `"preview_urls": false` in `worker/deploy.example.jsonc` (`prod-config` already accepts the
+  key; `scripts/prod-config.test.ts` now asserts it in the merge), RUNBOOK Deploy step 5, and
+  checklist item 19 (workers.dev and Preview URLs off in Domains & Routes).
+- M3b: checklist item 4 now drives `AUTH_LIMITER` with 12 POSTs to `/api/auth/login/options` (the
+  rate limit runs first; the route counts no failed attempt, so the D1 recovery lockout cannot
+  answer instead) and `API_LIMITER` with 125 requests to `/api/v1/addresses`; both expect
+  `{"error":"rate_limited"}`. The requests carry `Origin`, or the Worker answers 403 `bad_origin`.
+- Lows: `worker/.dev.vars.example` points at RUNBOOK sections; `check-readme.ts` also compares the
+  inline code spans of each README as a multiset; the Trash clock reset runs just before the
+  roll-forward `deploy:prod`; the new-account recovery adds `rclone copy -M` (and `-M` on the
+  monthly sync), the optional secrets and the Resend webhook again, and the gap tool; `vapid` and
+  `upload-key` output: paste only the part after `=`; zh-CN "设置令牌" as the app says; checklist
+  items 20 to 23 (first release run, a remote gap dry run, the Telegram backup alert, a non-ASCII
+  envelope sender); the Time Travel overwrite warning stands above the command.
+- Hypothesis (a): `gapConfig` dropped `account_id`; it now keeps it when the config has one
+  (test in `scripts/backup-gap.test.ts`), and the RUNBOOK says to set it with several accounts.
+- Hypothesis (b): the drill's `wrangler dev` from `worker/` loaded `worker/.dev.vars`. Wrangler
+  4.162 skips `.dev.vars` when `--env-file` is given (`getVarsForDev`, read in the source); the
+  drill now passes an empty env file.
+
+Proof:
+
+- Drill re-run (scratchpad `m7b/drill2.sh`): the RUNBOOK commands as written from `worker/`,
+  including `wrangler dev --env-file <empty>`, with a scratchpad directory in place of
+  `~/melodymail-drill`, 78 s. 15 fixtures answered 200; export `2026-11-17T0346Z` complete (17,300
+  bytes, 33 rows); fetch, migrations, import and `verify` exit 0 ("counts match, no foreign key
+  problem"). The monthly-drill form with a production-shaped config (merged from
+  `deploy.example.jsonc` with a made-up id, stored in the scratchpad, fetch from local state instead
+  of `--remote`): fetch, migrations, import and `verify` exit 0. The old form (migrate and import
+  without `--config`, verify with it): exit 2, as the review found. `wrangler dev` logged loading
+  secrets from the empty env file, not `worker/.dev.vars`, and listed no secret binding.
+- Gates: 14.8 s, 14.7 s, 14.0 s before the three fix commits (CPU load 10%, 13%, 5%).
+- `check-readme`: a dropped and a renamed inline code span each exit 1 (tests); on copies of the
+  real READMEs, `UPLOAD_URL_KEY` removed from the zh-CN table exits 1.
+
+Not verified (added): rclone `-M` keeping R2 custom metadata on a local file system (extended
+attributes; Windows unknown); the auth and API loops against production; the Telegram backup alert
+against the real Bot API.
