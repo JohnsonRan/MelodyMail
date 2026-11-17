@@ -1,5 +1,12 @@
-import { HStack, VStack } from "@astryxdesign/core/Layout";
-import { Selector } from "@astryxdesign/core/Selector";
+import {
+  DropdownMenu,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from "@astryxdesign/core/DropdownMenu";
+import { Icon } from "@astryxdesign/core/Icon";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { HStack } from "@astryxdesign/core/Layout";
+import { ComputerDesktopIcon, LanguageIcon, MoonIcon, SunIcon } from "@heroicons/react/24/outline";
 import i18next from "i18next";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -56,39 +63,66 @@ export function usePreferences(): Preferences {
   return prefs;
 }
 
+const MODE_ICON: Record<Mode, typeof SunIcon> = {
+  system: ComputerDesktopIcon,
+  light: SunIcon,
+  dark: MoonIcon,
+};
+
+/** An icon button that opens a menu of choices, the current one checked (menuitemradio). */
+function ChoiceMenu({
+  label,
+  icon,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  icon: typeof SunIcon;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <DropdownMenu
+      alignment="end"
+      renderTrigger={(props) => (
+        <IconButton {...props} label={label} icon={<Icon icon={icon} />} variant="ghost" />
+      )}
+    >
+      <DropdownMenuRadioGroup label={label} value={value} onChange={onChange}>
+        {options.map((o) => (
+          <DropdownMenuRadioItem key={o.value} value={o.value} label={o.label} />
+        ))}
+      </DropdownMenuRadioGroup>
+    </DropdownMenu>
+  );
+}
+
 /**
- * Language and theme selectors, shared by the app bar and the sign-in pages. `isStacked` lays
- * them out one per row with visible labels, for the navigation drawer on phones.
+ * Language and theme as icon buttons, shared by the app bar and the sign-in pages: each opens a
+ * menu with the choices by name. The theme icon shows the current mode; both names say the
+ * current choice. Languages are listed by their own names.
  */
-export function PreferenceSelectors({ isStacked = false }: { isStacked?: boolean }) {
+export function PreferenceMenus() {
   const { t } = useTranslation();
   const { locale, mode, setLocale, setMode } = usePreferences();
-  const look = isStacked
-    ? ({ variant: "input", size: "md", width: "100%" } as const)
-    : ({ variant: "ghost", size: "sm", isLabelHidden: true } as const);
-  const selectors = (
-    <>
-      <Selector
-        label={t("settings.language")}
-        {...look}
+  return (
+    <HStack gap={1}>
+      <ChoiceMenu
+        label={t("settings.languageButton", { language: t(`language.${locale}`) })}
+        icon={LanguageIcon}
         value={locale}
-        onChange={(value: string) => setLocale(value as Locale)}
+        onChange={(value) => setLocale(value as Locale)}
         options={LOCALES.map((l) => ({ value: l, label: t(`language.${l}`) }))}
       />
-      <Selector
-        label={t("settings.theme")}
-        {...look}
+      <ChoiceMenu
+        label={t("settings.themeButton", { mode: t(`theme.${mode}`) })}
+        icon={MODE_ICON[mode]}
         value={mode}
-        onChange={(value: string) => setMode(value as Mode)}
+        onChange={(value) => setMode(value as Mode)}
         options={MODES.map((m) => ({ value: m, label: t(`theme.${m}`) }))}
       />
-    </>
-  );
-  return isStacked ? (
-    <VStack gap={2} hAlign="stretch">
-      {selectors}
-    </VStack>
-  ) : (
-    <HStack gap={2}>{selectors}</HStack>
+    </HStack>
   );
 }

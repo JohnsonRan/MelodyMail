@@ -130,8 +130,8 @@
     "closeCompose": "閉じる"
   },
   "settings": {
-    "language": "言語",
-    "theme": "テーマ",
+    "languageButton": "言語：{{language}}",
+    "themeButton": "テーマ：{{mode}}",
     "quotaTitle": "送信枠"
   },
   "language": {

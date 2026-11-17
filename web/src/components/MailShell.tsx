@@ -1,7 +1,5 @@
 import { AppShell } from "@astryxdesign/core/AppShell";
 import { Badge } from "@astryxdesign/core/Badge";
-import { useMediaQuery } from "@astryxdesign/core/hooks";
-import { VStack } from "@astryxdesign/core/Layout";
 import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
@@ -25,30 +23,14 @@ import {
   TrashIcon,
 } from "@heroicons/react/24/outline";
 import { Outlet, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { NARROW } from "../breakpoints";
 import type { Folder } from "../mailbox/api";
 import { MailboxProvider, useMailbox } from "../mailbox/MailboxContext";
 import { useNetwork } from "../network";
-import { PreferenceSelectors } from "../preferences";
+import { PreferenceMenus } from "../preferences";
 import { AppLogo } from "./AppLogo";
 import { SystemBanners } from "./SystemBanners";
-
-/**
- * The end of a navigation drawer on phones: the language and theme selectors, which leave the
- * compact app bar there so the app name is not cut.
- */
-function DrawerPreferences({ children }: { children?: ReactNode }) {
-  const narrow = useMediaQuery(NARROW);
-  if (!narrow) return children;
-  return (
-    <VStack gap={4} hAlign="stretch">
-      {children}
-      <PreferenceSelectors isStacked />
-    </VStack>
-  );
-}
 
 const FOLDER_NAV: { folder: Folder | "drafts"; path: string; icon: typeof InboxIcon }[] = [
   { folder: "inbox", path: "/", icon: InboxIcon },
@@ -112,14 +94,12 @@ function MailNav() {
   return (
     <SideNav
       footer={
-        <DrawerPreferences>
-          <SideNavItem
-            label={t("nav.settings")}
-            icon={Cog6ToothIcon}
-            isSelected={false}
-            href="/settings"
-          />
-        </DrawerPreferences>
+        <SideNavItem
+          label={t("nav.settings")}
+          icon={Cog6ToothIcon}
+          isSelected={false}
+          href="/settings"
+        />
       }
     >
       <SideNavSection title={t("nav.mail")} isHeaderHidden>
@@ -183,7 +163,7 @@ function SettingsNav() {
   const { t } = useTranslation();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   return (
-    <SideNav footer={<DrawerPreferences />}>
+    <SideNav>
       <SideNavSection title={t("nav.backToMailbox")} isHeaderHidden>
         <SideNavItem label={t("nav.backToMailbox")} icon={ArrowLeftIcon} href="/" />
       </SideNavSection>
@@ -214,7 +194,6 @@ export function MailShell() {
   const router = useRouter();
   const inSettings = useRouterState({ select: (s) => s.location.pathname.startsWith("/settings") });
   const { epoch } = useNetwork();
-  const narrow = useMediaQuery(NARROW);
   useEffect(() => {
     if (epoch > 0) void router.invalidate();
   }, [epoch, router]);
@@ -229,7 +208,7 @@ export function MailShell() {
             label={t("nav.main")}
             heading={<TopNavHeading heading={t("app.name")} logo={<AppLogo size="md" />} />}
             centerContent={<SearchField />}
-            endContent={narrow ? null : <PreferenceSelectors />}
+            endContent={<PreferenceMenus />}
           />
         }
         sideNav={inSettings ? <SettingsNav /> : <MailNav />}

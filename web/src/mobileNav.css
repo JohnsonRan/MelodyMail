@@ -1,9 +1,9 @@
 /*
  * Astryx 0.7.16 MobileNav pads no safe area: its drawer spans the dialog from top 0 to bottom 0.
  * With viewport-fit=cover (index.html) an installed iPhone app would put the drawer's Close
- * button under the status bar, its last rows (the language and theme selectors) in the home
- * indicator zone, and in landscape its items under the notch. The drawer is the dialog's
- * focusable panel; the panel's own background still reaches the screen edges.
+ * button under the status bar, its last row (Settings) in the home indicator zone, and in
+ * landscape its items under the notch. The drawer is the dialog's focusable panel; the panel's
+ * own background still reaches the screen edges.
  */
 .astryx-mobile-nav > [tabindex="-1"] {
   padding-top: env(safe-area-inset-top, 0px);

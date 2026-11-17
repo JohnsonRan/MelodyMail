@@ -130,8 +130,8 @@
     "closeCompose": "关闭"
   },
   "settings": {
-    "language": "语言",
-    "theme": "主题",
+    "languageButton": "语言：{{language}}",
+    "themeButton": "主题：{{mode}}",
     "quotaTitle": "发信额度"
   },
   "language": {

@@ -4,7 +4,7 @@ import { VStack } from "@astryxdesign/core/Layout";
 import { Heading, Text } from "@astryxdesign/core/Text";
 import type { CSSProperties, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { PreferenceSelectors } from "../preferences";
+import { PreferenceMenus } from "../preferences";
 import { AppLogo } from "./AppLogo";
 import { SystemBanners } from "./SystemBanners";
 
@@ -57,7 +57,7 @@ export function AuthFrame({
             {children}
           </VStack>
         </Card>
-        <PreferenceSelectors />
+        <PreferenceMenus />
       </VStack>
     </Center>
   );

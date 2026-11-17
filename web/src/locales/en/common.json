@@ -130,8 +130,8 @@
     "closeCompose": "Close"
   },
   "settings": {
-    "language": "Language",
-    "theme": "Theme",
+    "languageButton": "Language: {{language}}",
+    "themeButton": "Theme: {{mode}}",
     "quotaTitle": "Sending quota"
   },
   "language": {

@@ -201,16 +201,25 @@ describe("phone end to end", () => {
     }
   });
 
-  test("keeps the app name whole, with language and theme in the drawer", async () => {
+  test("keeps the app name whole beside the language and theme buttons", async () => {
     await go("/", `[data-message-row="note3"]`);
     const bar = s.page.getByRole("navigation", { name: "Main navigation" });
     expect(await bar.getByRole("combobox").count()).toBe(0);
     const name = bar.getByText("MelodyMail", { exact: true });
-    expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    for (const width of [PHONE.width, 360]) {
+      await s.page.setViewportSize({ width, height: PHONE.height });
+      expect([width, await name.evaluate((el) => el.scrollWidth <= el.clientWidth)]).toEqual([
+        width,
+        true,
+      ]);
+    }
+    await s.page.setViewportSize(PHONE);
+    await bar.getByRole("button", { name: "Language: English" }).waitFor();
+    await bar.getByRole("button", { name: "Theme: System" }).waitFor();
     await s.page.getByRole("button", { name: "Open navigation" }).click();
     const drawer = s.page.getByRole("dialog");
-    await drawer.getByRole("combobox", { name: "Language" }).waitFor();
-    expect(await drawer.getByRole("combobox", { name: "Theme" }).count()).toBe(1);
+    await drawer.getByRole("link", { name: "Settings" }).waitFor();
+    expect(await drawer.getByRole("combobox").count()).toBe(0);
     // The drawer panel pads by the safe area on the top, the bottom and its screen edge. A
     // browser here reports every inset as 0, so this reads the rules that apply to the panel.
     const insets = await drawer.evaluate((dialog) => {
@@ -230,6 +239,47 @@ describe("phone end to end", () => {
     });
     expect(insets.found).toEqual(["bottom", insets.edge, "top"].sort());
     await s.page.keyboard.press("Escape");
+  });
+
+  test("switches theme and language from their menus, the current choice checked", async () => {
+    await go("/", `[data-message-row="note3"]`);
+    // The app bar by its place, not its name: the name changes with the language.
+    const bar = s.page.getByRole("navigation").first();
+    const choices = async (button: string) => {
+      await bar.getByRole("button", { name: button }).click();
+      const items = s.page.getByRole("menuitemradio");
+      await items.first().waitFor();
+      return items.evaluateAll((all) =>
+        all.map(
+          (el) =>
+            `${el.textContent?.trim()}${el.getAttribute("aria-checked") === "true" ? " *" : ""}`,
+        ),
+      );
+    };
+    // The theme button's icon shows the current mode.
+    const glyph = (name: string) =>
+      bar
+        .getByRole("button", { name })
+        .locator("svg")
+        .evaluate((svg) => svg.innerHTML);
+    const systemGlyph = await glyph("Theme: System");
+    expect(await choices("Theme: System")).toEqual(["System *", "Light", "Dark"]);
+    await s.page.getByRole("menuitemradio", { name: "Dark" }).click();
+    await bar.getByRole("button", { name: "Theme: Dark" }).waitFor();
+    expect(await glyph("Theme: Dark")).not.toBe(systemGlyph);
+    expect(await s.page.evaluate(() => document.documentElement.dataset.theme)).toBe("dark");
+    expect(await s.page.evaluate(() => localStorage.getItem("melodymail.mode"))).toBe("dark");
+    expect(await choices("Theme: Dark")).toEqual(["System", "Light", "Dark *"]);
+    await s.page.getByRole("menuitemradio", { name: "System" }).click();
+    await bar.getByRole("button", { name: "Theme: System" }).waitFor();
+
+    expect(await choices("Language: English")).toEqual(["简体中文", "English *", "日本語"]);
+    await s.page.getByRole("menuitemradio", { name: "日本語" }).click();
+    await bar.getByRole("button", { name: "言語：日本語" }).waitFor();
+    expect(await s.page.evaluate(() => localStorage.getItem("melodymail.locale"))).toBe("ja-JP");
+    expect(await choices("言語：日本語")).toEqual(["简体中文", "English", "日本語 *"]);
+    await s.page.getByRole("menuitemradio", { name: "English" }).click();
+    await bar.getByRole("button", { name: "Language: English" }).waitFor();
   });
 
   test("wraps a long address in a settings row, clear of its actions", async () => {

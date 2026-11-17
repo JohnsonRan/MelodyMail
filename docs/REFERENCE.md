@@ -113,9 +113,11 @@ is chosen for that message, and attachments are always downloaded, never opened 
 the dark theme, "Dark reading" in the reader shows one HTML message inverted; it is off for every
 message you open.
 
+The language and theme buttons in the app bar open menus of their choices. The theme button's
+icon shows the current mode: system, light or dark.
+
 On a phone (narrower than 768 px):
 
-- the language and theme selectors are at the end of the navigation menu, not in the app bar;
 - the reader shows Back, Reply, Archive and Move to Trash as icons, and the other actions,
   Dark reading included, under "More actions";
 - the list shows Archive and Move to Trash, with star and read state under "More actions";
