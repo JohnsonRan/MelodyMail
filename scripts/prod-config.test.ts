@@ -77,6 +77,9 @@ describe("mergeConfig", () => {
     expect(() => mergeConfig(base, { ...good, database_id: "abc" })).toThrow("database_id");
     expect(() => mergeConfig(base, { ...good, routes: [] })).toThrow("routes");
     expect(() => mergeConfig(base, { ...good, workers_dev: true })).toThrow("workers_dev");
+    expect(() => mergeConfig(base, { ...good, preview_urls: true })).toThrow("preview_urls");
+    const { preview_urls: _omitted, ...noPreview } = good;
+    expect(() => mergeConfig(base, noPreview)).toThrow("preview_urls");
     expect(() => mergeConfig({ ...base, d1_databases: [] }, good)).toThrow("no D1 binding");
   });
 });

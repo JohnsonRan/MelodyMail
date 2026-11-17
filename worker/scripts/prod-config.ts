@@ -80,6 +80,9 @@ export function mergeConfig(base: Config, local: Record<string, unknown>): Confi
   if (rest.workers_dev !== false) {
     throw new Error("deploy.local.jsonc: workers_dev must be false");
   }
+  if (rest.preview_urls !== false) {
+    throw new Error("deploy.local.jsonc: preview_urls must be false");
+  }
   const databases = (base.d1_databases ?? []).map((db) =>
     db.binding === "DB" ? { ...db, database_id: databaseId } : db,
   );

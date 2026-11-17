@@ -748,7 +748,7 @@ Record no account id, hostname or secret.
 | 1 | Deploy | `bun run deploy:prod` with the explicit resources, then `curl https://mail.example.com/api/health` | the deploy succeeds; 200 `{"ok":true}` |
 | 2 | Setup and sign-in | run `/setup` on the custom domain with a real Passkey, then open `/setup` again; sign out and in | setup once, then 409 `already_initialized`; sign-in works |
 | 3 | Client IP and location | Settings > Security | your session shows your IP and city, not "this device or local network" |
-| 4 | Rate limiters (`AUTH_LIMITER` 10 a minute, `API_LIMITER` 120 a minute, per IP) | the two loops below the table, from one machine | the auth loop answers 429 `{"error":"rate_limited"}` from about the 11th request; the API loop answers 401 `{"error":"invalid_key"}` and then 429 `{"error":"rate_limited"}` from about the 121st (approximate, counted per location) |
+| 4 | Rate limiters (`AUTH_LIMITER` 10 a minute, `API_LIMITER` 120 a minute, per IP) | the two loops below the table, from one machine | the auth loop answers 429 `{"error":"rate_limited"}` before it ends (from about the 11th request); the API loop answers 401 `{"error":"invalid_key"}` and then 429 `{"error":"rate_limited"}` before it ends (from about the 121st); the limiter is approximate and counted per location |
 | 5 | Inbound delivery | mail from an outside account to an added address, with a page open | stored, parsed within a minute, shown in the Inbox, the open page updates |
 | 6 | Refusal | mail to an address that is not added | the sender gets a bounce; no R2 object is written |
 | 7 | Forwarding | forward to a verified destination (one verified in mixed case too); a rule with a forward action; a forward-only address | each target gets one copy with `X-MelodyMail-Forwarded: 1`; forward-only keeps no R2 object; note whether `forward()` counts as a subrequest in the invocation log |
@@ -769,12 +769,12 @@ Record no account id, hostname or secret.
 | 22 | Telegram backup alert | cannot be forced without breaking an export; when `backup_export_failed` or `backup_stale` is first logged, look at the chat | one plain message from the bot that day, with the text in `docs/REFERENCE.md`, "Backups" |
 | 23 | Non-ASCII envelope sender | a mail from an internationalized address (SMTPUTF8, for example `ü@例え.jp`) to an added address; then item 21's dry run | stored and parsed; the gap report shows no `bad_metadata` skip for it |
 
-The loops for item 4. Each request needs the `Origin` header, or the Worker answers 403
-`bad_origin` before the limiter:
+The loops for item 4. Each auth request needs the `Origin` header, or the Worker answers 403
+`bad_origin` before the limiter; `/api/v1/` skips that check:
 
 ```sh
-for i in $(seq 1 12); do curl -s -X POST -H "Origin: https://mail.example.com" https://mail.example.com/api/auth/login/options; echo; done
-for i in $(seq 1 125); do curl -s -H "Authorization: Bearer mmk_short" https://mail.example.com/api/v1/addresses; echo; done
+for i in $(seq 1 20); do curl -s -X POST -H "Origin: https://mail.example.com" https://mail.example.com/api/auth/login/options; echo; done
+for i in $(seq 1 150); do curl -s -H "Authorization: Bearer mmk_short" https://mail.example.com/api/v1/addresses; echo; done
 ```
 
 `/api/auth/login/options` counts no failed attempt, so the D1 recovery lockout cannot answer in
