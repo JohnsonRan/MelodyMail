@@ -43,6 +43,14 @@ describe("contacts", () => {
       { address: "x@y.io", name: run },
       { address: "b@y.io", name: "" },
     ]);
+    // Runs of "@" and "<" match nothing; the address after them still parses.
+    for (const junk of [
+      `<${"@".repeat(259)}`.repeat(800),
+      "@".repeat(200_000),
+      "<".repeat(200_000),
+    ]) {
+      expect(headerAddresses(`${junk} <x@y.io>`).map((c) => c.address)).toEqual(["x@y.io"]);
+    }
   });
 
   it("suggests sent-to and received-from addresses, newest first", async () => {

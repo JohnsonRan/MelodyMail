@@ -7,8 +7,8 @@
  * received From headers of 998 characters (the stored cut) dense with short addresses, which a
  * sender controls; sent To, Cc and Bcc holding 50 addresses (RECIPIENTS_MAX) of 252 characters each
  * (near the 254-character limit); one contact repeated in every row; and received From headers
- * that hold a long run without "@": a quoted 990-character name, or a 980-character name, before
- * the address.
+ * that hold a long run before the address: a quoted 990-character name, a 980-character name,
+ * "<" followed by 259 "@" four times, 990 "@", 990 "<", and "<a@" repeated 330 times.
  * Exits 1 when the p95 of any input reaches the budget.
  *
  * Usage: bun bench/contacts.ts [iterations]
@@ -16,7 +16,7 @@
 import { type ContactRow, MATCH_ROWS, rankContacts } from "../src/send/contacts";
 
 const ITERATIONS = Number(process.argv[2] ?? 200);
-/** p95 budget, the per-request JS budget of the parse, Telegram and passkey benches. */
+/** p95 budget (owner approval 2026-11-17). */
 const BUDGET_MS = 3;
 
 const rows = (inbound: (i: number) => string, outbound: (i: number) => (string | null)[]) => [
@@ -52,6 +52,22 @@ const INPUTS: Record<string, ContactRow[]> = {
   ),
   "980-character name": rows(
     () => `${"n".repeat(980)} <x@y.io>`,
+    () => [null, null, null],
+  ),
+  '"<" and a run of "@", 4 times': rows(
+    () => `${`<${"@".repeat(259)}`.repeat(4)} <x@y.io>`,
+    () => [null, null, null],
+  ),
+  '990 "@"': rows(
+    () => `${"@".repeat(990)} <x@y.io>`,
+    () => [null, null, null],
+  ),
+  '990 "<"': rows(
+    () => `${"<".repeat(990)} <x@y.io>`,
+    () => [null, null, null],
+  ),
+  '"<a@" runs': rows(
+    () => `${"<a@".repeat(330)} <x@y.io>`,
     () => [null, null, null],
   ),
   "one contact in every row": rows(

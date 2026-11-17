@@ -14,7 +14,7 @@ const LIMIT_MAX = 20;
 /** The newest messages read per direction: bounds the rows D1 reads per request. */
 export const SCAN_ROWS = 1000;
 /** Matching messages parsed per direction: bounds the Worker's CPU time per request. */
-export const MATCH_ROWS = 50;
+export const MATCH_ROWS = 30;
 
 export type Contact = { address: string; name: string };
 /** One message: when it was used, and its stored address headers. */
@@ -23,10 +23,11 @@ export type ContactRow = { at: number; headers: (string | null)[] };
 // A stored header is a list of "Name <a@x>" and bare addresses, joined by ", " (the parse in
 // worker/src/mail/parse.ts, and the sent copy's bare addresses). The header comes from a sender,
 // so the scan stays linear: a bare address starts only where a run of address characters starts
-// (the lookbehind), so a long run without "@" is tried once, not once per character, and every
-// part is bounded by the 254-character address limit.
+// (the lookbehind), so a long run without "@" is tried once, not once per character. Neither part
+// may hold "@", so each part ends at the first "@" and is never split again, and every part is
+// bounded by the 254-character address limit.
 const ADDRESS =
-  /<([^<>\s]{1,254}@[^<>\s]{1,254})>|(?<![^\s<>,;:()"])([^\s<>,;:()"]{1,254}@[^\s<>,;:()"]{1,254})/g;
+  /<([^<>\s@]{1,254}@[^<>\s@]{1,254})>|(?<![^\s<>,;:()"])([^\s<>,;:()"@]{1,254}@[^\s<>,;:()"@]{1,254})/g;
 
 /** The addresses of one stored header with their display names ("" when none). */
 export function headerAddresses(header: string): Contact[] {
