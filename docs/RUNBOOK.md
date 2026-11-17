@@ -89,9 +89,11 @@ Edit `worker/deploy.local.jsonc`:
 
 - `database_id`: the id from step 4;
 - `routes`: `[{ "pattern": "mail.example.com", "custom_domain": true }]` with your hostname;
-- `workers_dev`: `false`.
+- `workers_dev`: `false`;
+- `preview_urls`: `false`.
 
-The file holds ids, not secrets. Git ignores it.
+With both off, the Worker answers only on the custom domain: no `*.workers.dev` address and no
+preview URLs. The file holds ids, not secrets. Git ignores it.
 
 ### 6. Apply the migrations and deploy
 
@@ -171,9 +173,9 @@ Each feature switches on when its secrets exist. Set every secret with
 | `SETUP_TOKEN` | first-run setup | `openssl rand -base64 32`; delete after setup |
 | `RESEND_API_KEY` | sending | Resend API key with sending access |
 | `RESEND_WEBHOOK_SECRET` | delivery status | the Resend webhook's signing secret (`whsec_...`) |
-| `UPLOAD_URL_KEY` | attachments | `bun run upload-key` |
-| `VAPID_PUBLIC_KEY` | Web Push | `bun run vapid` |
-| `VAPID_PRIVATE_KEY` | Web Push | `bun run vapid` |
+| `UPLOAD_URL_KEY` | attachments | `bun run upload-key` (paste only the part after `=`) |
+| `VAPID_PUBLIC_KEY` | Web Push | `bun run vapid` (paste only the part after `=`) |
+| `VAPID_PRIVATE_KEY` | Web Push | `bun run vapid` (paste only the part after `=`) |
 | `VAPID_SUBJECT` | Web Push | `https://mail.example.com` (your origin) |
 | `TELEGRAM_BOT_TOKEN` | Telegram cards | BotFather |
 
@@ -200,6 +202,8 @@ bun run upload-key
 bun run wrangler secret put UPLOAD_URL_KEY --config .wrangler-production.jsonc
 ```
 
+   `upload-key` prints `UPLOAD_URL_KEY=<value>`. Paste only the part after `=`.
+
 6. In Settings > Domains, turn on sending for the domain.
 
 ### Web Push
@@ -210,6 +214,9 @@ bun run wrangler secret put VAPID_PUBLIC_KEY --config .wrangler-production.jsonc
 bun run wrangler secret put VAPID_PRIVATE_KEY --config .wrangler-production.jsonc
 bun run wrangler secret put VAPID_SUBJECT --config .wrangler-production.jsonc
 ```
+
+`vapid` prints `VAPID_PUBLIC_KEY=<value>` and `VAPID_PRIVATE_KEY=<value>`. Paste only the part
+after `=` for each. `VAPID_SUBJECT` is `https://mail.example.com`.
 
 Then turn on notifications in Settings > Notifications on each device. A new key pair ends every
 subscription; `docs/REFERENCE.md`, "Notifications", has the clean-up command.
@@ -290,8 +297,9 @@ recover later mail with the gap tool ("Backups").
 ### Trash clocks after a rollback across M7
 
 Code from before M7 does not maintain `messages.trashed_at`. A message moved out of Trash and back
-by that code keeps its old time, so after rolling forward it can be deleted before its 30 days. After
-rolling forward again, restart every Trash clock:
+by that code keeps its old time, so once M7 code runs again it can be deleted before its 30 days.
+Restart every Trash clock just before the `bun run deploy:prod` that rolls forward. The older code
+never reads `trashed_at`, so the update is safe while it still runs:
 
 ```sh
 bun run wrangler d1 execute melodymail --remote --config .wrangler-production.jsonc --command "UPDATE messages SET trashed_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000 WHERE trashed = 1"
@@ -341,13 +349,15 @@ bun run wrangler d1 time-travel info melodymail --config .wrangler-production.js
 Use this when the damage is less than 7 days old and the database still exists. Give the time
 with an explicit zone (`Z` or an offset).
 
+The second command overwrites the production database and cancels running queries. Run it only
+after recording the bookmark in "Before any restore".
+
 ```sh
 bun run wrangler d1 time-travel info melodymail --timestamp=2026-11-20T08:00:00Z --config .wrangler-production.jsonc
 bun run wrangler d1 time-travel restore melodymail --timestamp=2026-11-20T08:00:00Z --config .wrangler-production.jsonc
 ```
 
-- `restore` overwrites the database and cancels running queries. At most 10 restores run per 10
-  minutes.
+- At most 10 restores run per 10 minutes.
 - To undo it, restore to the bookmark from "Before any restore" with `--bookmark=<bookmark>`.
 - Credentials, sessions and push subscriptions come back as they were at that time.
 - Then run the gap tool from the restore time, and "Verify a restore".
@@ -377,37 +387,55 @@ bun run wrangler d1 create melodymail-restore --no-update-config
 ```
 
 3. In `deploy.local.jsonc`, write the old `database_id` down in a comment, then set `database_id` to
-   the new id. From here on, every command with `.wrangler-production.jsonc` acts on the new
-   database. The deployed Worker keeps using the old one until step 6.
+   the new id. The switch takes effect only when `bun run prod-config` writes
+   `.wrangler-production.jsonc` again; until then that file still holds the live database's id.
+   Regenerate it and check that it names the new id:
 
-4. Apply the migrations to the new database, then import the export:
+```sh
+bun run prod-config
+grep database_id .wrangler-production.jsonc
+```
+
+   If `prod-config` refuses, or `grep` shows the old id, stop: the next commands would write to the
+   live database. From here on, every command with `.wrangler-production.jsonc` acts on the new
+   database. The deployed Worker keeps using the old one until step 7.
+
+4. Apply the migrations to the new database:
 
 ```sh
 bun run migrate:prod
+```
+
+   `migrate:prod` must list all 16 migrations (`0000_auth.sql` to `0015_backups.sql` at M7) as
+   unapplied. If it reports nothing to apply, stop: the config points at a database already in
+   use. `main` always holds the export's migration or a later one, so the import fits the schema.
+
+5. Import the export. It writes every exported row into the database the config names, so run it
+   only after the checks in steps 3 and 4:
+
+```sh
 bun run wrangler d1 execute melodymail --remote --file ~/melodymail-restore/restore.sql --config .wrangler-production.jsonc
 ```
 
-   `main` always holds the export's migration or a later one, so the import fits the schema.
-
-5. Verify the import: row counts against the manifest, an empty `PRAGMA foreign_key_check`, and 20
+6. Verify the import: row counts against the manifest, an empty `PRAGMA foreign_key_check`, and 20
    sampled raw objects present in R2.
 
 ```sh
 bun run backup-restore verify ~/melodymail-restore melodymail --remote --r2-remote --config .wrangler-production.jsonc
 ```
 
-6. Deploy, so the Worker uses the new database:
+7. Deploy, so the Worker uses the new database:
 
 ```sh
 bun run deploy:prod
 ```
 
-7. Run first-run setup again: set a new `SETUP_TOKEN` (Deploy, step 7), open `/setup`, then delete
+8. Run first-run setup again: set a new `SETUP_TOKEN` (Deploy, step 7), open `/setup`, then delete
    the token. Connect Telegram again, turn on push on each device, and create API keys again.
-8. Run the gap tool from the export id ("Recover mail after the restore point").
-9. Keep the old database until you have used the restored one for a week. Then delete it in the
-   dashboard's D1 page, after checking that its id is the old id from step 3. Do
-   not use `wrangler d1 delete melodymail`: the config now maps that name to the new database.
+9. Run the gap tool from the export id ("Recover mail after the restore point").
+10. Keep the old database until you have used the restored one for a week. Then delete it in the
+    dashboard's D1 page, after checking that its id is the old id from step 3. Do not use
+    `wrangler d1 delete melodymail`: the config now maps that name to the new database.
 
 Exports already in R2 have no row in the new database, so the cron never prunes them. Remove the
 old exports you no longer need from the R2 dashboard.
@@ -420,19 +448,30 @@ Unverified: whether the 100,000-byte statement limit and `defer_foreign_keys` be
 Needs the off-account copy. Without it, only what you synced survives.
 
 1. Deploy from zero on the new account up to and including Deploy, step 6. Do not run setup yet.
+   Step 6 migrates the new, empty database.
 2. Upload the copy into the new `melodymail-mail` bucket with keys unchanged. Create an R2 token
    with "Object Read & Write" on the new bucket, configure an rclone remote for it as in "Monthly
    off-account copy" (add `no_check_bucket = true`), and run from the directory that holds the
    copy:
 
 ```sh
-rclone copy ./melodymail-mail melodymail-new:melodymail-mail --progress
+rclone copy ./melodymail-mail melodymail-new:melodymail-mail -M --progress
 ```
 
-3. Restore the newest export from the copy: run "Restore from an R2 export" steps 1, 4 and 5 on
-   the new account (the new database is the one from step 1, so skip steps 2 and 3).
-4. Continue the deploy from step 7: setup token, Email Routing, DNS, setup. If the domain moved too,
+   `-M` (`--metadata`) copies object metadata. The gap tool needs the metadata `email()` wrote on
+   each raw object, so the monthly sync must have used `-M` too. Unverified: whether the local
+   copy keeps that metadata on your file system (rclone stores it as extended attributes where the
+   file system supports them).
+3. Restore the newest export from the copy, with the commands of "Restore from an R2 export":
+   step 1 (fetch), step 5 (import) and step 6 (verify). Skip steps 2 to 4: the database from
+   step 1 above is new and already migrated.
+4. Continue with Deploy, step 7: setup token, Email Routing, DNS, setup. If the domain moved too,
    Passkeys bound to the old host do not work; setup registers a new one.
+5. Set the optional secrets again ("Optional features") and create the Resend webhook again for
+   the new host; its signing secret is new, so set `RESEND_WEBHOOK_SECRET` again. Connect Telegram,
+   turn on push on each device and create API keys again.
+6. Run the gap tool from the export id ("Recover mail after the restore point"). It rebuilds only
+   mail that is in the copy; mail received after the last sync is lost.
 
 No secret value has to survive: every Worker secret can be issued again. What must survive is
 access to the Cloudflare, Resend and domain registrar accounts, and the off-account copy.
@@ -467,7 +506,8 @@ bun run wrangler d1 execute melodymail --remote --file ~/melodymail-gap.sql --co
   and skipped when they have a row. Listing starts 10 minutes before the point for the same reason.
 - `--dry-run` prints the report and writes no file. Exit codes: 0 done, 2 could not run.
 - `--remote` makes wrangler upload a temporary preview Worker (its own proxy code) to the account
-  for the session; it needs `wrangler login`. For local state use
+  for the session; it needs `wrangler login`. With several accounts, set `"account_id"` in
+  `deploy.local.jsonc`; the tool passes it on to that Worker. For local state use
   `--local --persist-to <dir>` instead.
 - After the SQL is applied, the cron re-enqueues the rows within 15 minutes and the queue consumer
   parses them.
@@ -498,10 +538,15 @@ export WRANGLER_SEND_METRICS=false CLOUDFLARE_CF_FETCH_ENABLED=false
    (first terminal):
 
 ```sh
+mkdir -p ~/melodymail-drill
+touch ~/melodymail-drill/empty.env
 bun run --cwd ../web build
 bun run wrangler d1 migrations apply melodymail --local --persist-to ~/melodymail-drill/source
-bun run wrangler dev --test-scheduled --persist-to ~/melodymail-drill/source --port 8799
+bun run wrangler dev --test-scheduled --persist-to ~/melodymail-drill/source --port 8799 --env-file ~/melodymail-drill/empty.env
 ```
+
+   `--env-file` with an empty file stops `wrangler dev` from loading `worker/.dev.vars`, so no
+   real secret reaches the drill.
 
 2. In a second terminal, from `worker/`, fill the mailbox and run the cron until the export is
    complete (about 25 runs for the fixtures):
@@ -528,12 +573,14 @@ bun run backup-restore verify ~/melodymail-drill/export melodymail --local --per
 4. Record the export id, its size, the counts and the time taken in `docs/STATE.md`.
 
 After the first deploy, the monthly drill uses the newest production export instead: download it
-with `--remote`, import it locally, and production is never written:
+with `--remote`, import it locally, and production is never written. Every command passes the
+production config, so all of them open the same local database (wrangler names a local database
+after the config's `database_id`):
 
 ```sh
 bun run backup-restore fetch 2026-11-18T0300Z ~/melodymail-drill/prod --remote --config .wrangler-production.jsonc
-bun run wrangler d1 migrations apply melodymail --local --persist-to ~/melodymail-drill/prod-restored
-bun run wrangler d1 execute melodymail --local --persist-to ~/melodymail-drill/prod-restored --file ~/melodymail-drill/prod/restore.sql
+bun run wrangler d1 migrations apply melodymail --local --persist-to ~/melodymail-drill/prod-restored --config .wrangler-production.jsonc
+bun run wrangler d1 execute melodymail --local --persist-to ~/melodymail-drill/prod-restored --file ~/melodymail-drill/prod/restore.sql --config .wrangler-production.jsonc
 bun run backup-restore verify ~/melodymail-drill/prod melodymail --local --persist-to ~/melodymail-drill/prod-restored --r2-remote --config .wrangler-production.jsonc
 ```
 
@@ -578,12 +625,14 @@ acl = private
 3. Each month, from the directory that holds the copy, look at what would change, then sync:
 
 ```sh
-rclone sync melodymail-r2:melodymail-mail ./melodymail-mail --dry-run
-rclone sync melodymail-r2:melodymail-mail ./melodymail-mail --backup-dir ./melodymail-mail-removed/$(date +%Y-%m) --progress
+rclone sync melodymail-r2:melodymail-mail ./melodymail-mail -M --dry-run
+rclone sync melodymail-r2:melodymail-mail ./melodymail-mail -M --backup-dir ./melodymail-mail-removed/$(date +%Y-%m) --progress
 ```
 
 - Read the dry run first. Many deletions mean objects were removed in R2; stop and find out why
   before syncing.
+- `-M` (`--metadata`) keeps each object's metadata, which the gap tool needs after a recovery
+  onto a new account ("Recover onto a new account").
 - `--backup-dir` moves every file the sync would delete or overwrite into a dated directory instead
   of deleting it. Remove old dated directories when you no longer need them.
 - The copy holds mail content. Keep it on an encrypted disk.
@@ -699,7 +748,7 @@ Record no account id, hostname or secret.
 | 1 | Deploy | `bun run deploy:prod` with the explicit resources, then `curl https://mail.example.com/api/health` | the deploy succeeds; 200 `{"ok":true}` |
 | 2 | Setup and sign-in | run `/setup` on the custom domain with a real Passkey, then open `/setup` again; sign out and in | setup once, then 409 `already_initialized`; sign-in works |
 | 3 | Client IP and location | Settings > Security | your session shows your IP and city, not "this device or local network" |
-| 4 | Rate limiters | 12 failed recovery attempts within a minute from one IP; 130 requests to `/api/v1/messages` with an invalid key; then clear the lockout (`docs/REFERENCE.md`, "Clear a recovery lockout") | 429 within the first dozen recovery attempts and after about 120 API requests (approximate, per location) |
+| 4 | Rate limiters (`AUTH_LIMITER` 10 a minute, `API_LIMITER` 120 a minute, per IP) | the two loops below the table, from one machine | the auth loop answers 429 `{"error":"rate_limited"}` from about the 11th request; the API loop answers 401 `{"error":"invalid_key"}` and then 429 `{"error":"rate_limited"}` from about the 121st (approximate, counted per location) |
 | 5 | Inbound delivery | mail from an outside account to an added address, with a page open | stored, parsed within a minute, shown in the Inbox, the open page updates |
 | 6 | Refusal | mail to an address that is not added | the sender gets a bounce; no R2 object is written |
 | 7 | Forwarding | forward to a verified destination (one verified in mixed case too); a rule with a forward action; a forward-only address | each target gets one copy with `X-MelodyMail-Forwarded: 1`; forward-only keeps no R2 object; note whether `forward()` counts as a subrequest in the invocation log |
@@ -714,6 +763,22 @@ Record no account id, hostname or secret.
 | 16 | Logs and secrets | do item 8 first; create a temporary API key, call `/api/v1/messages`, search Workers Logs and `wrangler tail --format json` for the key's prefix; note whether a signed attachment URL's `sig` appears | the `Authorization` header does not appear; if it does, set `observability.logs.invocation_logs: false` (this also removes CPU time); revoke the key either way; record the `sig` finding |
 | 17 | First export | the day after the deploy, read the manifest; run the monthly drill on it | the manifest exists, sizes and MD5s match, the drill passes |
 | 18 | Install | Chrome or Edge on the custom domain; then go offline | Install is offered; offline shows the app shell |
+| 19 | Only the custom domain answers | dashboard: Workers & Pages > `melodymail` > Settings > Domains & Routes | `workers.dev` and Preview URLs are both off |
+| 20 | Release check | `bun run release <exportId>` with the first complete export | exit 0; record three run times in `REQUIREMENTS.md`, "Commands: Release" |
+| 21 | Gap tool on production | `bun run backup-gap <exportId> ~/melodymail-gap.sql --remote --config .wrangler-production.jsonc --dry-run` | exit 0; the report lists the objects since the export, all with a row, "0 to store again" |
+| 22 | Telegram backup alert | cannot be forced without breaking an export; when `backup_export_failed` or `backup_stale` is first logged, look at the chat | one plain message from the bot that day, with the text in `docs/REFERENCE.md`, "Backups" |
+| 23 | Non-ASCII envelope sender | a mail from an internationalized address (SMTPUTF8, for example `ü@例え.jp`) to an added address; then item 21's dry run | stored and parsed; the gap report shows no `bad_metadata` skip for it |
+
+The loops for item 4. Each request needs the `Origin` header, or the Worker answers 403
+`bad_origin` before the limiter:
+
+```sh
+for i in $(seq 1 12); do curl -s -X POST -H "Origin: https://mail.example.com" https://mail.example.com/api/auth/login/options; echo; done
+for i in $(seq 1 125); do curl -s -H "Authorization: Bearer mmk_short" https://mail.example.com/api/v1/addresses; echo; done
+```
+
+`/api/auth/login/options` counts no failed attempt, so the D1 recovery lockout cannot answer in
+the limiter's place.
 
 Not covered by a deployment: Firefox and Safari rendering of the reader, screen reader checks,
 WCAG contrast measurements, CJK fonts on macOS, iOS and Android.

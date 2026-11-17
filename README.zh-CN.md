@@ -53,7 +53,7 @@ MelodyMail 是一个单用户邮件服务，用于你自己的域名，运行在
 
    应返回 `{"ok":true}`。只有当前分支是干净的 `main` 且与 `origin/main` 一致时，`migrate:prod` 和 `deploy:prod` 才会运行，否则拒绝运行（退出码 1）。
 
-6. 设置初始化令牌。wrangler 提示时粘贴生成的随机值：
+6. 添加设置令牌。wrangler 提示时粘贴生成的随机值：
 
    ```sh
    openssl rand -base64 32
@@ -74,8 +74,8 @@ MelodyMail 是一个单用户邮件服务，用于你自己的域名，运行在
 
 ## 首次使用
 
-1. 打开 `https://mail.example.com/setup`。输入初始化令牌，创建通行密钥，把 TOTP 种子添加到身份验证器应用，并把恢复密钥保存在电脑之外。
-2. 删除初始化令牌。初始化只能运行一次：
+1. 打开 `https://mail.example.com/setup`。输入设置令牌，创建通行密钥，把 TOTP 种子添加到身份验证器应用，并把恢复密钥保存在电脑之外。
+2. 删除设置令牌。首次设置只能运行一次：
 
    ```sh
    bun run wrangler secret delete SETUP_TOKEN --config .wrangler-production.jsonc
