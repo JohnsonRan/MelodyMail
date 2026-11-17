@@ -3660,7 +3660,7 @@ Not verified (added, the reviewer's hypotheses):
 - Not verified: the layout by screenshot (the owner checks on local `wrangler dev`).
 
 
-## M7: backups, Trash clean-up, production config (phase A done 2026-11-17, not merged)
+## M7: backups, Trash clean-up, production config (phases A and B done 2026-11-17, not merged)
 
 Design: `docs/M7-ops.md` with its owner rulings of 2026-11-17. Risk class High. Phase A is code;
 phase B (the three READMEs, `docs/REFERENCE.md`, `docs/RUNBOOK.md`, the README sync check) is a
@@ -4000,3 +4000,109 @@ subdomain and whether it shows in the dashboard.
   `receivedAt: ""`.
 - Ablation, one at a time: the two gap guards (load 1% and 7%), the round trip, the 13-digit rule,
   both locations, the flag-like out file and the offset range (load 0–3%) each turn a test red.
+
+### Phase B: READMEs, reference, runbook, README check (done 2026-11-17, not merged)
+
+Not pushed, not deployed; no command touched a Cloudflare, Resend or Telegram account. Every
+wrangler command in the runbook was checked against `wrangler <cmd> --help` of the installed 4.162
+and, where noted, its source (`wrangler-dist/cli.js`).
+
+Commits (each signed, each after a green `bun run check`):
+
+- `bf17218` `scripts/seed-mail.ts` takes `--persist-to <dir>` (the drill seeds its own state).
+- `0b55fe4` `README.md`, `README.zh-CN.md`, `README.ja-JP.md` (one structure, identical code
+  blocks and link targets), `docs/REFERENCE.md`, `docs/RUNBOOK.md`.
+- `47ff24e` setup hints in three locales (6 strings each) and code comments point at the runbook
+  or the reference instead of README sections that no longer exist; `docs/M3-inbound.md` no longer
+  promises the orphan sweep; `docs/M7-ops.md` records the refusing scripts and the restore B
+  correction; the `wrangler.jsonc` database_id comment.
+- `60a7fa2` `scripts/check-readme.ts` in the merge gate (`check:readme`), its tests, the
+  REQUIREMENTS "AGENTS.md: Documentation" gate.
+
+What each phase-B note became:
+
+| Note | Result |
+| --- | --- |
+| Drill route `/cdn-cgi/handler/scheduled`, separate state, offline env vars | RUNBOOK "Local restore drill": `--persist-to ~/melodymail-drill/...`, `WRANGLER_SEND_METRICS=false CLOUDFLARE_CF_FETCH_ENABLED=false`, the route and why `/__scheduled` fails |
+| `backup-restore fetch\|verify` usage, exit codes, no pruning of old exports after a fresh-database restore | RUNBOOK "Restore from an R2 export" (every flag used, exit codes 0/1/2, the pruning note) |
+| `bun run release <exportId>` | RUNBOOK "Release check" |
+| README deploy: copy the example, fill id and route, `git pull` first, exit 1 means refused | README steps 4 and 5 in three languages; RUNBOOK "Production config" and Deploy step 5 |
+| Bucket lock, 7 days, `backups/` only, delays removal of failed exports | RUNBOOK "Optional: lock recent exports": `r2 bucket lock add melodymail-mail backups-7d backups/ --retention-days 7`, list, remove, consequences |
+| REFERENCE: Trash 30 days, Time Travel rows only, backup events, Telegram texts | REFERENCE "Trash" and "Backups" (fields read from the code; texts in three languages) |
+| REQUIREMENTS README check row | "AGENTS.md: Documentation" gate `bun run check:readme` |
+| `docs/M3-inbound.md` promises the orphan sweep and Trash clean-up | fixed in `47ff24e` |
+| README names `bun run deploy` and `db:migrate:remote` (two notes) | removed; README, REFERENCE and RUNBOOK name only `migrate:prod` and `deploy:prod`; RUNBOOK says the old ones refuse |
+| Rollback across M7 leaves stale `trashed_at` | RUNBOOK "Trash clocks after a rollback across M7", the `UPDATE` as one copy-pasteable command |
+| Gap tool usage, export id read to the minute, cron re-enqueues within 15 minutes, pre-M7 objects reported | RUNBOOK "Recover mail after the restore point" (also explicit zones and refused impossible dates) |
+| Rebuilt rows differ from `email()`; sent mail reported only | same section: a list of the differences; the Resend dashboard for sent mail |
+| `--remote` uploads a temporary preview Worker | same section |
+
+Proof:
+
+- `bun test scripts/check-readme.test.ts`: 9 tests. Each planted violation exits 1 (a heading
+  level, a missing heading, a changed command, a translated comment in a block, a missing block, a
+  different link, an extra link); a missing, empty or heading-less file exits 2. On copies of the
+  real READMEs in the scratchpad: `### 备份` for `## 备份` exit 1 ("heading levels ... differ"),
+  `deploy:prod` changed to `deploy` in ja-JP exit 1 ("code block 4 differs", "code block 7
+  differs"), a line removed from a zh-CN block exit 1, a ja-JP link retargeted exit 1 ("link 7 is
+  docs/REFERENCE.md"), ja-JP deleted exit 2, zh-CN emptied exit 2, an empty directory exit 2.
+- Runbook drill commands run locally (scratchpad `m7b/drill.sh`, metrics and the cf fetch off,
+  state under the scratchpad, `wrangler dev` on a config copy with absolute paths so no
+  `.dev.vars` was loaded, port 8799): migrations, `seed-mail.ts --persist-to` (fixtures answered
+  200), 40 calls to `/cdn-cgi/handler/scheduled`, export `2026-11-17T0317Z` complete (33 rows,
+  `restore.sql` 17,795 bytes), `backup-restore fetch` exit 0, migrations and the import into a
+  second state, `backup-restore verify` exit 0 ("counts match, no foreign key problem"), and
+  `backup-gap --local --dry-run` on the restored state (0 listed). 52 s in all.
+- Screenshot: the Trash folder at 1280 px, light, zh-CN, three trashed messages, the note
+  "在“已删除”中满 30 天的邮件会被永久删除。" in the toolbar; the built app against the stand-in
+  (`web/test/stub-app.ts`), no remote request, no sideways scroll. Saved in the session
+  scratchpad, `shots-m7/trash-note-zh-CN.png`.
+- Microsoft localization style guides (zh-CN and ja-JP, fetched 2026-11-17) applied: zh-CN
+  documentation punctuation (full-width ，。：（） and “” around UI labels), 你 not 您, no em dash,
+  a space between CJK and Latin or digits; ja-JP です・ます body text, noun-phrase headings, `[ ]`
+  around UI labels, half-width parentheses, a space between full-width and half-width characters
+  and none next to 、。 or inside brackets. App labels are the app's own translations; Cloudflare
+  dashboard labels stay in English.
+
+Gate (`bun run check`, dev workstation, Ryzen 9 9950X3D): 15.3 s before the commits (load 3%);
+14.4 s, 14.2 s and 12.0 s at the first three commits (load not recorded); 11.6 s, a failure and
+11.6 s at the last code commit (load 6%, 3%, 2%); 11.6 s before the STATE commit (load 7%). The failure was `test/api-key-auth.spec.ts` "answers
+429 after 120 requests from one IP in a minute" (401 instead of 429 on request 121), in code this
+phase did not touch; it passed in the runs before and after.
+
+### Deviations and findings (phase B)
+
+1. Restore B as designed cannot run: wrangler 4.162 refuses `d1 migrations apply <name> --remote`
+   for a database that is not in the config (read in the source). The runbook switches
+   `database_id` in `deploy.local.jsonc` to the new database first, runs `migrate:prod` and the
+   import against it, verifies, then runs `deploy:prod`. After the switch,
+   `wrangler d1 delete melodymail` would resolve to the new database, so the runbook deletes the
+   old one in the dashboard by its id.
+2. `d1 create` and `r2 bucket create` offer to write the new resource into the tracked
+   `wrangler.jsonc` (default yes), which would make the tree unclean and stop `prod-config`. The
+   runbook and READMEs pass `--no-update-config` (read in help and source, not run).
+3. A bucket lock on `backups/` also blocks overwrites. A page repeated after an interrupted run
+   writes its part key again, so with the lock that export fails and is replaced after 48 hours.
+   Inferred from the code and Cloudflare's lock rules; not tested against a real lock.
+4. The setup hints in compose and Settings (6 strings in each locale) named README sections that
+   no longer exist; they now name `docs/RUNBOOK.md` sections. A visible copy change; no screenshot
+   of it was taken.
+5. `seed-mail.ts` gained `--persist-to`, so the drill leaves the default local state alone.
+6. Flaky test: the API limiter test above failed once in eight gate runs this phase. Hypothesis:
+   the local rate limiter's window rolls over during the 121 requests. Not investigated; a
+   quarantine needs an owner and a date.
+
+### Not verified (phase B)
+
+- Every account step of the runbook and READMEs: nothing was run against Cloudflare, Resend,
+  Telegram or rclone. Dashboard labels are those of the Cloudflare pages read on 2026-11-17.
+- `--no-update-config`, `migrate:prod`, `deploy:prod`, `secret put` and `delete`, `time-travel`,
+  `rollback`, `r2 bucket lock`, `backup-gap --remote` and the remote restore path were checked
+  against help and source only.
+- The rclone commands (from the rclone and Cloudflare docs, including `--backup-dir` and
+  `no_check_bucket`); whether bucket locks exist on Free.
+- `wrangler dev --test-scheduled --persist-to ... --port 8799` from `worker/` exactly as written:
+  the drill ran it with a config copy, to leave `.dev.vars` unread; the other drill commands ran
+  as written, with scratchpad paths in place of `~/melodymail-drill`.
+- The README translations were not reviewed by a native speaker.
+- The full browser tiers were not rerun; only the screenshot script drove the built app.
