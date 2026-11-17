@@ -285,9 +285,11 @@ the same protection as the raw mail beside it.
 From M7 on, `env.MAIL.put(key, readable, { customMetadata })` in `email()` stores `addressId`,
 `envelopeFrom`, `envelopeTo` and `receivedAt`. Outbound copies (`sent/...` JSON) already carry
 their recipients. After a restore to time T, the owner runs the gap tool: it lists `raw/` and
-`sent/` objects uploaded after T, skips keys that already have a row, and writes `stored` rows
-(inbound) or rebuilt `out` rows; the cron re-enqueues the `stored` rows, 100 per run, and the
-consumer parses them. The tool runs on the owner's machine with `wrangler`, prints the SQL, and
+`sent/` objects uploaded after T − 10 minutes, skips keys that already have a row, and writes
+`stored` rows for inbound mail; the cron re-enqueues them, 100 per run, and the consumer parses
+them. `sent/` copies without a row are only reported, never rebuilt (owner ruling 5): the copy
+is written before the Resend call, so its outcome is unknown, and the owner checks Resend's
+dashboard. The tool runs on the owner's machine with `wrangler`, prints the SQL, and
 the owner applies it. Objects written before M7 have no metadata; they matter only if a restore
 point predates the first M7 export, which cannot happen.
 
@@ -773,6 +775,9 @@ PLAN's acceptance for M7: deploy from zero on a blank Cloudflare account followi
      gone), which the runbook states.
 4. A 7-day bucket lock on the `backups/` prefix if the Free plan allows it; never on `raw/`. If
    it is not available on Free, record that and go on without it.
+
+5. Mail sent after the restore point is listed in the gap tool's report, not rebuilt (asked
+   2026-11-17 during phase A review). Writing each send's outcome to R2 is a later option.
 
 ## Open questions for the owner (asked 2026-11-17, answered above)
 

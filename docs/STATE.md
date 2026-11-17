@@ -3971,6 +3971,8 @@ subdomain and whether it shows in the dashboard.
    dashboard); (b) rebuild with a new status meaning "unknown after restore" (needs a status,
    reader copy in three locales and no retry path); (c) write the outcome into R2 after each send
    (a second put per send). Recommended: (a) for M7, (c) later if wanted.
+   **Owner ruling (2026-11-17): (a).** The design records it as ruling 5; (c) is on the
+   deferred list.
 
 ### Notes for phase B (added by the re-review)
 
