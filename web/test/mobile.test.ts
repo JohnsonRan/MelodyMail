@@ -67,6 +67,27 @@ afterAll(async () => {
   await app.stop();
 });
 
+/**
+ * Elements showing exactly `text` that are cut: past the viewport, past an ancestor that clips,
+ * or wider than their own box.
+ */
+const cutText = (text: string) =>
+  s.page.getByText(text, { exact: true }).evaluateAll(
+    (all) =>
+      all.filter((el) => {
+        const r = el.getBoundingClientRect();
+        if (r.right > innerWidth + 0.5 || el.scrollWidth > el.clientWidth + 1) return true;
+        for (let p = el.parentElement; p; p = p.parentElement) {
+          if (
+            getComputedStyle(p).overflowX !== "visible" &&
+            r.right > p.getBoundingClientRect().right + 0.5
+          )
+            return true;
+        }
+        return false;
+      }).length,
+  );
+
 const go = async (path: string, ready: string) => {
   await s.page.goto(`${app.origin}${path}`);
   await s.page.locator(ready).first().waitFor();
@@ -90,6 +111,20 @@ describe("phone end to end", () => {
     await drawer.getByRole("combobox", { name: "Language" }).waitFor();
     expect(await drawer.getByRole("combobox", { name: "Theme" }).count()).toBe(1);
     await s.page.keyboard.press("Escape");
+  });
+
+  test("wraps a long address in a settings row, clear of its actions", async () => {
+    await go("/settings/addresses", `text=${LONG}`);
+    expect(await cutText(LONG)).toBe(0);
+    const value = await rect(s.page.getByText(LONG, { exact: true }));
+    const row = s.page.getByRole("listitem").filter({ hasText: LONG });
+    const width = await s.page.evaluate(() => innerWidth);
+    // The actions sit below the fields, never on a line the value needs.
+    const buttons = await row.getByRole("button").all();
+    expect(buttons.length).toBe(2);
+    for (const button of buttons)
+      expect((await rect(button)).top).toBeGreaterThanOrEqual(value.bottom);
+    expect(await s.page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
   });
 
   test("lists the settings sections at /settings", async () => {
