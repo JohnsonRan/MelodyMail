@@ -110,6 +110,18 @@ remote images stay blocked until "Show remote images" is chosen for that message
 attachments are always downloaded, never opened in the app. In the dark theme, "Dark reading" in
 the reader shows one HTML message inverted; it is off for every message you open.
 
+On a phone (narrower than 768 px):
+
+- the language and theme selectors are at the end of the navigation menu, not in the app bar;
+- the reader shows Back, Reply, Archive and Move to Trash as icons, and the other actions,
+  Dark reading included, under "More actions";
+- the list shows Archive and Move to Trash, with star and read state under "More actions";
+- Settings opens a list of its sections; wider screens open Domains.
+
+Compose opened as a page (narrower than 1280 px) keeps Close and Send in its title row, so both
+stay on screen while the fields scroll. Where the primary pointer is a finger, every control is
+at least 44 x 44 CSS px.
+
 Open pages receive new-mail events from the `Hub` Durable Object (SQLite-backed, as Workers Free
 requires), which the deploy creates.
 
@@ -129,7 +141,8 @@ requires), which the deploy creates.
 ## Install and offline
 
 MelodyMail is an installable web app. In Chrome or Edge, choose Install in the address bar; on
-iPhone and iPad, choose Share, then Add to Home Screen. Its service worker caches only the app
+iPhone and iPad, choose Share, then Add to Home Screen; installed there, the app bar draws under
+the status bar. Its service worker caches only the app
 itself, never mail or API answers, so the app opens without a network and says it is offline;
 reading mail needs the network. After a deploy, open pages show "A new version is available"
 with a Reload action.
