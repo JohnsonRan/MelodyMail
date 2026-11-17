@@ -341,6 +341,11 @@ as they were at that time.
 
 Always into a new database, so the old one stays until the restore is verified.
 
+Phase B correction: wrangler 4.162 refuses `d1 migrations apply <name> --remote` for a database
+that is not in the config, so steps 2 to 4 below cannot run as written. `docs/RUNBOOK.md`, "Restore
+from an R2 export", switches `database_id` in `deploy.local.jsonc` to the new database first and
+runs `migrate:prod` and the import against it before `deploy:prod`.
+
 1. `bun scripts/backup-restore.ts fetch <exportId> <dir>`: downloads the manifest and parts with
    `wrangler r2 object get --remote`, checks sizes, MD5s and sequences, and writes
    `<dir>/restore.sql` (the parts in order, wrapped in `PRAGMA defer_foreign_keys = on`, followed by
@@ -422,9 +427,9 @@ the tests. Production uses:
   `assets.directory`, `migrations_dir`) stay valid.
 - Scripts in `worker/package.json`: `migrate:prod` (generate, then `wrangler d1 migrations apply
   melodymail --remote --config .wrangler-production.jsonc`) and `deploy:prod` (generate, build the
-  web app, `wrangler deploy --config .wrangler-production.jsonc`). The existing `deploy` and
-  `db:migrate:remote` stay for anyone who deploys without the generator, and the README names
-  `deploy:prod`.
+  web app, `wrangler deploy --config .wrangler-production.jsonc`). The old `deploy` and
+  `db:migrate:remote` scripts refuse with exit 1 and name `deploy:prod` and `migrate:prod`
+  (phase A review); the README names only the checked scripts.
 
 Why not rely on automatic provisioning: it writes ids back into the tracked file, and a later
 deploy from a clean checkout without the id could provision a second, empty database. Explicit

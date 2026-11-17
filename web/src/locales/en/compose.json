@@ -12,7 +12,7 @@
   },
   "loadFailed": "Compose could not be opened. Close it and try again.",
   "notConfigured": "Sending is not set up",
-  "notConfiguredHelp": "Add a Resend API key to the Worker. The README, section \"Sending\", lists the steps.",
+  "notConfiguredHelp": "Add a Resend API key to the Worker. docs/RUNBOOK.md, section \"Sending through Resend\", lists the steps.",
   "noAddresses": "No address can send yet. Turn on sending for a domain in Settings > Domains.",
   "from": "From",
   "to": "To",
@@ -29,7 +29,7 @@
   "bodyHelp": "Markdown: **bold**, *italic*, lists, tables, `code` and links. HTML is shown as text.",
   "attach": "Attach files",
   "attachLimits": "Up to 25 MB per file and 30 MB per message.",
-  "attachmentsOff": "Attachments are off: the Worker has no UPLOAD_URL_KEY (README, \"Sending\").",
+  "attachmentsOff": "Attachments are off: the Worker has no UPLOAD_URL_KEY (docs/RUNBOOK.md, \"Sending through Resend\").",
   "uploading": "Uploading {{name}}",
   "removeAttachment": "Remove {{name}}",
   "uploadError": {

@@ -71,7 +71,7 @@ export async function callResend(
 ): Promise<SendOutcome> {
   const resend = new Resend(apiKey, { baseUrl: env.RESEND_API_URL });
   // Open and click tracking stays off (owner ruling 2026-11-16). Resend sets tracking per domain,
-  // not per email; the README tells the owner to leave it off there.
+  // not per email; docs/RUNBOOK.md tells the owner to leave it off there.
   const { data, error, headers } = await resend.emails.send(email as CreateEmailOptions, {
     idempotencyKey,
   });

@@ -13,7 +13,7 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
-  // No database_id: wrangler provisions the database on the first deploy.
+  // No database_id: production adds it from the untracked deploy.local.jsonc (scripts/prod-config.ts).
   "d1_databases": [
     { "binding": "DB", "database_name": "melodymail", "migrations_dir": "migrations" }
   ],
@@ -32,7 +32,7 @@
   "r2_buckets": [{ "binding": "MAIL", "bucket_name": "melodymail-mail" }],
   // Inbound parse jobs carry only { id }. wrangler 4.162 creates a missing queue on deploy
   // (https://developers.cloudflare.com/workers/wrangler/configuration/#automatic-provisioning
-  // lists Queues); README has the manual create command.
+  // lists Queues); docs/RUNBOOK.md has the manual create command.
   // max_batch_size 1: each parse may take up to the 3 ms Bun budget, about 3 times that on a
   // slower production CPU, and a consumer invocation has 10 ms CPU on Workers Free. No dead-letter
   // queue: the cron step re-enqueues every message still "stored" after 15 minutes.
