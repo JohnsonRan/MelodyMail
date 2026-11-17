@@ -4088,9 +4088,16 @@ phase did not touch; it passed in the runs before and after.
    no longer exist; they now name `docs/RUNBOOK.md` sections. A visible copy change; no screenshot
    of it was taken.
 5. `seed-mail.ts` gained `--persist-to`, so the drill leaves the default local state alone.
-6. Flaky test: the API limiter test above failed once in eight gate runs this phase. Hypothesis:
-   the local rate limiter's window rolls over during the 121 requests. Not investigated; a
-   quarantine needs an owner and a date.
+6. Flaky test, fixed in the commit after `e278fe3`: the API limiter test above failed once in eight
+   gate runs. Cause: the Miniflare rate limiter (`ratelimit-object.worker.js`) counts in fixed
+   windows aligned to the clock (`epoch = floor(Date.now() / (period * 1000))`) and starts a new
+   count when the epoch changes, so 121 requests that straddle a minute boundary never reach 429.
+   Reproduced with a throwaway spec that started the loop 150 ms before a boundary: the 121
+   requests took 259 ms and the last one answered 401. The test now waits for the next window when
+   less than 3 s of the current one is left, and asserts that the requests stayed in one window;
+   it still uses the real binding with the `wrangler.jsonc` limit. 30 sequential runs of
+   `bun --bun vitest run test/api-key-auth.spec.ts`: 30 passed in 67 s, CPU load 50% before and 0%
+   after.
 
 ### Not verified (phase B)
 
