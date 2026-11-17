@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 import { RootLayout } from "./App";
 import { routeAuthState } from "./api";
+import { NARROW } from "./breakpoints";
 import type { AstryxMessages, Locale } from "./i18n";
 
 type MailSearch = { m?: string; q?: string; compose?: string; src?: string; kind?: string };
@@ -56,9 +57,11 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
   const settingsIndexRoute = createRoute({
     getParentRoute: () => shellRoute,
     path: "/settings",
+    // Phones get the list of sections; wider screens open Domains beside the settings navigation.
     beforeLoad: () => {
-      throw redirect({ to: "/settings/domains", replace: true });
+      if (!matchMedia(NARROW).matches) throw redirect({ to: "/settings/domains", replace: true });
     },
+    component: lazyRouteComponent(() => import("./pages/SettingsIndexPage"), "SettingsIndexPage"),
   });
   const securityRoute = createRoute({
     getParentRoute: () => shellRoute,

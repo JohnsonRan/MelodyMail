@@ -98,7 +98,7 @@ function MailNav() {
           label={t("nav.settings")}
           icon={Cog6ToothIcon}
           isSelected={false}
-          href="/settings/domains"
+          href="/settings"
         />
       }
     >
@@ -132,7 +132,7 @@ function MailNav() {
   );
 }
 
-const SETTINGS_NAV: {
+export const SETTINGS_NAV: {
   title: string;
   items: { key: string; path: string; icon: typeof InboxIcon }[];
 }[] = [
