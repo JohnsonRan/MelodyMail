@@ -150,7 +150,7 @@ async function forwardAll(
 /**
  * Forwards a message that could not be stored. Returns when at least one forward went out;
  * rethrows the storage error when none did, so the sender is told. A raw object written before
- * the D1 failure is named in the audit row for the M7 orphan sweep.
+ * the D1 failure is named in the audit row for an orphan sweep (deferred, M7 owner ruling 3).
  */
 async function forwardInstead(
   env: Env,
@@ -177,6 +177,42 @@ async function forwardInstead(
   }
 }
 
+/** Characters of an encoded envelope address kept in the metadata, however long the address. */
+const METADATA_VALUE_MAX = 512;
+
+/**
+ * An envelope address as ASCII (percent-encoded UTF-8), cut at a whole character. Whether R2
+ * accepts other characters in custom metadata is not documented; a refused put would bounce the
+ * message, so nothing else is written. The gap tool decodes it with decodeURIComponent.
+ */
+export function metadataValue(value: string): string {
+  let out = "";
+  for (const char of value) {
+    let piece: string;
+    try {
+      piece = encodeURIComponent(char);
+    } catch {
+      piece = "%EF%BF%BD"; // a lone surrogate becomes U+FFFD
+    }
+    if (out.length + piece.length > METADATA_VALUE_MAX) break;
+    out += piece;
+  }
+  return out;
+}
+
+/**
+ * Custom metadata on the raw object (docs/M7-ops.md, decision 7): after a restore, the owner's
+ * gap tool (worker/scripts/backup-gap.ts) rebuilds the row of mail that arrived after the restore
+ * point from these four fields.
+ */
+export function rawMetadata(addressId: number, from: string, to: string, receivedAt: number) {
+  return {
+    addressId: String(addressId),
+    envelopeFrom: metadataValue(from),
+    envelopeTo: metadataValue(to),
+    receivedAt: String(receivedAt),
+  };
+}
 function rawKey(id: string, now: number): string {
   const d = new Date(now);
   const month = String(d.getUTCMonth() + 1).padStart(2, "0");
@@ -230,14 +266,18 @@ export async function handleEmail(message: ForwardableEmailMessage, env: Env): P
   let rawStored = false;
   try {
     const { readable, writable } = new FixedLengthStream(message.rawSize);
-    await Promise.all([env.MAIL.put(key, readable), message.raw.pipeTo(writable)]);
+    const customMetadata = rawMetadata(address.id, message.from, message.to, now);
+    await Promise.all([
+      env.MAIL.put(key, readable, { customMetadata }),
+      message.raw.pipeTo(writable),
+    ]);
     rawStored = true;
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO messages (id, address_id, direction, status, envelope_from, envelope_to,
            subaddress_tag, raw_size, r2_key, forward_failed, read, starred, archived, trashed,
-           received_at)
-         VALUES (?, ?, 'in', 'stored', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           trashed_at, received_at)
+         VALUES (?, ?, 'in', 'stored', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         id,
         address.id,
@@ -251,6 +291,7 @@ export async function handleEmail(message: ForwardableEmailMessage, env: Env): P
         Number(rules.starred),
         Number(rules.archived),
         Number(rules.trashed),
+        rules.trashed ? now : null,
         now,
       ),
       env.DB.prepare("UPDATE addresses SET last_received_at = ? WHERE id = ?").bind(

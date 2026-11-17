@@ -12,6 +12,7 @@
   },
   "scripts": {
     "check": "bun scripts/check.ts",
+    "release": "bun scripts/release.ts",
     "lint": "bun --bun biome check .",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun run --filter '*' test",
@@ -20,6 +21,7 @@
     "test:requirements": "uv run --no-project --python 3.13 scripts/test_check_requirements.py",
     "test:scripts": "bun test scripts",
     "check:i18n": "bun scripts/check-i18n.ts",
+    "check:readme": "bun scripts/check-readme.ts",
     "check:widget": "uv run --no-project --python 3.13 python -I scripts/check-widget-size.py",
     "dev": "bun run --filter '*' dev",
     "deploy": "bun run --filter @melodymail/worker deploy",

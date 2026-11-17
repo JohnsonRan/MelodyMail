@@ -8,6 +8,9 @@ import { fetchWith } from "./mailbox-helpers";
 // the format check and the rate limit before any D1 read, unknown and expired keys, last used.
 
 const HOUR = 3_600_000;
+/** The API_LIMITER period (wrangler.jsonc) and the time the 121 requests may take at most. */
+const WINDOW_MS = 60_000;
+const WINDOW_MARGIN_MS = 3_000;
 
 /** A D1 stand-in that fails the test on any use. */
 const noDatabase = new Proxy({} as D1Database, {
@@ -139,12 +142,19 @@ describe("API key authentication", () => {
   });
 
   it("answers 429 after 120 requests from one IP in a minute", async () => {
+    // The local limiter counts in fixed 60-second windows aligned to the clock, so 121 requests
+    // that straddle a minute boundary start a new count. Start with at least WINDOW_MARGIN_MS
+    // left in the current window; the requests take well under a second.
+    const left = WINDOW_MS - (Date.now() % WINDOW_MS);
+    if (left < WINDOW_MARGIN_MS) await new Promise((resolve) => setTimeout(resolve, left + 50));
+    const window = Math.floor(Date.now() / WINDOW_MS);
     const headers = { authorization: `Bearer mmk_short`, "cf-connecting-ip": "192.0.2.77" };
     const statuses: number[] = [];
     for (let i = 0; i < 121; i++) {
       const res = await exports.default.fetch(`${ORIGIN}/api/v1/addresses`, { headers });
       statuses.push(res.status);
     }
+    expect(Math.floor(Date.now() / WINDOW_MS), "the requests stayed in one window").toBe(window);
     expect(statuses.slice(0, 120).every((s) => s === 401)).toBe(true);
     expect(statuses[120]).toBe(429);
   });

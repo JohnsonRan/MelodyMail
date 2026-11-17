@@ -197,7 +197,7 @@ describe("recovery lockout", () => {
     expect(await attempts()).toBe(0);
   });
 
-  it("opens again when the owner clears login_attempts (the README command)", async () => {
+  it("opens again when the owner clears login_attempts (the docs/REFERENCE.md command)", async () => {
     const owner = await setupOwner();
     for (let i = 0; i < GLOBAL_FAILURES / PER_IP_FAILURES; i++) {
       await fail(owner.totpSecret, owner.recoveryKey, new Client(), PER_IP_FAILURES);

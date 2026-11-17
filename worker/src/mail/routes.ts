@@ -2,8 +2,9 @@ import type { Context, Hono } from "hono";
 import { audit } from "../auth/store";
 import { parseFlag } from "../domains/validate";
 import type { AppEnv, Env } from "../env";
-import { errorText, fail, log, readJson } from "../http";
+import { fail, readJson } from "../http";
 import { searchFilter } from "./search";
+import { deleteFromTrash } from "./trash";
 
 // The mailbox API (docs/M4-mailbox.md). The Worker runs indexed queries and streams raw mail; it
 // never parses or renders a message. The session routes and the /api/v1/ routes
@@ -122,10 +123,15 @@ const flag = (value: boolean | undefined) => (value === undefined ? null : Numbe
  * card buttons both change flags through this function.
  */
 export function updateMessageFlags(env: Env, ids: string[], flags: Flags) {
+  // trashed_at starts the 30-day clock when a message enters Trash, keeps it while the message
+  // stays there, and clears it when the message leaves (worker/src/mail/trash.ts). SET reads the
+  // old row, so `trashed = 1` below means "already in Trash".
   return env.DB.prepare(
-    `UPDATE messages SET read = COALESCE(?, read), starred = COALESCE(?, starred),
-       archived = COALESCE(?, archived), trashed = COALESCE(?, trashed)
-     WHERE id IN (SELECT value FROM json_each(?))`,
+    `UPDATE messages SET read = COALESCE(?1, read), starred = COALESCE(?2, starred),
+       archived = COALESCE(?3, archived), trashed = COALESCE(?4, trashed),
+       trashed_at = CASE WHEN ?4 IS NULL THEN trashed_at WHEN ?4 = 0 THEN NULL
+         WHEN trashed = 1 THEN trashed_at ELSE ?6 END
+     WHERE id IN (SELECT value FROM json_each(?5))`,
   )
     .bind(
       flag(flags.read),
@@ -133,6 +139,7 @@ export function updateMessageFlags(env: Env, ids: string[], flags: Flags) {
       flag(flags.archived),
       flag(flags.trashed),
       JSON.stringify(ids),
+      Date.now(),
     )
     .run();
 }
@@ -231,34 +238,17 @@ export async function patchMessage(c: IdCtx) {
   return result.meta.changes > 0 ? c.json({ ok: true }) : fail(c, 404, "not_found");
 }
 
-// Permanent delete, only from Trash. The row and its search text go in one batch; the raw
-// object goes afterwards, so a failed R2 delete leaves an orphan for the M7 sweep rather than
-// a row whose raw message is gone.
+// Permanent delete, only from Trash (worker/src/mail/trash.ts).
 async function deleteMessage(c: IdCtx) {
   const id = c.req.param("id");
-  const db = c.env.DB;
-  const [, deleted] = await db.batch<{ key: string }>([
-    db
-      .prepare(
-        `DELETE FROM messages_fts WHERE message_id = ?
-           AND EXISTS (SELECT 1 FROM messages WHERE id = ? AND trashed = 1)`,
-      )
-      .bind(id, id),
-    db
-      .prepare("DELETE FROM messages WHERE id = ? AND trashed = 1 RETURNING r2_key AS key")
-      .bind(id),
-  ]);
-  const key = deleted?.results[0]?.key;
-  if (key === undefined) {
-    const exists = await db.prepare("SELECT 1 AS one FROM messages WHERE id = ?").bind(id).first();
+  const [deleted] = await deleteFromTrash(c.env, [id]);
+  if (deleted === undefined) {
+    const exists = await c.env.DB.prepare("SELECT 1 AS one FROM messages WHERE id = ?")
+      .bind(id)
+      .first();
     return exists ? fail(c, 409, "not_in_trash") : fail(c, 404, "not_found");
   }
   await audit(c, "message_deleted", Date.now(), id).run();
-  try {
-    await c.env.MAIL.delete(key);
-  } catch (err) {
-    log("warn", "mail_raw_delete_failed", { messageId: id, error: errorText(err) });
-  }
   return c.json({ ok: true });
 }
 

@@ -1,4 +1,4 @@
-// Prints a fresh VAPID key pair for Web Push, in .dev.vars form (README, "Notifications").
+// Prints a fresh VAPID key pair for Web Push, in .dev.vars form (docs/RUNBOOK.md, "Web Push").
 // The private key is a Worker secret: store it with `wrangler secret put`, never in a file in git.
 import { generateVapidKeys } from "@mmmike/web-push/vapid";
 

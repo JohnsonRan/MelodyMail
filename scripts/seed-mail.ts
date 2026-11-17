@@ -8,13 +8,25 @@
  * It creates the domain example.com and the addresses shop@ and news@ in the local database
  * when they are missing. It never touches a remote account: every wrangler call passes --local.
  *
- * Usage: bun scripts/seed-mail.ts [worker-url]   (default http://127.0.0.1:8787)
+ * Usage: bun scripts/seed-mail.ts [worker-url] [--persist-to <dir>]   (default http://127.0.0.1:8787)
+ *   --persist-to  the local state the Worker was started with (the restore drill in docs/RUNBOOK.md)
  * Exit codes: 0 seeded, 1 a message was refused, 2 the Worker or wrangler could not be reached.
  */
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
-const base = process.argv[2] ?? "http://127.0.0.1:8787";
+const args = process.argv.slice(2);
+const persistAt = args.indexOf("--persist-to");
+const persist = persistAt === -1 ? undefined : args[persistAt + 1];
+if (persistAt !== -1 && !persist) {
+  console.error("--persist-to needs a directory");
+  process.exit(2);
+}
+const base =
+  args.find((a, i) => !a.startsWith("--") && (persistAt === -1 || i !== persistAt + 1)) ??
+  "http://127.0.0.1:8787";
+// wrangler runs from worker/, so a relative state directory is resolved against the caller first.
+const local = persist ? ["--local", "--persist-to", resolve(persist)] : ["--local"];
 const root = join(import.meta.dir, "..");
 const fixtures = join(root, "worker", "test", "fixtures");
 
@@ -36,8 +48,8 @@ async function wrangler(args: string[]): Promise<void> {
   }
 }
 
-await wrangler(["d1", "migrations", "apply", "melodymail", "--local"]);
-await wrangler(["d1", "execute", "melodymail", "--local", "--command", SETUP_SQL]);
+await wrangler(["d1", "migrations", "apply", "melodymail", ...local]);
+await wrangler(["d1", "execute", "melodymail", ...local, "--command", SETUP_SQL]);
 
 // Every other message goes to the news address with a sub-address tag, so the address
 // navigation and the tag in the reader both have data.

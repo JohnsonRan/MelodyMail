@@ -1,369 +1,141 @@
 # MelodyMail
 
-MelodyMail is a single-owner mail service that runs on one Cloudflare Worker on the Workers Free
-plan. The owner signs in with a Passkey; there is no password.
+[简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md)
 
-## Install
+MelodyMail is a single-owner mail service for your own domain that runs on one Cloudflare Worker
+on the Workers Free plan. It receives, stores, sorts and sends mail, and the owner signs in with a
+Passkey instead of a password.
 
-Requires Bun 1.4.4 and Node.js (wrangler runs on Node). From the repository root:
+## Requirements
+
+- A Cloudflare account and a domain whose DNS is on Cloudflare.
+- Bun 1.4.4, Node.js (wrangler runs on Node) and git.
+- Optional: a Resend account for sending, a Telegram bot for new-mail cards.
+
+## Deploy
+
+These are the shortest steps from a blank Cloudflare account. The full procedure, with every
+check and the optional features, is in [docs/RUNBOOK.md](docs/RUNBOOK.md).
+
+1. Choose the final hostname first, for example `mail.example.com`. Passkeys are bound to that
+   host, so a Passkey created on another host does not work on it.
+2. Install and run the checks:
+
+   ```sh
+   git clone https://github.com/JohnsonRan/MelodyMail.git
+   cd MelodyMail
+   bun install --frozen-lockfile
+   bun run check
+   ```
+
+3. Sign in to Cloudflare. Every later command runs in `worker/`:
+
+   ```sh
+   cd worker
+   bun run wrangler login
+   ```
+
+4. Create the database, the bucket and the queue, and start your local deploy file:
+
+   ```sh
+   bun run wrangler d1 create melodymail --no-update-config
+   bun run wrangler r2 bucket create melodymail-mail --no-update-config
+   bun run wrangler queues create melodymail-inbound
+   cp deploy.example.jsonc deploy.local.jsonc
+   ```
+
+   In `deploy.local.jsonc`, set `database_id` to the id that `d1 create` printed and the route
+   pattern to your hostname. Git ignores this file.
+
+5. Apply the migrations, deploy, and check the health endpoint:
+
+   ```sh
+   git pull
+   bun run migrate:prod
+   bun run deploy:prod
+   curl https://mail.example.com/api/health
+   ```
+
+   The answer is `{"ok":true}`. `migrate:prod` and `deploy:prod` refuse (exit 1) unless you are on
+   a clean `main` that equals `origin/main`.
+
+6. Set the setup token. Paste the random value when wrangler asks:
+
+   ```sh
+   openssl rand -base64 32
+   bun run wrangler secret put SETUP_TOKEN --config .wrangler-production.jsonc
+   ```
+
+7. In the Cloudflare dashboard, onboard the domain to Email Routing (Compute > Email Service >
+   Email Routing > Onboard Domain), accept the records it adds, and set the catch-all address to
+   "Send to a Worker", `melodymail`. Add a DMARC TXT record on `_dmarc`.
+
+Optional features switch on with Worker secrets:
+
+| Feature | Secrets |
+| --- | --- |
+| Sending through Resend | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `UPLOAD_URL_KEY` |
+| Web Push | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` |
+| Telegram cards | `TELEGRAM_BOT_TOKEN` |
+
+The steps for each are in [docs/RUNBOOK.md](docs/RUNBOOK.md#optional-features).
+
+## First use
+
+1. Open `https://mail.example.com/setup`. Enter the setup token, create a Passkey, add the TOTP
+   seed to an authenticator app, and keep the recovery key outside the computer.
+2. Delete the setup token. Setup runs only once:
+
+   ```sh
+   bun run wrangler secret delete SETUP_TOKEN --config .wrangler-production.jsonc
+   ```
+
+3. In Settings > Domains, add your domain and choose "Check DNS".
+4. In Settings > Addresses, add an address, for example `you@example.com`.
+5. Send a mail to it from another account. It appears in the Inbox within a minute.
+
+## Update and roll back
+
+From the repository root:
 
 ```sh
-bun install
+git pull
+bun install --frozen-lockfile
 bun run check
+cd worker
+bun run migrate:prod
+bun run deploy:prod
 ```
 
-`bun run check` is the merge gate: lint, typecheck, tests, i18n check, build and requirements check,
-run at the same time by `scripts/check.ts`; each step prints its output and exit code when it ends.
+Migrations always run before the code and only move forward. The runbook's
+[Update](docs/RUNBOOK.md#update) section records a restore point first; its
+[Roll back](docs/RUNBOOK.md#roll-back) section covers code rollback and what it leaves behind.
 
-## Run locally
+## Backups
+
+D1 Time Travel can restore the database to any minute of the last 7 days. The Worker also writes a
+daily export of the database to R2. Raw mail has no second copy inside the account, so copy the
+bucket to your own disk once a month. Restores, the off-account copy and the routine checks are in
+[docs/RUNBOOK.md](docs/RUNBOOK.md#backups).
+
+## Develop locally
+
+From the repository root:
 
 ```sh
-cp worker/.dev.vars.example worker/.dev.vars   # then set SETUP_TOKEN in it
+cp worker/.dev.vars.example worker/.dev.vars
 bun run --cwd web build
 bun run --cwd worker db:migrate:local
 bun run --cwd worker dev
 ```
 
-Open `http://localhost:8787/setup`. Use `localhost`, not `127.0.0.1`: browsers do not accept an
-IP address as a Passkey relying party, so Passkeys fail on `127.0.0.1`.
-
-`bun run dev` also starts Vite on its own port with hot reload; it proxies `/api`, including the
-live-update WebSocket (`/api/events`), to the Worker on port 8787. Running the app through Vite
-has not been checked against the Worker's same-origin checks; `http://localhost:8787` is the
-checked way.
-
-## Authentication
-
-The owner signs in with a Passkey. The fallback is a recovery key plus a code from an
-authenticator app (TOTP). Both are created during first-run setup.
-
-### Set the setup token
-
-First-run setup needs the `SETUP_TOKEN` Worker secret. The Worker refuses setup while the secret
-is missing or shorter than 32 characters. Generate a random value and store it as a secret from
-`worker/`:
-
-```sh
-openssl rand -base64 32
-bun run wrangler secret put SETUP_TOKEN
-```
-
-`bun run deploy` does not change the database. Before the first `/setup`, and after every deploy
-that adds a migration, apply the migrations to the remote D1 database:
-
-```sh
-bun run --cwd worker db:migrate:remote
-```
-
-Without them, every auth route answers 500. Then open `/setup` on the Worker's domain and enter
-the same value. Setup runs once; after it
-succeeds, the token no longer opens anything. For `wrangler dev`, put the value in
-`worker/.dev.vars` instead.
-
-### Clear a recovery lockout
-
-Recovery counts failed attempts in two ways. One IP address gets at most five in any 15 minutes;
-all addresses together get at most 20. A lock lasts until the oldest counted attempt is 15 minutes
-old (at most 15 minutes). The global ceiling locks recovery for everyone, the owner included. To
-open both at once, delete the counted failures from `worker/`:
-
-```sh
-bun run wrangler d1 execute melodymail --remote --command "DELETE FROM login_attempts"
-```
-
-Use `--local` instead of `--remote` for the `wrangler dev` database. The command deletes only the
-failure counts; it does not change any credential.
-
-## Domains and addresses
-
-Apply migration 0004 right after deploying this version, before anyone signs in: setup, sign-in
-and recovery write to its `audit_log.detail` column and answer 500 until it exists (see "Set the
-setup token" for when migrations run):
-
-```sh
-bun run --cwd worker db:migrate:remote
-```
-
-1. The domain must use Cloudflare DNS with Email Routing turned on.
-2. In Settings > Domains, add the domain. Its "DNS records" page lists the Email Routing MX, SPF,
-   DKIM and DMARC records; "Check DNS" asks Cloudflare's DNS-over-HTTPS resolver
-   (`DOH_URL` in `worker/wrangler.jsonc`) and marks each record found, missing or different.
-3. In Settings > Addresses, add each address that may receive mail. A prefix holds a-z, 0-9,
-   `.`, `_` and `-`; `+` is reserved for tags such as `shop+news`.
-4. In Settings > Forwarding, add the addresses mail may be forwarded to. Each must first be a
-   verified destination address in the Cloudflare dashboard (Email Routing > Destination
-   addresses, at most 200 per account).
-
-## Inbound mail
-
-Apply migrations 0005 and 0006 right after deploying this version: `email()` writes every
-received message to the `messages` table and throws until it exists, so mail sent in the meantime
-is refused, and the queue consumer fails until the `attempts` column exists (see "Set the setup
-token" for when migrations run):
-
-```sh
-bun run --cwd worker db:migrate:remote
-```
-
-`bun run deploy` creates the R2 bucket `melodymail-mail` and the queue `melodymail-inbound` when
-they are missing (wrangler's automatic provisioning). If the deploy stops with
-`Queue "melodymail-inbound" does not exist`, create the queue from `worker/` and deploy again:
-
-```sh
-bun run wrangler queues create melodymail-inbound
-```
-
-1. In the Cloudflare dashboard, open the domain's Email Routing > Routing rules and set the
-   catch-all address to "Send to a Worker", choosing `melodymail`.
-2. Only addresses added in Settings > Addresses receive mail. Mail to any other address, to a
-   disabled address, or to a domain with receiving switched off is refused before anything is
-   stored. `shop+news@` is delivered to `shop@` with the tag `news` kept on the message.
-3. Each received message is stored in R2 and parsed by the queue consumer. A Cron Trigger every
-   15 minutes re-queues messages that are still unparsed after 15 minutes. After five failed
-   parse tries a message is marked as not parsed; its raw copy stays in R2.
-4. An address with forwarding targets forwards every message to each of them, with the header
-   `X-MelodyMail-Forwarded: 1`; a message that already carries it is kept and not forwarded
-   again. A forward-only address keeps no copy, unless every forward fails.
-5. If a message cannot be stored, an address with forwarding targets forwards it to them instead
-   (recorded in the audit log); an address without targets refuses it, and the sender gets a
-   bounce.
-
-## Rules
-
-Apply migration 0013 right after deploying this version: `email()` reads the `rules` table for
-every accepted message, and until it exists it logs `rules_load_failed` and handles mail as if
-no rule matched.
-
-```sh
-bun run --cwd worker db:migrate:remote
-```
-
-Settings > Rules holds up to 50 rules. Each rule has 1 to 10 conditions and at least one action.
-The enabled rules can name at most 20 different headers in their header conditions.
-
-- **Conditions** read the envelope and the headers, never the body: From (each address and its
-  display name; the envelope sender when there is no `From` header), To or Cc (the first 50
-  addresses of each of From, To and Cc are read), the recipient
-  address without its `+tag`, the sub-address tag, the subject, or any named header such as
-  `List-Id`. Operators: contains, doesn't contain, is, starts with, ends with. Case does not
-  matter and runs of white space count as one space. To match a domain, use "ends with"
-  `@example.com`: `example.com` alone also matches `notexample.com`. There are no regular
-  expressions.
-- **Actions**: forward to up to 5 addresses from Settings > Forwarding, mark as read, star,
-  archive, move to Trash, and stop processing more rules.
-- **Order**: rules run top to bottom; every matching rule adds its actions, and a matching rule
-  with "Stop processing more rules" ends the run. Trash wins over archive. Move up and Move
-  down change the order.
-- **Forwarding**: a message goes to the address's own forwarding addresses first, then to the
-  rule targets, each once and at most 10 in all; over 10, the audit log records
-  `mail_forward_capped`. A message that already carries `X-MelodyMail-Forwarded` is not
-  forwarded by a rule either. A forward-only address forwards to the rule targets as well.
-- **New mail only**: a rule applies to mail that arrives after it is saved. Creating, editing,
-  reordering or deleting a rule never changes stored mail.
-- **Notifications**: mail that a rule marks as read, archives or moves to Trash sends no push
-  and no Telegram card; open pages still refresh. Starred mail notifies as usual.
-- **Test**: in the rule dialog, "Test rule" checks the rule against one of the 20 newest Inbox
-  messages and shows which conditions match and what would happen. A test changes nothing.
-
-Removing a forwarding address that a rule uses asks for confirmation. A rule left without any
-action is then turned off.
-
-## Mailbox
-
-Apply migration 0007 after deploying this version (`bun run --cwd worker db:migrate:remote`).
-It only adds indexes, so the mailbox works before it is applied, just slower. The deploy also
-creates the `Hub` Durable Object (SQLite-backed, as Workers Free requires) that pushes new-mail
-events to open pages.
-
-Messages are parsed in the browser. Sender HTML is shown in a sandboxed frame without scripts,
-remote images stay blocked until "Show remote images" is chosen for that message, and
-attachments are always downloaded, never opened in the app. In the dark theme, "Dark reading" in
-the reader shows one HTML message inverted; it is off for every message you open.
-
-To fill a local mailbox with the test fixtures, start the Worker and run the seed script. It
-sends every `.eml` in `worker/test/fixtures` through the real `email()` handler of `wrangler dev`
-and creates `shop@example.com` and `news@example.com` in the local database:
-
-```sh
-bun run --cwd worker dev          # in one terminal
-bun scripts/seed-mail.ts          # in another
-```
-
-The browser security suite needs Chromium for Playwright once:
-`bunx playwright@1.65.0 install chromium-headless-shell`. Then run it from `web/`:
-
-```sh
-bun run --cwd web test:browser
-```
-
-The compose and Markdown suites run apart with `bun run test:send`, the PWA suite with
-`bun run test:pwa`.
-
-## Install and offline
-
-MelodyMail is an installable web app. In Chrome or Edge, choose Install in the address bar; on
-iPhone and iPad, choose Share, then Add to Home Screen. Its service worker caches only the app
-itself, never mail or API answers, so the app opens without a network and says it is offline;
-reading mail needs the network. After a deploy, open pages show "A new version is available"
-with a Reload action.
-
-The icons in `web/public` are generated from `web/public/logo.svg`. After changing the logo,
-run `bun run --cwd web icons` and commit the PNG files.
-
-## Notifications
-
-While a MelodyMail page is in the foreground (visible and focused), new mail shows a notice in
-that page with the sender, the subject and an Open button; it hides after a few seconds, and at
-most three show at once.
-
-Settings > Notifications > "Quiet while MelodyMail is open" (off by default) holds every other
-notification back while any page is in the foreground: no Web Push, no Telegram message, and
-hidden pages stay quiet, on every device. A page that sleeps or loses its network stops counting
-as in the foreground within 75 seconds. Apply migration 0012 after deploying this version
-(`bun run --cwd worker db:migrate:remote`); until then the switch does not load and
-notifications go out as with it off.
-
-Otherwise MelodyMail sends a Web Push notification for new mail to each device that has no
-MelodyMail page open; an open page that is hidden shows the notification itself. The
-notification shows the sender and the subject, never the message text. Push stays off until the
-Worker has a VAPID key pair and subject; Settings > Notifications then says push is not set up.
-
-Apply migration 0008 after deploying this version (`bun run --cwd worker db:migrate:remote`).
-Then generate a key pair and store it from `worker/`:
-
-```sh
-bun run vapid                                   # prints VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY
-bun run wrangler secret put VAPID_PRIVATE_KEY
-bun run wrangler secret put VAPID_PUBLIC_KEY
-bun run wrangler secret put VAPID_SUBJECT       # the app's own origin, e.g. https://mail.example.com
-```
-
-`VAPID_SUBJECT` must be an `https://` URL. Push services use it to contact the sender, so no
-e-mail address is sent to them. For `wrangler dev`, put the three values in `worker/.dev.vars`.
-
-Changing the key pair ends every subscription: push services refuse messages signed with a key the
-browser did not subscribe with. Delete the old rows, then turn notifications on again in
-Settings > Notifications on each device:
-
-```sh
-bun run wrangler d1 execute melodymail --remote --command "DELETE FROM push_subscriptions"
-```
-
-Signing a device out, or revoking its session, also ends its notifications until that device
-signs in again.
-
-### Telegram
-
-MelodyMail can also send a card to one private Telegram chat for each new mail: the sender, the
-subject and the address it arrived at, never the message text. The card's buttons open the
-message, mark it read or unread, archive it or move it back to the Inbox, and star it or remove
-the star. Telegram can read these fields, because bot messages are not end-to-end encrypted.
-A card is sent even while a MelodyMail page is open, unless "Quiet while MelodyMail is open" is
-on and a page is in the foreground (see "Notifications"). Mute the chat in Telegram to silence it.
-
-Telegram currently refuses widgets from general bots (`INPUT_MEDIA_WIDGET_NOT_ALLOWED`), so cards
-arrive as plain messages: the sender and the subject, with the same four buttons below them. The
-arrival address is shown only on a widget card. Once Telegram allows widgets again, new cards
-arrive as widgets without any change.
-
-Telegram needs the deployed `https://` address: it cannot reach `localhost`, and it delivers
-updates only to ports 443, 80, 88 and 8443 (MelodyMail accepts 443, 88 and 8443, all `https:`).
-
-1. Apply migration 0011 after deploying this version (`bun run --cwd worker db:migrate:remote`).
-2. In Telegram, open [@BotFather](https://t.me/botfather), send `/newbot` and follow the steps.
-   BotFather answers with the bot's token.
-3. Store the token from `worker/`:
-
-   ```sh
-   bun run wrangler secret put TELEGRAM_BOT_TOKEN
-   ```
-
-4. Open Settings > Notifications on the deployed address and choose Connect Telegram. Confirm
-   with your Passkey, then choose Open Telegram and press Start in the chat with the bot (or send
-   the `/start` command the page shows). The code is valid for 10 minutes and works once.
-
-Connect registers the webhook (`/api/webhooks/telegram`) on the address the page is open on, with
-a new secret each time; run it again after moving to another domain or changing the token. After
-upgrading from a version without buttons on plain messages, run Connect again: it registers the
-webhook for button taps (`callback_query`), and until then those buttons do nothing.
-Disconnect removes the webhook and the binding; buttons on old cards then stop working. A
-recovery (`POST /api/auth/recover`) also disconnects Telegram; connect again afterwards. Deleting
-a mail for good does not delete its card in Telegram; its buttons then say the mail was deleted.
-If the bot stops reacting, run Connect again.
-
-## Sending
-
-MelodyMail sends mail through [Resend](https://resend.com). You write in Markdown; the browser
-renders it, and the mail carries both the Markdown source (plain text) and the HTML. Sending stays
-off until the Worker has a Resend API key; compose then says sending is not set up.
-
-Apply migration 0009 after deploying this version (`bun run --cwd worker db:migrate:remote`).
-Then set up Resend:
-
-1. In Resend, add and verify each domain you send from (Domains > Add domain, then add the DNS
-   records it shows in Cloudflare DNS). Leave open and click tracking off in the domain's settings:
-   tracking rewrites links and adds a pixel.
-2. Create an API key with "Sending access" only, restricted to those domains if you like.
-3. Add a webhook (Webhooks > Add endpoint) for `https://<your origin>/api/webhooks/resend` with the
-   events `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`,
-   `email.complained`, `email.failed` and `email.suppressed`. Copy its signing secret.
-4. Store the secrets from `worker/`:
-
-   ```sh
-   bun run wrangler secret put RESEND_API_KEY
-   bun run wrangler secret put RESEND_WEBHOOK_SECRET   # whsec_...
-   bun run upload-key                                  # prints UPLOAD_URL_KEY
-   bun run wrangler secret put UPLOAD_URL_KEY
-   ```
-
-5. Turn on sending for the domain in Settings > Domains.
-
-Each secret switches on one part: without `UPLOAD_URL_KEY` compose sends without attachments, and
-without `RESEND_WEBHOOK_SECRET` sent mail stays at "Sent" instead of showing delivery. Resend
-fetches attachments from a signed URL on your origin that is valid for 24 hours; it cannot reach
-`wrangler dev` on localhost, so attachments work only on a deployed Worker. For `wrangler dev`,
-put the values in `worker/.dev.vars`.
-
-The quota shown in compose and Settings is the count Resend last reported, against the limits in
-`wrangler.jsonc` (`RESEND_DAILY_LIMIT` 100, `RESEND_MONTHLY_LIMIT` 3000, the Free plan). Change the
-vars there for another plan.
-
-## REST API
-
-Scripts and other programs read, flag and send mail through `/api/v1/` with an API key. Apply
-migration 0014 after deploying this version (`bun run --cwd worker db:migrate:remote`).
-
-Create a key in Settings > API keys. Creating one asks for your passkey. The key is shown once;
-only its SHA-256 hash is stored. Each key has a name, an expiry (30, 90 or 365 days, or never)
-and one or more scopes:
-
-| Scope | Allows |
-| --- | --- |
-| `mail:read` | list, search and read messages and threads, download raw messages, list addresses |
-| `mail:write` | set read, starred, archived and trashed on one message or up to 100 |
-| `mail:send` | send without attachments, list addresses |
-
-Send the key as a Bearer token. The session cookie is never read on `/api/v1/`, and a key opens
-nothing else: not settings, rules, keys or sign-in.
-
-```sh
-curl -H "Authorization: Bearer mmk_xxxxxxxx_<secret>" \
-  "https://<your origin>/api/v1/messages?folder=inbox&limit=20"
-
-curl -X POST -H "Authorization: Bearer mmk_xxxxxxxx_<secret>" \
-  -H "Idempotency-Key: $(uuidgen)" -H "Content-Type: application/json" \
-  -d '{"from": 1, "to": ["friend@example.org"], "subject": "Hello", "text": "Hi"}' \
-  "https://<your origin>/api/v1/messages/send"
-```
-
-- Errors are `{ "error": "<code>" }`: `invalid_key` or `key_expired` (401), `insufficient_scope`
-  (403), `rate_limited` (429, over 120 requests a minute from one IP). A send body with a wrong
-  field adds `path`, for example `{ "error": "bad_request", "path": "to.1" }`.
-- Lists page with `nextCursor`; pass it back as `cursor` until it is `null`.
-- Sending needs an `Idempotency-Key` header, one per message: a repeat with the same key sends
-  nothing new and returns the first result.
-- Revoke a key in Settings > API keys; it stops working at once. A recovery revokes every key.
-
-The OpenAPI 3.1 document describes every operation: "Download OpenAPI document" in Settings >
-API keys, or `GET /api/openapi.json` while signed in. It is kept in
-`worker/src/api/openapi.json`.
+Set `SETUP_TOKEN` in `worker/.dev.vars` first. Open `http://localhost:8787/setup`. Use
+`localhost`, not `127.0.0.1`: browsers do not accept an IP address for Passkeys. `bun run check` is
+the merge gate.
+
+## More
+
+- [docs/REFERENCE.md](docs/REFERENCE.md): what each feature does (rules, forwarding, notifications,
+  sending, the REST API).
+- [worker/src/api/openapi.json](worker/src/api/openapi.json): the OpenAPI document of the REST API.
+- [docs/RUNBOOK.md](docs/RUNBOOK.md): deployment, updates, backups, restores and monitoring.

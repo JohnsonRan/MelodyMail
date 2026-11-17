@@ -28,6 +28,8 @@ const COPY: Record<
     gone: string;
     unbound: string;
     failed: string;
+    backupFailed: string;
+    backupStale: string;
   }
 > = {
   en: {
@@ -48,6 +50,9 @@ const COPY: Record<
     gone: "This message was deleted in MelodyMail.",
     unbound: "Telegram is no longer connected to MelodyMail.",
     failed: "MelodyMail didn't answer. Try again.",
+    backupFailed:
+      "MelodyMail: the daily backup failed. Check the Worker logs for backup_export_failed.",
+    backupStale: "MelodyMail: no backup has completed in the last 48 hours. Check the Worker logs.",
   },
   "zh-CN": {
     connected: "已连接。新邮件会显示在这里。",
@@ -66,6 +71,8 @@ const COPY: Record<
     gone: "这封邮件已在 MelodyMail 中删除。",
     unbound: "Telegram 已与 MelodyMail 断开连接。",
     failed: "MelodyMail 没有响应。请重试。",
+    backupFailed: "MelodyMail：每日备份失败。请在 Worker 日志中查看 backup_export_failed。",
+    backupStale: "MelodyMail：过去 48 小时内没有完成的备份。请查看 Worker 日志。",
   },
   "ja-JP": {
     connected: "接続しました。新着メールはここに表示されます。",
@@ -85,6 +92,10 @@ const COPY: Record<
     gone: "このメールは MelodyMail で削除されました。",
     unbound: "Telegram と MelodyMail の接続は解除されています。",
     failed: "MelodyMail から応答がありません。もう一度お試しください。",
+    backupFailed:
+      "MelodyMail: 毎日のバックアップに失敗しました。Worker のログで backup_export_failed を確認してください。",
+    backupStale:
+      "MelodyMail: 過去 48 時間に完了したバックアップがありません。Worker のログを確認してください。",
   },
 };
 

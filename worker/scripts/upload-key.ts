@@ -1,5 +1,6 @@
-// Prints a fresh UPLOAD_URL_KEY: 32 random bytes, base64url (README, "Sending"). It signs the
-// attachment URLs Resend fetches; store it with `wrangler secret put`, never in a file in git.
+// Prints a fresh UPLOAD_URL_KEY: 32 random bytes, base64url (docs/RUNBOOK.md, "Sending through
+// Resend"). It signs the attachment URLs Resend fetches; store it with `wrangler secret put`, never
+// in a file in git.
 import { isoBase64URL } from "@simplewebauthn/server/helpers";
 
 console.log(

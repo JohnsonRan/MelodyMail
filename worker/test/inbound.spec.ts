@@ -102,10 +102,37 @@ describe("email() stores", () => {
     expect(row?.r2_key).toContain(row?.id);
     const object = await env.MAIL.get(row?.r2_key ?? "");
     expect(await object?.text()).toContain("Body text.");
+    // What a restore needs to rebuild the row (docs/M7-ops.md, decision 7).
+    expect(object?.customMetadata).toEqual({
+      addressId: String(id),
+      envelopeFrom: "sender%40example.org",
+      envelopeTo: "shop%2Bnews%40example.com",
+      receivedAt: String(row?.received_at),
+    });
+    expect(row?.trashed_at).toBeNull();
     const address = await env.DB.prepare("SELECT last_received_at FROM addresses").first();
     expect(address?.last_received_at).toBe(row?.received_at);
   });
 
+  it("writes envelope addresses as ASCII, cut at a whole character, and still stores the message", async () => {
+    await addAddress("shop");
+    for (const from of ["ü@例え.jp", `${"例".repeat(200)}@example.org`]) {
+      const message = inbound("shop@example.com");
+      message.from = from;
+      await handleEmail(asMessage(message), env);
+    }
+    const rows = await messageRows();
+    expect(rows.map((r) => r.envelope_from)).toEqual([
+      "ü@例え.jp",
+      `${"例".repeat(200)}@example.org`,
+    ]);
+    const [short, long] = await Promise.all(rows.map((r) => env.MAIL.head(r.r2_key)));
+    const encoded = [short?.customMetadata?.envelopeFrom, long?.customMetadata?.envelopeFrom];
+    for (const value of encoded) expect(value).toMatch(/^[\x21-\x7e]{1,512}$/);
+    expect(decodeURIComponent(encoded[0] ?? "")).toBe("ü@例え.jp");
+    // 56 characters of 9 encoded bytes each fit in 512.
+    expect(decodeURIComponent(encoded[1] ?? "")).toBe("例".repeat(56));
+  });
   it("matches a recipient in any case", async () => {
     const id = await addAddress("shop");
     await handleEmail(asMessage(inbound("SHOP@Example.COM")), env);

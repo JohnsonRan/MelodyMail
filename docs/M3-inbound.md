@@ -44,7 +44,7 @@ Order matters, because a thrown error makes the sending server retry the whole m
       recipient, sub-address tag, raw size, R2 key and received time.
    4. If either step throws and the address has targets (and no loop header), forward to them
       instead, write the audit row `mail_forwarded_unstored` (address id, counts, and the key of
-      an R2 object already written, for the M7 orphan sweep), and return. Nothing is stored, so
+      an R2 object already written, for a later orphan sweep), and return. Nothing is stored, so
       no later step forwards again. Throw when no forward goes out: no targets, the loop
       header, a forward-only address whose forwards all failed, or every fallback forward
       failing. A thrown error most likely reaches the sender as a permanent 521 (see below).
@@ -98,8 +98,9 @@ The Durable Object notification arrives with the mail UI in M4.
 One Cron Trigger every 15 minutes. It sets `parse_failed` on messages still `stored` after 15
 minutes that used their 5 tries, and re-enqueues the other messages still `stored` after 15
 minutes, oldest first, at most 100 per run in one `sendBatch`. Messages are not lost when a queue message expires after 24
-hours on the Free plan, because the raw mail is already in R2. The same trigger is where M7 adds
-the R2 orphan sweep and trash clean-up.
+hours on the Free plan, because the raw mail is already in R2. M7 added the Trash clean-up and the
+D1 export to the same trigger; the R2 orphan sweep is deferred (M7 owner ruling 3, 2026-11-17),
+because it would delete raw objects the gap tool needs after a restore.
 
 ## Data (migration 0005)
 

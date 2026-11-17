@@ -55,7 +55,7 @@ export async function readPushState(): Promise<PushState> {
   if (Notification.permission === "denied") return { kind: "blocked" };
   const subscription = await currentSubscription();
   if (subscription && !sameKey(subscription, key)) {
-    // Made with an earlier key pair: push services refuse it now (README, "Notifications").
+    // Made with an earlier key pair: push services refuse it now (docs/REFERENCE.md, "Notifications").
     await subscription.unsubscribe();
     return { kind: "off", key };
   }

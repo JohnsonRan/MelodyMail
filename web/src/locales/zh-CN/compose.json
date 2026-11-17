@@ -12,7 +12,7 @@
   },
   "loadFailed": "无法打开写邮件。请关闭后重试。",
   "notConfigured": "尚未设置发信",
-  "notConfiguredHelp": "请为 Worker 添加 Resend API 密钥。步骤见 README 的“Sending”一节。",
+  "notConfiguredHelp": "请为 Worker 添加 Resend API 密钥。步骤见 docs/RUNBOOK.md 的“Sending through Resend”一节。",
   "noAddresses": "还没有可以发信的地址。请在“设置 > 域名”中为域名开启发信。",
   "from": "发件人",
   "to": "收件人",
@@ -29,7 +29,7 @@
   "bodyHelp": "支持 Markdown：**粗体**、*斜体*、列表、表格、`代码` 和链接。HTML 会显示为文本。",
   "attach": "添加附件",
   "attachLimits": "每个文件最大 25 MB，每封邮件最大 30 MB。",
-  "attachmentsOff": "附件已关闭：Worker 没有 UPLOAD_URL_KEY（见 README 的“Sending”一节）。",
+  "attachmentsOff": "附件已关闭：Worker 没有 UPLOAD_URL_KEY（见 docs/RUNBOOK.md 的“Sending through Resend”一节）。",
   "uploading": "正在上传 {{name}}",
   "removeAttachment": "移除 {{name}}",
   "uploadError": {

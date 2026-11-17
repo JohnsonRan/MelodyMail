@@ -14,7 +14,10 @@ import {
 import { useTranslation } from "react-i18next";
 import type { BulkAction } from "./actions";
 
-/** The actions on the selected rows, always shown so the list does not move on selection. */
+/**
+ * The actions on the selected rows, always shown so the list does not move on selection. In Trash
+ * the end of the bar says when mail there is deleted, until rows are selected.
+ */
 export function BulkBar({
   count,
   inTrash,
@@ -70,10 +73,12 @@ export function BulkBar({
         </>
       }
       endContent={
-        count > 0 && (
+        count > 0 ? (
           <Text type="supporting" textWrap="nowrap">
             {t("mail.selected", { count })}
           </Text>
+        ) : (
+          inTrash && <Text type="supporting">{t("mail.trashNote")}</Text>
         )
       }
     />

@@ -12,7 +12,7 @@
   },
   "loadFailed": "メッセージ作成を開けませんでした。閉じてからもう一度お試しください。",
   "notConfigured": "送信が設定されていません",
-  "notConfiguredHelp": "Worker に Resend の API キーを追加してください。手順は README の「Sending」にあります。",
+  "notConfiguredHelp": "Worker に Resend の API キーを追加してください。手順は docs/RUNBOOK.md の「Sending through Resend」にあります。",
   "noAddresses": "送信できるアドレスがまだありません。「設定 > ドメイン」でドメインの送信をオンにしてください。",
   "from": "差出人",
   "to": "宛先",
@@ -29,7 +29,7 @@
   "bodyHelp": "Markdown が使えます：**太字**、*斜体*、リスト、表、`コード`、リンク。HTML はテキストとして表示されます。",
   "attach": "ファイルを添付",
   "attachLimits": "1 ファイル 25 MB まで、1 通 30 MB まで。",
-  "attachmentsOff": "添付ファイルはオフです：Worker に UPLOAD_URL_KEY がありません（README の「Sending」）。",
+  "attachmentsOff": "添付ファイルはオフです：Worker に UPLOAD_URL_KEY がありません（docs/RUNBOOK.md の「Sending through Resend」）。",
   "uploading": "{{name}} をアップロード中",
   "removeAttachment": "{{name}} を削除",
   "uploadError": {

@@ -207,6 +207,15 @@ describe("mailbox end to end", () => {
     expect(await s.page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
   });
 
+  test("says in Trash, and only there, that mail is deleted after 30 days", async () => {
+    const note = "Mail in Trash for 30 days is deleted forever.";
+    const s = await open("/", 390);
+    expect(await s.page.getByText(note).count()).toBe(0);
+    await s.page.goto(`${app.origin}/trash`);
+    await s.page.getByText(note).waitFor();
+    expect(await s.page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  });
+
   test("keeps settings in their own navigation, reached from one Settings entry", async () => {
     const s = await open();
     const nav = s.page.getByRole("navigation", { name: "Side navigation" });

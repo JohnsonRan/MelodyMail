@@ -1,0 +1,12 @@
+// Copy to deploy.local.jsonc (untracked) and fill in your account's values. They are ids, not
+// secrets; scripts/prod-config.ts merges them into wrangler.jsonc for `migrate:prod` and
+// `deploy:prod`.
+{
+  // The database_id that `bun run wrangler d1 create melodymail` printed.
+  "database_id": "00000000-0000-0000-0000-000000000000",
+  // The host the app is served on. Passkeys are bound to it; choose it before the first setup.
+  "routes": [{ "pattern": "mail.example.com", "custom_domain": true }],
+  // Serve only on the custom domain: no workers.dev address and no preview URLs.
+  "workers_dev": false,
+  "preview_urls": false
+}

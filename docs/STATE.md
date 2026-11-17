@@ -3658,3 +3658,510 @@ Not verified (added, the reviewer's hypotheses):
   menu). Ablation: dropping the Settings entry, the view switch, the redirect or the Back target
   turns them red; the English section title turns one assertion red.
 - Not verified: the layout by screenshot (the owner checks on local `wrangler dev`).
+
+
+## M7: backups, Trash clean-up, production config (phases A and B done 2026-11-17, not merged)
+
+Design: `docs/M7-ops.md` with its owner rulings of 2026-11-17. Risk class High. Phase A is code;
+phase B (the three READMEs, `docs/REFERENCE.md`, `docs/RUNBOOK.md`, the README sync check) is a
+separate run. Branch `m7-ops` from main at `3e30ed6`. Not pushed, not deployed; no command touched
+a Cloudflare account.
+
+### Done (phase A)
+
+- `c2abe35` migration 0015: `backup_exports` (the design's columns plus `parts_json`,
+  `alerted_at`, `pruned_at`), `messages.trashed_at` with a partial index; rows already in Trash
+  count from the migration.
+- `678234f` Trash clean-up (ruling 3): the cron deletes up to 100 messages a run that have been in
+  Trash for 30 days, oldest first, through `deleteFromTrash` (`worker/src/mail/trash.ts`), the
+  function the manual permanent delete now uses; logs `trash_expired` with a count and writes one
+  `trash_expired` audit row. `trashed_at` is set on entering Trash, kept while there, cleared on
+  leaving; a Trash rule sets it in the INSERT; a Trash row without a time starts its 30 days at the
+  next run. The Trash folder's toolbar says so in three locales (`mail.trashNote`).
+- `7378c85` `email()` writes `addressId`, `envelopeFrom`, `envelopeTo`, `receivedAt` as R2 custom
+  metadata (addresses cut to 256 characters).
+- `c75538a` the daily export (`worker/src/backup/`): the cron's last job; starts at the first run
+  after 03:00 UTC; per run at most 1 MiB of SQL or 30 D1/R2 calls; SQL built by D1 with `quote()`;
+  `messages_fts` with explicit rowid; oversized rows split by D1 into an INSERT plus UPDATEs of
+  16,000 characters, written only as a run's first page; manifest last with sizes, R2 MD5s, row
+  counts, highest rowid and the migration name; retention 14 newest plus each month's first for 6
+  months, incomplete exports removed after 2 days; pruning once per completed export; alerts
+  (`backup_export_failed`, `backup_stale`, one Telegram message a day at most). Bench
+  `worker/bench/backup.ts`.
+- `fc7805c` `worker/scripts/prod-config.ts`, `worker/deploy.example.jsonc`, `.gitignore` entries,
+  `prod-config`, `migrate:prod`, `deploy:prod`, `backup-restore` scripts in `worker/package.json`;
+  `worker/scripts/backup-restore.ts` (fetch, verify).
+- `801e17c` `scripts/release.ts` (`bun run release <exportId>`) and the REQUIREMENTS rows.
+- `0ac6162` tests for the ablation survivors; a redundant cursor move removed.
+
+### Proof (worker suite, real D1 and R2 in workerd)
+
+- `test/backup.spec.ts` (8): coverage of every table and column, red on a planted table and a
+  planted column; an export over several runs with no manifest before completion, counts, part
+  keys, sizes and R2 MD5s matching, no statement over 90,000 bytes, the 512 K-character draft split
+  into UPDATEs (a surrogate pair at a piece boundary), no planted secret and no left-out table in
+  any part, the load into a second D1 (`RESTORE_DB`) migrated from scratch equal row for row for
+  every exported table, CJK search on the restored FTS rows, `foreign_key_check` empty; a page whose
+  cursor update is lost (thrown after the put) repeats without duplicate rows; the byte budget; the
+  call budget; an oversized row deferred to the next run with the cursor kept; daily start at
+  03:00 UTC and the 48-hour replacement; nothing before migration 0015.
+- `test/backup-ops.spec.ts` (4): retention over nine months of daily exports; pruning once per
+  completed export, a locked export logged and skipped, the next run not listing again; a failing
+  export leaves the other cron jobs running, logs `backup_export_failed` and `cron_job_failed`,
+  sends one Telegram message (zh-CN text) and no second one that day; `backup_stale` once a day.
+- `test/trash.spec.ts` (5): exactly 30 days deleted, 30 days minus 1 ms and 29 days kept, R2
+  object, row and FTS row removed, non-Trash untouched, audit and log; 101 due, 100 deleted oldest
+  first; an untimed row stamped; a row restored between select and delete kept; the clock set,
+  kept, cleared and set again through the session routes; a Trash rule sets it on arrival.
+- `test/inbound.spec.ts` (2 new): the four metadata fields; a 400-character envelope sender cut in
+  the metadata, the row keeps it whole.
+- `scripts/prod-config.test.ts` (5, `bun run test:scripts`): refusal on another branch, a dirty
+  tree, HEAD not at `origin/main`, unknown `origin/main`, no git; the merge; refusal of an unknown
+  key, a malformed id, no route, `workers_dev` on, no DB binding.
+- Browser: `web/test/mailbox.test.ts` "says in Trash, and only there…" (390 px, no sideways
+  scroll); `bun test ./test/mailbox.test.ts` 11 tests green after `vite build`.
+- Dry run: `bun scripts/prod-config.ts --local <scratch fake> --print` on `m7-ops` refused with
+  exit 1 ("the branch is m7-ops, not main"); without a local file exit 2. `migrate:prod` and
+  `deploy:prod` were never run. `bun scripts/release.ts` without or with a bad id: exit 2.
+
+### Local restore drill (2026-11-17, wrangler 4.162 local, CPU load 0%)
+
+Script in the session scratchpad (`m7a/drill.ts`, not committed): a copy of `wrangler.jsonc` with
+absolute paths (so no `.dev.vars` was loaded), all state under the scratchpad, metrics and the cf
+fetch off (`WRANGLER_SEND_METRICS=false`, `CLOUDFLARE_CF_FETCH_ENABLED=false`), no `--remote`.
+
+- Source: migrations, then every exported table seeded (a 449,388-character draft, CJK, planted
+  values in `owner`, `sessions`, `push_subscriptions`, `api_keys`), `wrangler dev --test-scheduled`
+  on port 8799, 15 fixtures through `/cdn-cgi/local/email` (the real `email()` and consumer), then
+  25 cron runs.
+- Export `2026-11-16T1859Z`: complete, 1,218,917 bytes in 13 parts. `backup-restore.ts fetch`
+  (local) 12.7 s; `restore.sql` 1,219,412 bytes, longest statement 42,734 bytes, no planted value.
+- A dangling `telegram_cards` row planted after the PRAGMA: the import into a fresh database
+  (`--persist-to` a second scratch directory, all migrations) took 1.1 s and succeeded, so the
+  local `--file` import honours `defer_foreign_keys`, and the clean-up removed the row.
+- `backup-restore.ts verify` passed (counts, foreign keys, 15 sampled raw objects); all 14 exported
+  tables compared equal row for row; FTS search answered on the restored copy; left-out tables
+  empty. Total 99 s.
+- Finding: `GET /__scheduled` (the design's drill step 2) returned the SPA, because the assets
+  layer answers requests with `Sec-Fetch-Mode: navigate`, which Bun's `fetch` sends. The route
+  `/cdn-cgi/handler/scheduled?cron=*/15+*+*+*+*` triggered the cron.
+
+### Numbers (2026-11-17, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
+
+| Item | Result | CPU load |
+| --- | --- | --- |
+| `bun run check` after phase A | 15.2, 15.6, 14.6 s (463 worker tests) | 26%, 23%, 1% |
+| `bun run check` at each commit | 12.6, 13.0, 13.4, 14.1, 13.8, 13.7 s | 0–3% |
+| Worker suite alone (vitest Duration) | 12.8 s | about 1% |
+| `bun worker/bench/backup.ts`, 3 runs | 256 KB messages page p95 0.41–0.54 ms; FTS page 0.08–0.10 ms; 512 K-character draft 1.41–1.58 ms; manifest 0.08–0.09 ms; R2 metadata 0.001 ms | 0–2% |
+| The same bench before the D1-side split (JS split) | draft p95 2.4–3.5 ms; 512 KB pages p95 0.6–1.2 ms | 0–2% |
+| `bun test ./test/mailbox.test.ts` (web) | 11 tests, 11.2 s | about 2% |
+
+The `email()` addition is one object of four strings, 0.001 ms p95 in the bench; no `email()` CPU
+benchmark existed before, and the parse and rules benches are unchanged.
+
+### Ablation
+
+`m7a/ablate.ts` (scratchpad, not committed) applied 56 mutations one at a time, sequentially, to
+the worker and ran the backup, backup-ops, trash, inbound and mailbox specs (4.1–5.6 s each, CPU load
+0–27% recorded per run); `git status` clean afterwards. 49 red at once; 7 survived. Six got tests in
+`0ac6162`, all red on the rerun: the call budget, the stop after a deferred oversized row, keeping
+the cursor after empty tables (two hunks), an oversized row under a page after a short row, and a
+flag change that does not touch Trash. One survivor was redundant and removed instead (the cursor
+move past a vanished oversized row). Web: removing the Trash note turns the browser test red.
+
+Not ablated: the migration's backfill `UPDATE` (the tests migrate an empty database; the cron's
+backfill, which is ablated, covers the same rows), the Telegram copy texts, the scripts' main()
+file and process handling (their pure parts are tested), `scripts/release.ts`.
+
+### Deviations from the design (decisions taken, open to the owner)
+
+1. Pages of 256 KB and 1 MiB per run (design: 512 KB and 2 MB), from the benchmark: 512 KB pages
+   measured 1.2 ms p95. Daily capacity is 96 MiB of SQL; with the 48-hour limit an export can be
+   about 190 MiB.
+2. A running export is not replaced at the next day's start; it continues and is marked failed and
+   replaced only after 48 hours (design text said both "replaced at the next day's start" and
+   "a larger database finishes in more than one day").
+3. Oversized rows are split by D1 (a recursive CTE with `substr`, which counts characters), not by
+   the Worker; pieces of 16,000 characters (at most 64,000 bytes). The JS split cost 2.4–3.5 ms.
+   Such a row is written only as a run's first page.
+4. The call budget is counted in code (30 per run); the alert and the other jobs are outside it.
+5. `backup_exports` adds `parts_json`, `alerted_at` and `pruned_at`; the alert claim lives on the
+   rows, and `backup_stale` is logged once a day rather than on every run.
+6. Pruning removes only exports that have a row, so after a restore into a fresh database the
+   exports already in R2 are never pruned automatically.
+7. The cron writes one `trash_expired` audit row per run with the count; `mail_raw_delete_failed`
+   now logs a count instead of the message id (it is shared with the cron).
+8. `prod-config.ts` compares HEAD with the local `origin/main` ref and fetches nothing.
+9. `prod-config.ts` and `backup-restore.ts` are left out of the worker typecheck (no Bun types),
+   like the root scripts.
+10. The ALTER in 0015 cannot be rerun by hand, as with 0006 and 0010.
+11. `settings` joined the test clean-up list (it leaked between tests in one file).
+12. The gap tool (rebuild rows from R2 metadata) is not built: the phase A brief listed only the
+    metadata write.
+
+### Open questions for the owner
+
+All four were answered by the owner rulings of 2026-11-17 in the review section below.
+
+1. **Approve the proposed numbers**: export page 1 ms p95 (256 KB) and 2 ms p95 (one oversized
+   row), 1 MiB or one oversized row and 30 calls per run, 96 MiB a day. Recommended: approve; revisit
+   with production `cpuTime` (checklist item 8).
+2. **Replacing a stuck export** after 48 hours instead of at the next day's start (deviation 2).
+   Recommended: keep.
+3. **The gap tool**: the design's proof includes "the gap tool's SQL rebuilds stored rows".
+   Recommended: build it before the M7 review (small: list `raw/` after T, skip keys with a row,
+   print INSERTs of `stored` rows), in phase B or a short phase A2.
+4. **Live pages after the clean-up**: a deleted message stays in an open Trash list until it
+   refreshes; the cron does not notify the Hub. Recommended: leave as is.
+
+### Not verified
+
+- Anything on Cloudflare: production `cpuTime` of the cron with an export, R2 `checksums.md5` on a
+  string put in production (workerd provides it), D1's compound-select and recursive-CTE limits and
+  `json_each` in production D1, the 100,000-byte statement limit and `defer_foreign_keys` in a
+  `--remote` import, R2 custom metadata limits with non-ASCII envelope addresses, the Telegram
+  alert against the real Bot API.
+- Bucket lock: nothing configured; whether R2 bucket locks exist on Workers Free is unverified.
+- The success path of `prod-config.ts` main() (write on a clean main), `migrate:prod`,
+  `deploy:prod` and `bun run release` were never run; the release's at-export migrations step is
+  untested.
+- The full browser tiers were not rerun (only `mailbox.test.ts`); no screenshots of the Trash note.
+- Restore of an export into a database at an older schema than the export (the export names its
+  own columns, so the restore needs the export's migration or later).
+
+### Notes for phase B (documentation)
+
+- RUNBOOK: the drill route is `/cdn-cgi/handler/scheduled?cron=…` (not `/__scheduled`, see the
+  drill); run the drill with a copy of the config outside `worker/` or with `--persist-to`, so the
+  default local state is untouched; set `WRANGLER_SEND_METRICS=false` and
+  `CLOUDFLARE_CF_FETCH_ENABLED=false` for a fully offline drill.
+- RUNBOOK: `bun run backup-restore fetch|verify` usage (`--local`/`--remote`, `--persist-to`,
+  `--r2-local`/`--r2-remote`, `--r2-persist-to`, `--config`); exit codes 0/1/2; restore B steps use
+  it; after a restore into a fresh database, old exports in R2 are not pruned automatically.
+- RUNBOOK: `bun run release <exportId>` (owner, signed in, on main).
+- README deploy: `cp worker/deploy.example.jsonc worker/deploy.local.jsonc`, fill `database_id`
+  and the route; `git pull` before `migrate:prod`/`deploy:prod` (the check uses the local
+  `origin/main`); exit 1 means refused.
+- Bucket lock (owner, after the first export, only if Free allows it):
+  `bun run wrangler r2 bucket lock add melodymail-mail …` with prefix `backups/` and 7 days.
+  Incomplete exports younger than the lock then stay until it expires (the prune logs
+  `backup_prune_failed` and retries after the next completed export). Never on `raw/`.
+- REFERENCE: Trash deletes after 30 days (Time Travel can bring back rows for 7 days, not the raw
+  object); events `backup_export_started`, `backup_export_complete`, `backup_pruned` (info),
+  `backup_prune_failed` (warn), `backup_export_failed`, `backup_stale` (error), `trash_expired`
+  (info); the Telegram alert texts.
+- REQUIREMENTS: the README check row under "Enforcement" ("AGENTS.md: Documentation") is phase B.
+- `docs/M3-inbound.md` still promises the orphan sweep and Trash clean-up for M7 (design open
+  question 3); the comments in code were fixed.
+
+### Review of `f49cbcb` ("FIX FIRST") and owner rulings (2026-11-17)
+
+Owner rulings:
+
+1. The export budgets are approved: pages and the manifest 1 ms p95, the oversized-row page 2 ms
+   p95, 1 MiB or one oversized row and 30 calls per run; revisit with production `cpuTime`.
+   Recorded in `REQUIREMENTS.md`, "Numbers".
+2. Build the gap tool before release (owner-run, local first, a dry run and a report, tested on
+   local state). Done, below.
+3. Replacing a stuck export after 48 hours is accepted.
+4. The cron does not notify open pages after deleting Trash mail.
+
+Fixes (each gate green before its commit):
+
+- Commits `7bc8970` (High), `01c2520` (Medium), `9366865` (Low), `e2ab9f3` (metadata),
+  `c3ed905` (gap tool):
+  - High: `splitQuery` read the oversized row with `SELECT *`, which leaves out an FTS5 rowid; an
+    FTS row over 90,000 bytes (a sent message keeps its whole body as search text) failed with
+    `no such column: one.rowid` and stopped every export. Now `SELECT rowid AS "rowid", *`. The
+    round trip seeds a 50,000-character FTS body; without the fix it fails with that error.
+  - Medium: pruning ran only after a completed export, so failed exports piled up while exports
+    kept failing. Marking a stuck export failed now runs a pruning pass in the same run; the next
+    run starts the new export. The timeout test checks the parts are gone; it fails without the
+    pass, and also when the new export starts in the same run.
+  - Low: `deploy` and `db:migrate:remote` in `worker/package.json` now print a refusal naming
+    `deploy:prod` / `migrate:prod` and exit 1 without running wrangler (`bun run deploy` at the
+    root forwards and refuses). Checked by running all three: exit 1.
+  - Hypothesis (a), settled by removing the risk: envelope addresses in the R2 metadata are
+    percent-encoded ASCII, cut at a whole character to at most 512 characters. Test with
+    `ü@例え.jp` and 200 CJK characters (56 kept); both fail without the change. Bench: 0.002–0.005
+    ms p95.
+  - Gap tool (`worker/scripts/backup-gap.ts`, `worker/scripts/gap-worker.ts`,
+    `worker/src/backup/gap.ts`, `bun run --cwd worker backup-gap`): see the commit message for the
+    design. Proof: `test/gap.spec.ts` (a lost row with the sender `o'brien.ü@例え.jp` and a tag
+    rebuilt, an object without metadata skipped, a present row skipped, the SQL applied twice
+    stores one row, the real consumer parses it); ablation of 8 hunks all red (one after adding the
+    apostrophe to the test address). Local drill (`m7a/gapdrill.ts`): 3 late messages into the
+    source after export `2026-11-16T1859Z`, a restored copy (restored D1 plus the source's R2)
+    had 15 rows; the dry run reported 18 listed, 15 present, 3 to store, in 1.4 s; the SQL
+    applied with `wrangler d1 execute --local --file`; a second dry run reported 0. All local,
+    metrics and the cf fetch off, temp files in the scratchpad.
+- Hypothesis (b), measured, no change: `bun:sqlite` (SQLite in Bun, not D1) with 200
+  `messages_fts` rows of 400,008 characters each (trigram index): the page query took 345–369 ms
+  and the process peaked at 45 MB (27 MB before the query), the same with `temp_store = memory`;
+  3 runs, CPU load 2%. The window does not hold the 200 statements at once. Each such page reads up
+  to 500 rows (D1 rows read) and builds their text in D1, which counts against D1, not the Worker.
+  Not measured on D1 itself.
+
+Not ablated: `pruneExports` skipping `pruned_at` when called without a completed export (an
+UPDATE of `id = NULL` changes nothing either way).
+
+Not verified (added): the gap tool with `--remote` (remote bindings need `wrangler login`); the
+gap Worker's listing on a bucket with more than 1,000 objects a month (it follows the cursor);
+`decodeURIComponent` of metadata written by anything other than `email()`.
+
+### Notes for phase B (added by the review)
+
+- README: the deploy and update steps still name `bun run deploy` and `db:migrate:remote`, which
+  now refuse; use `migrate:prod` and `deploy:prod`.
+- RUNBOOK, rollback: a rollback across M7 runs code that does not maintain `trashed_at`. A message
+  untrashed and trashed again by that code keeps its old time and can be deleted early after the
+  roll-forward. After rolling forward, restart every Trash clock:
+  `UPDATE messages SET trashed_at = <now ms> WHERE trashed = 1` (with `wrangler d1 execute`).
+- RUNBOOK, gap tool: `bun run --cwd worker backup-gap <exportId|ISO time|ms> <out.sql> --local
+  [--persist-to <p>] | --remote --config .wrangler-production.jsonc [--dry-run]`, then
+  `wrangler d1 execute melodymail --file <out.sql> ...`; the cron re-enqueues the rows after 15
+  minutes. An export id is read to the minute, so objects stored in the export's first minute are
+  listed too and skipped when they have a row. Objects stored before M7 are reported, not rebuilt.
+
+### Re-review of `94a9501` (gap tool: two Mediums, Lows) and its fixes
+
+Commit `175bde2`. Each behaviour hunk was ablated one at a time (CPU load 1–5%) and turned its
+test red:
+
+- Empty envelope sender (`MAIL FROM:<>`) is rebuilt (was skipped as `bad_metadata`).
+- Listing starts 10 minutes before the restore point (`OVERLAP_MS`): an object 9 minutes before is
+  rebuilt, one 11 minutes before is not.
+- A NUL in an envelope value is skipped as `bad_metadata`; so are an undecodable value, an empty
+  recipient and a non-digit number (`""` passes `Number.isSafeInteger`, so the digit check is
+  tested with it); a key that is not `raw/YYYY/MM/<uuid>.eml` is `bad_key`.
+- A fake bucket of 1,005 objects over two cursor pages gives 1,005 rows.
+- `sent/` is listed; a sent copy without a row is reported (`sentNotRebuilt`), never rebuilt, and
+  the SQL holds no out row and triggers no fetch and no queue message.
+- `--local` without `--persist-to` is refused (exit 2); relative `--persist-to` and `--config`
+  resolve against the caller's directory (checked by a dry run with `--persist-to gap` from the
+  drill directory: 18 present, 0 to store, 1.4 s, load 5%).
+- `parseSince` (hypothesis b): an ISO time needs `Z` or an offset; `2026-11-18T03:00:00` is refused;
+  the report prints the restore point in UTC. `scripts/backup-gap.test.ts` (4 tests) covers it and
+  `gapConfig` (only DB and MAIL, `remote: true` only with `--remote`); removing the zone check
+  turns it red.
+- Not feasible: a test that tells `pruneExports(env, now, null)` with and without its guard apart
+  (`UPDATE ... WHERE id = NULL` changes nothing); the guard only saves a call.
+
+The sent-mail Medium is answered by stopping, not by a partial row (open question below).
+
+Hypothesis (a), read in `wrangler-dist/cli.js` 4.162 (not run): with `remote: true` bindings,
+`startRemoteProxySession` starts a remote-mode dev session whose entry is wrangler's bundled
+`ProxyServerWorker` (capnweb) with the remote bindings attached, named by a random UUID unless a
+name is given; remote mode uploads it through `POST /accounts/{id}/workers/scripts/{name}/edge-preview`
+after `GET /accounts/{id}/workers/subdomain/edge-preview` (a preview session, `workers_dev: true`,
+`minimal_mode: true`), not a deployment. So yes: `backup-gap --remote` uploads a temporary preview
+Worker to the owner's account. The code also refuses remote bindings under Bun's `fetch` (wrangler
+itself runs under Node here). Unverified: whether the preview needs an enabled workers.dev
+subdomain and whether it shows in the dashboard.
+
+### Open question (added)
+
+5. **Out rows for mail sent after the restore point.** The design (`docs/M7-ops.md`, "Mail after
+   the restore point") rebuilds `out` rows from `sent/` copies. The copy is written before the
+   Resend call and holds no status, no Resend id, no idempotency key and no thread key, and the
+   Resend events after T are lost with the restore. A rebuilt row would claim "sent" or "failed"
+   without knowing; "failed" also invites a manual resend of mail that may have gone out. The tool
+   reports these copies and stops. Options: (a) leave it at the report (the owner checks Resend's
+   dashboard); (b) rebuild with a new status meaning "unknown after restore" (needs a status,
+   reader copy in three locales and no retry path); (c) write the outcome into R2 after each send
+   (a second put per send). Recommended: (a) for M7, (c) later if wanted.
+   **Owner ruling (2026-11-17): (a).** The design records it as ruling 5; (c) is on the
+   deferred list.
+
+### Notes for phase B (added by the re-review)
+
+- RUNBOOK, gap tool: rebuilt rows differ from what `email()` stored: rules are not applied again
+  (flags and `trashed_at` are lost; rule forwards already happened), `forward_failed` is 0,
+  `addresses.last_received_at` is not updated, the address row must exist (no foreign key), and
+  objects left by `forwardInstead` (mail forwarded or bounced while storage failed) come back as
+  messages. Sent mail after the restore point is reported only.
+- RUNBOOK, gap tool `--remote`: wrangler uploads a temporary preview Worker (its own proxy code)
+  to the account for the session; needs `wrangler login`.
+- README: must stop naming `bun run deploy` and `db:migrate:remote` before M7 merges (both
+  refuse now).
+
+### Third gap-tool review (PASS, four Lows) and fixes
+
+- `parseSince` refused nothing that Date could roll over: `2026-02-30T0300Z` became 2026-03-02,
+  moving the restore point two days later. It now rebuilds the date from its parts and refuses one
+  that does not round-trip (02-30, 02-29 in 2026, 24:00), an offset beyond ±14:59, and any digit
+  run other than 13 digits of milliseconds (`20261118` was 1970-01-01T05:37Z).
+- `parseArgs` (extracted from main()) refuses `--local` with `--remote`, a missing out file or one
+  starting with `--`, and `--persist-to` or `--config` without a value.
+- Correction to the re-review section above: two guards had no distinguishing test then. The
+  `=== undefined` no_metadata check is now tested by an object whose `addressId` and `envelopeTo`
+  are present but empty (bad metadata, not "before M7"), and the `receivedAt` digit check by
+  `receivedAt: ""`.
+- Ablation, one at a time: the two gap guards (load 1% and 7%), the round trip, the 13-digit rule,
+  both locations, the flag-like out file and the offset range (load 0–3%) each turn a test red.
+
+### Phase B: READMEs, reference, runbook, README check (done 2026-11-17, not merged)
+
+Not pushed, not deployed; no command touched a Cloudflare, Resend or Telegram account. Every
+wrangler command in the runbook was checked against `wrangler <cmd> --help` of the installed 4.162
+and, where noted, its source (`wrangler-dist/cli.js`).
+
+Commits (each signed, each after a green `bun run check`):
+
+- `bf17218` `scripts/seed-mail.ts` takes `--persist-to <dir>` (the drill seeds its own state).
+- `0b55fe4` `README.md`, `README.zh-CN.md`, `README.ja-JP.md` (one structure, identical code
+  blocks and link targets), `docs/REFERENCE.md`, `docs/RUNBOOK.md`.
+- `47ff24e` setup hints in three locales (6 strings each) and code comments point at the runbook
+  or the reference instead of README sections that no longer exist; `docs/M3-inbound.md` no longer
+  promises the orphan sweep; `docs/M7-ops.md` records the refusing scripts and the restore B
+  correction; the `wrangler.jsonc` database_id comment.
+- `60a7fa2` `scripts/check-readme.ts` in the merge gate (`check:readme`), its tests, the
+  REQUIREMENTS "AGENTS.md: Documentation" gate.
+
+What each phase-B note became:
+
+| Note | Result |
+| --- | --- |
+| Drill route `/cdn-cgi/handler/scheduled`, separate state, offline env vars | RUNBOOK "Local restore drill": `--persist-to ~/melodymail-drill/...`, `WRANGLER_SEND_METRICS=false CLOUDFLARE_CF_FETCH_ENABLED=false`, the route and why `/__scheduled` fails |
+| `backup-restore fetch\|verify` usage, exit codes, no pruning of old exports after a fresh-database restore | RUNBOOK "Restore from an R2 export" (every flag used, exit codes 0/1/2, the pruning note) |
+| `bun run release <exportId>` | RUNBOOK "Release check" |
+| README deploy: copy the example, fill id and route, `git pull` first, exit 1 means refused | README steps 4 and 5 in three languages; RUNBOOK "Production config" and Deploy step 5 |
+| Bucket lock, 7 days, `backups/` only, delays removal of failed exports | RUNBOOK "Optional: lock recent exports": `r2 bucket lock add melodymail-mail backups-7d backups/ --retention-days 7`, list, remove, consequences |
+| REFERENCE: Trash 30 days, Time Travel rows only, backup events, Telegram texts | REFERENCE "Trash" and "Backups" (fields read from the code; texts in three languages) |
+| REQUIREMENTS README check row | "AGENTS.md: Documentation" gate `bun run check:readme` |
+| `docs/M3-inbound.md` promises the orphan sweep and Trash clean-up | fixed in `47ff24e` |
+| README names `bun run deploy` and `db:migrate:remote` (two notes) | removed; README, REFERENCE and RUNBOOK name only `migrate:prod` and `deploy:prod`; RUNBOOK says the old ones refuse |
+| Rollback across M7 leaves stale `trashed_at` | RUNBOOK "Trash clocks after a rollback across M7", the `UPDATE` as one copy-pasteable command |
+| Gap tool usage, export id read to the minute, cron re-enqueues within 15 minutes, pre-M7 objects reported | RUNBOOK "Recover mail after the restore point" (also explicit zones and refused impossible dates) |
+| Rebuilt rows differ from `email()`; sent mail reported only | same section: a list of the differences; the Resend dashboard for sent mail |
+| `--remote` uploads a temporary preview Worker | same section |
+
+Proof:
+
+- `bun test scripts/check-readme.test.ts`: 9 tests. Each planted violation exits 1 (a heading
+  level, a missing heading, a changed command, a translated comment in a block, a missing block, a
+  different link, an extra link); a missing, empty or heading-less file exits 2. On copies of the
+  real READMEs in the scratchpad: `### 备份` for `## 备份` exit 1 ("heading levels ... differ"),
+  `deploy:prod` changed to `deploy` in ja-JP exit 1 ("code block 4 differs", "code block 7
+  differs"), a line removed from a zh-CN block exit 1, a ja-JP link retargeted exit 1 ("link 7 is
+  docs/REFERENCE.md"), ja-JP deleted exit 2, zh-CN emptied exit 2, an empty directory exit 2.
+- Runbook drill commands run locally (scratchpad `m7b/drill.sh`, metrics and the cf fetch off,
+  state under the scratchpad, `wrangler dev` on a config copy with absolute paths so no
+  `.dev.vars` was loaded, port 8799): migrations, `seed-mail.ts --persist-to` (fixtures answered
+  200), 40 calls to `/cdn-cgi/handler/scheduled`, export `2026-11-17T0317Z` complete (33 rows,
+  `restore.sql` 17,795 bytes), `backup-restore fetch` exit 0, migrations and the import into a
+  second state, `backup-restore verify` exit 0 ("counts match, no foreign key problem"), and
+  `backup-gap --local --dry-run` on the restored state (0 listed). 52 s in all.
+- Screenshot: the Trash folder at 1280 px, light, zh-CN, three trashed messages, the note
+  "在“已删除”中满 30 天的邮件会被永久删除。" in the toolbar; the built app against the stand-in
+  (`web/test/stub-app.ts`), no remote request, no sideways scroll. Saved in the session
+  scratchpad, `shots-m7/trash-note-zh-CN.png`.
+- Microsoft localization style guides (zh-CN and ja-JP, fetched 2026-11-17) applied: zh-CN
+  documentation punctuation (full-width ，。：（） and “” around UI labels), 你 not 您, no em dash,
+  a space between CJK and Latin or digits; ja-JP です・ます body text, noun-phrase headings, `[ ]`
+  around UI labels, half-width parentheses, a space between full-width and half-width characters
+  and none next to 、。 or inside brackets. App labels are the app's own translations; Cloudflare
+  dashboard labels stay in English.
+
+Gate (`bun run check`, dev workstation, Ryzen 9 9950X3D): 15.3 s before the commits (load 3%);
+14.4 s, 14.2 s and 12.0 s at the first three commits (load not recorded); 11.6 s, a failure and
+11.6 s at the last code commit (load 6%, 3%, 2%); 11.6 s before the STATE commit (load 7%). The failure was `test/api-key-auth.spec.ts` "answers
+429 after 120 requests from one IP in a minute" (401 instead of 429 on request 121), in code this
+phase did not touch; it passed in the runs before and after.
+
+### Deviations and findings (phase B)
+
+1. Restore B as designed cannot run: wrangler 4.162 refuses `d1 migrations apply <name> --remote`
+   for a database that is not in the config (read in the source). The runbook switches
+   `database_id` in `deploy.local.jsonc` to the new database first, runs `migrate:prod` and the
+   import against it, verifies, then runs `deploy:prod`. After the switch,
+   `wrangler d1 delete melodymail` would resolve to the new database, so the runbook deletes the
+   old one in the dashboard by its id.
+2. `d1 create` and `r2 bucket create` offer to write the new resource into the tracked
+   `wrangler.jsonc` (default yes), which would make the tree unclean and stop `prod-config`. The
+   runbook and READMEs pass `--no-update-config` (read in help and source, not run).
+3. A bucket lock on `backups/` also blocks overwrites. A page repeated after an interrupted run
+   writes its part key again, so with the lock that export fails and is replaced after 48 hours.
+   Inferred from the code and Cloudflare's lock rules; not tested against a real lock.
+4. The setup hints in compose and Settings (6 strings in each locale) named README sections that
+   no longer exist; they now name `docs/RUNBOOK.md` sections. A visible copy change; no screenshot
+   of it was taken.
+5. `seed-mail.ts` gained `--persist-to`, so the drill leaves the default local state alone.
+6. Flaky test, fixed in the commit after `e278fe3`: the API limiter test above failed once in eight
+   gate runs. Cause: the Miniflare rate limiter (`ratelimit-object.worker.js`) counts in fixed
+   windows aligned to the clock (`epoch = floor(Date.now() / (period * 1000))`) and starts a new
+   count when the epoch changes, so 121 requests that straddle a minute boundary never reach 429.
+   Reproduced with a throwaway spec that started the loop 150 ms before a boundary: the 121
+   requests took 259 ms and the last one answered 401. The test now waits for the next window when
+   less than 3 s of the current one is left, and asserts that the requests stayed in one window;
+   it still uses the real binding with the `wrangler.jsonc` limit. 30 sequential runs of
+   `bun --bun vitest run test/api-key-auth.spec.ts`: 30 passed in 67 s, CPU load 50% before and 0%
+   after.
+
+### Not verified (phase B)
+
+- Every account step of the runbook and READMEs: nothing was run against Cloudflare, Resend,
+  Telegram or rclone. Dashboard labels are those of the Cloudflare pages read on 2026-11-17.
+- `--no-update-config`, `migrate:prod`, `deploy:prod`, `secret put` and `delete`, `time-travel`,
+  `rollback`, `r2 bucket lock`, `backup-gap --remote` and the remote restore path were checked
+  against help and source only.
+- The rclone commands (from the rclone and Cloudflare docs, including `--backup-dir` and
+  `no_check_bucket`); whether bucket locks exist on Free.
+- `wrangler dev --test-scheduled --persist-to ... --port 8799` from `worker/` exactly as written:
+  the drill ran it with a config copy, to leave `.dev.vars` unread; the other drill commands ran
+  as written, with scratchpad paths in place of `~/melodymail-drill`.
+- The README translations were not reviewed by a native speaker.
+- The full browser tiers were not rerun; only the screenshot script drove the built app.
+
+### Phase B review ("FIX FIRST", three Mediums and Lows) and fixes
+
+Fixed in the commits after `ce1a3bb`:
+
+- M1: the monthly drill on a production export opened two local databases. Wrangler names a local
+  D1 database after the config's `database_id`, so migrations and the import with the default
+  config and `verify --config .wrangler-production.jsonc` met different databases (exit 2). The
+  two `--local` commands now pass the production config too; nothing in the drill writes to the
+  account. Re-run below.
+- M2: restore B now says the `database_id` switch takes effect only when `bun run prod-config`
+  writes the config again, checks it with `grep database_id .wrangler-production.jsonc` before
+  anything is written, and stops when `migrate:prod` does not list all 16 migrations. The import
+  is its own step, marked as writing into the database the config names.
+- M3: `"preview_urls": false` in `worker/deploy.example.jsonc` (`prod-config` already accepts the
+  key; `scripts/prod-config.test.ts` now asserts it in the merge), RUNBOOK Deploy step 5, and
+  checklist item 19 (workers.dev and Preview URLs off in Domains & Routes).
+- M3b: checklist item 4 now drives `AUTH_LIMITER` with 12 POSTs to `/api/auth/login/options` (the
+  rate limit runs first; the route counts no failed attempt, so the D1 recovery lockout cannot
+  answer instead) and `API_LIMITER` with 125 requests to `/api/v1/addresses`; both expect
+  `{"error":"rate_limited"}`. The requests carry `Origin`, or the Worker answers 403 `bad_origin`.
+- Lows: `worker/.dev.vars.example` points at RUNBOOK sections; `check-readme.ts` also compares the
+  inline code spans of each README as a multiset; the Trash clock reset runs just before the
+  roll-forward `deploy:prod`; the new-account recovery adds `rclone copy -M` (and `-M` on the
+  monthly sync), the optional secrets and the Resend webhook again, and the gap tool; `vapid` and
+  `upload-key` output: paste only the part after `=`; zh-CN "设置令牌" as the app says; checklist
+  items 20 to 23 (first release run, a remote gap dry run, the Telegram backup alert, a non-ASCII
+  envelope sender); the Time Travel overwrite warning stands above the command.
+- Hypothesis (a): `gapConfig` dropped `account_id`; it now keeps it when the config has one
+  (test in `scripts/backup-gap.test.ts`), and the RUNBOOK says to set it with several accounts.
+- Hypothesis (b): the drill's `wrangler dev` from `worker/` loaded `worker/.dev.vars`. Wrangler
+  4.162 skips `.dev.vars` when `--env-file` is given (`getVarsForDev`, read in the source); the
+  drill now passes an empty env file.
+
+Proof:
+
+- Drill re-run (scratchpad `m7b/drill2.sh`): the RUNBOOK commands as written from `worker/`,
+  including `wrangler dev --env-file <empty>`, with a scratchpad directory in place of
+  `~/melodymail-drill`, 78 s. 15 fixtures answered 200; export `2026-11-17T0346Z` complete (17,300
+  bytes, 33 rows); fetch, migrations, import and `verify` exit 0 ("counts match, no foreign key
+  problem"). The monthly-drill form with a production-shaped config (merged from
+  `deploy.example.jsonc` with a made-up id, stored in the scratchpad, fetch from local state instead
+  of `--remote`): fetch, migrations, import and `verify` exit 0. The old form (migrate and import
+  without `--config`, verify with it): exit 2, as the review found. `wrangler dev` logged loading
+  secrets from the empty env file, not `worker/.dev.vars`, and listed no secret binding.
+- Gates: 14.8 s, 14.7 s, 14.0 s before the three fix commits (CPU load 10%, 13%, 5%).
+- `check-readme`: a dropped and a renamed inline code span each exit 1 (tests); on copies of the
+  real READMEs, `UPLOAD_URL_KEY` removed from the zh-CN table exits 1.
+
+Not verified (added): rclone `-M` keeping R2 custom metadata on a local file system (extended
+attributes; Windows unknown); the auth and API loops against production; the Telegram backup alert
+against the real Bot API.

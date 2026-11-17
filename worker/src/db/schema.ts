@@ -206,6 +206,8 @@ export const messages = sqliteTable(
     starred: integer("starred", { mode: "boolean" }).notNull().default(false),
     archived: integer("archived", { mode: "boolean" }).notNull().default(false),
     trashed: integer("trashed", { mode: "boolean" }).notNull().default(false),
+    // M7: when the message entered Trash; NULL outside Trash. The cron deletes it 30 days later.
+    trashedAt: integer("trashed_at"),
     receivedAt: integer("received_at").notNull(),
     // M5, outbound only: Resend's email id, the client's idempotency key, and a short error code
     // (never upstream text) when the send failed.
@@ -251,6 +253,8 @@ export const messages = sqliteTable(
     index("messages_unread")
       .on(t.trashed, t.archived, t.starred, t.addressId)
       .where(sql`${t.read} = 0`),
+    // M7: the cron finds messages that have been in Trash for 30 days.
+    index("messages_trashed_at").on(t.trashedAt).where(sql`${t.trashed} = 1`),
   ],
 );
 
@@ -466,4 +470,33 @@ export const apiKeys = sqliteTable(
     uniqueIndex("api_keys_public_id").on(t.publicId),
     uniqueIndex("api_keys_token_hash").on(t.tokenHash),
   ],
+);
+
+// M7: the daily D1 export to R2 (docs/M7-ops.md, "Data"). One row per export; the running row
+// holds the cursor (table, last rowid, part sequence), so a run killed by the CPU limit repeats
+// at most its last page. Never exported itself.
+export const backupExports = sqliteTable(
+  "backup_exports",
+  {
+    // The UTC start time, for example 2026-11-18T0300Z; also the R2 prefix.
+    id: text("id").primaryKey(),
+    status: text("status", { enum: ["running", "complete", "failed"] }).notNull(),
+    tableIndex: integer("table_index").notNull().default(0),
+    lastRowid: integer("last_rowid").notNull().default(0),
+    partSeq: integer("part_seq").notNull().default(0),
+    // Per table: rows written and the highest rowid exported, as a JSON object.
+    rowsJson: text("rows_json").notNull().default("{}"),
+    // Every part written, in order: key, table, bytes and R2 MD5, as a JSON array.
+    partsJson: text("parts_json").notNull().default("[]"),
+    bytes: integer("bytes").notNull().default(0),
+    startedAt: integer("started_at").notNull(),
+    finishedAt: integer("finished_at"),
+    // A short code, never a value from the data.
+    error: text("error"),
+    // The last Telegram alert sent for any export; at most one a day.
+    alertedAt: integer("alerted_at"),
+    // Set once pruning has run after this export completed.
+    prunedAt: integer("pruned_at"),
+  },
+  (t) => [index("backup_exports_status_started").on(t.status, t.startedAt)],
 );
