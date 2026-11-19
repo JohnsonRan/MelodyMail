@@ -166,7 +166,8 @@ export function useMessageList(
   // New mail or a changed sent message: the first page is fetched again, its new messages go on
   // top and the ones already shown take their new status. "filed" (the consumer moved new mail
   // into Spam) also discards the pages in flight, which may still hold the message, and reads
-  // the message itself, since a refreshed first page does not remove a row.
+  // the message itself, since a refreshed first page does not remove a row. When that discards
+  // the first page of a load, the event's own page fills the list in its place.
   useEffect(
     () =>
       onMail((event) => {
@@ -179,6 +180,14 @@ export function useMessageList(
           .then((page) => {
             if (!page) return;
             setList((prev) => {
+              if (prev.status === "loading") {
+                return {
+                  items: page.messages,
+                  next: page.nextCursor,
+                  status: "ready",
+                  loadingMore: false,
+                };
+              }
               if (prev.status !== "ready") return prev;
               const known = new Set(prev.items.map((m) => m.id));
               const byId = new Map(page.messages.map((m) => [m.id, m]));

@@ -226,6 +226,25 @@ describe("Spam", () => {
     );
     expect(await row(page, "bulk59").count()).toBe(1);
   });
+
+  test("shows the list when a filed event arrives during the first load", async () => {
+    let first: Gate | undefined;
+    let lists = 0;
+    session = await openSession(app.origin, "/", {
+      prepare: async (page) => {
+        await page.setViewportSize({ width: 1280, height: 900 });
+        first = await hold(page, (url, method) => isList(url, method) && lists++ === 0);
+      },
+    });
+    const page = session.page;
+    await until(() => first?.seen.length === 1 && app.sockets.size > 0);
+    (app.store.get("hostile")?.item as Record<string, unknown>).spam = true;
+    for (const ws of app.sockets) ws.send(JSON.stringify({ type: "filed", id: "hostile" }));
+    await until(() => lists >= 2);
+    first?.release();
+    await row(page, "note1").waitFor({ timeout: 5000 });
+    expect(await row(page, "hostile").count()).toBe(0);
+  });
 });
 
 describe("Delete forever and Empty", () => {
