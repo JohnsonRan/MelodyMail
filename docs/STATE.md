@@ -4780,7 +4780,7 @@ CPU load is the mean of samples about every 3 s during each run. Limits are not 
 
 ### Owner rulings 6: work done (2026-11-19, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
 
-Six follow-up changes after the rulings, one commit each (red run first, then every behaviour
+Five follow-up changes after the rulings, one commit each (red run first, then every behaviour
 hunk removed once):
 
 | Change | Commit | Red without the fix | Ablated hunk to red test |
@@ -4797,3 +4797,8 @@ The folders tier limit is 48 s: the slowest of 3 runs (39.5 s) plus 20%. Swipe i
 
 Not verified: the `view` check inside the retry loop is only the early exit (the check after
 the loop also drops a stale answer); real iOS swipe feel.
+
+Numbers after these changes: `bun run check` 17.3 and 17.6 s, passed (CPU load not sampled on
+these two; a first run at 40% load took 20.8 s); `bun run test:browser` (90 tests) 58.9, 58.7
+and 56.6 s including the web build, CPU load 22%, 20%, 20%, still over its 42 s limit (not
+changed here); `bun run test:folders` (26 tests) 38.4, 38.6, 39.5 and 39.5 s, CPU load 16% to 20%.
