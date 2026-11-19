@@ -46,6 +46,8 @@
     "messageActions": "邮件操作",
     "moreActions": "更多操作",
     "selected": "已选择：{{count}}",
+    "select": "选择",
+    "selectDone": "完成",
     "trashNote": "在“已删除”中满 30 天的邮件会被永久删除。",
     "archive": "存档",
     "moveToInbox": "移到收件箱",

@@ -1,5 +1,7 @@
 import { AppShell } from "@astryxdesign/core/AppShell";
 import { Badge } from "@astryxdesign/core/Badge";
+import { useMediaQuery } from "@astryxdesign/core/hooks";
+import { VStack } from "@astryxdesign/core/Layout";
 import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { TopNav, TopNavHeading } from "@astryxdesign/core/TopNav";
@@ -25,6 +27,7 @@ import {
 import { Outlet, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { NARROW } from "../breakpoints";
 import type { Folder } from "../mailbox/api";
 import { MailboxProvider, useMailbox } from "../mailbox/MailboxContext";
 import { useNetwork } from "../network";
@@ -87,19 +90,25 @@ function SearchField() {
   );
 }
 
+// Language and theme sit in the app bar from tablet width up. On a phone the app bar has no room
+// for them, so the drawer ends with them (docs/M8-mailbox-ux.md, section 5).
 function MailNav() {
   const { t } = useTranslation();
+  const compact = useMediaQuery(NARROW);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { counts, addresses } = useMailbox();
   return (
     <SideNav
       footer={
-        <SideNavItem
-          label={t("nav.settings")}
-          icon={Cog6ToothIcon}
-          isSelected={false}
-          href="/settings"
-        />
+        <VStack gap={2} hAlign="stretch">
+          <SideNavItem
+            label={t("nav.settings")}
+            icon={Cog6ToothIcon}
+            isSelected={false}
+            href="/settings"
+          />
+          {compact && <PreferenceMenus />}
+        </VStack>
       }
     >
       <SideNavSection title={t("nav.mail")} isHeaderHidden>
@@ -161,9 +170,10 @@ export const SETTINGS_NAV: {
 /** The side navigation of every /settings page: a way back, then the settings in groups. */
 function SettingsNav() {
   const { t } = useTranslation();
+  const compact = useMediaQuery(NARROW);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   return (
-    <SideNav>
+    <SideNav footer={compact ? <PreferenceMenus /> : undefined}>
       <SideNavSection title={t("nav.backToMailbox")} isHeaderHidden>
         <SideNavItem label={t("nav.backToMailbox")} icon={ArrowLeftIcon} href="/" />
       </SideNavSection>
@@ -194,6 +204,7 @@ export function MailShell() {
   const router = useRouter();
   const inSettings = useRouterState({ select: (s) => s.location.pathname.startsWith("/settings") });
   const { epoch } = useNetwork();
+  const compact = useMediaQuery(NARROW);
   useEffect(() => {
     if (epoch > 0) void router.invalidate();
   }, [epoch, router]);
@@ -208,7 +219,7 @@ export function MailShell() {
             label={t("nav.main")}
             heading={<TopNavHeading heading={t("app.name")} logo={<AppLogo size="md" />} />}
             centerContent={<SearchField />}
-            endContent={<PreferenceMenus />}
+            endContent={compact ? null : <PreferenceMenus />}
           />
         }
         sideNav={inSettings ? <SettingsNav /> : <MailNav />}

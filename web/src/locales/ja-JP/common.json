@@ -46,6 +46,8 @@
     "messageActions": "メッセージの操作",
     "moreActions": "その他の操作",
     "selected": "選択済み: {{count}}",
+    "select": "選択",
+    "selectDone": "完了",
     "trashNote": "ごみ箱に入ってから 30 日たったメールは完全に削除されます。",
     "archive": "アーカイブ",
     "moveToInbox": "受信トレイに移動",

@@ -4321,7 +4321,7 @@ and chose four items: bulk delete and Empty Trash, select all matching, phone sw
 | Phase | Scope | Agent | Status |
 | --- | --- | --- | --- |
 | A | worker: migration 0016, seq, transitions, routes, v1, consumer, cron, contacts, backup, measurements | claude-opus-5-5 | done (see "Phase A" below) |
-| C | web: phone layout (section 5) and swipe (section 3), worktree | claude-sonnet-5-5 | running |
+| C | web: phone layout (section 5) and swipe (section 3), worktree | claude-sonnet-5-5 (served, read from the run record) | done, merged |
 | B | web: Spam, Delete forever, Empty, select all, filed event, reader refresh, i18n | after A | waiting |
 | R | cross-family code review, ablation check, owner screenshots | after B and C | waiting |
 
@@ -4484,3 +4484,19 @@ The first run of the drill found the restart defect fixed in `d2772b1` (deviatio
 - The web side of every route (phase B), the `filed` event on a real open page (tests record the
   Hub call only).
 - `bun run test:browser` and the other browser tiers were not run (no web change in phase A).
+
+### Phase C notes (branch `mailbox-ux-phone`)
+
+- Built: page background, drawer preferences, phone title row, floating Compose, selection mode,
+  Trash folder row, long press and swipe (`web/src/mailbox/useRowGestures.ts`,
+  `web/src/mailbox/actions.ts`, `swipeActions`). Spam is one entry in `FOLDER_SWIPES`
+  (`{ right: "notSpam" }`) once that action exists; the Trash folder row has a slot for Empty
+  Trash (`FolderRow`, `children`).
+- Open question for the owner: `bun run test:browser` took 47.4, 50.4 and 48.4 s with the phone
+  suite grown by 14 tests (87 in all), over the 42 s limit in `REQUIREMENTS.md`. The host was shared with the
+  worker agent (CPU load 39 to 62%), and no base run was taken under the same load.
+- Unverified: real iOS Safari (scroll against swipe against long press, `touch-action` on table
+  cells, the click Safari may send after a drag, the home-indicator band). The browser suite
+  uses Chromium touch events through the DevTools Protocol.
+- Decided without the owner: swipe is off in search results (the plan lists folders only); a tap
+  on a row in selection mode toggles it instead of opening it.

@@ -179,7 +179,11 @@ describe("phone end to end", () => {
   test("gives every target at least 44 x 44 px under a coarse pointer", async () => {
     expect(await s.page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
     expect(await smallTargets()).toEqual([]);
-    // A tap beside the 24 px checkbox selects the row and does not open the message.
+    // The checkboxes show in selection mode. A tap beside the 24 px checkbox selects the row and
+    // does not open the message.
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
+    await s.page.locator("[data-select-cell]").first().waitFor();
+    expect(await smallTargets()).toEqual([]);
     const cell = s.page.locator(`[data-message-row="note1"] [data-select-cell]`);
     expect(await cell.count()).toBe(1);
     const box = await rect(cell);
@@ -201,7 +205,7 @@ describe("phone end to end", () => {
     }
   });
 
-  test("keeps the app name whole beside the language and theme buttons", async () => {
+  test("keeps the app name whole and moves the language and theme buttons to the drawer", async () => {
     await go("/", `[data-message-row="note3"]`);
     const bar = s.page.getByRole("navigation", { name: "Main navigation" });
     expect(await bar.getByRole("combobox").count()).toBe(0);
@@ -214,11 +218,13 @@ describe("phone end to end", () => {
       ]);
     }
     await s.page.setViewportSize(PHONE);
-    await bar.getByRole("button", { name: "Language: English" }).waitFor();
-    await bar.getByRole("button", { name: "Theme: System" }).waitFor();
+    // The two menus left the app bar for the end of the drawer.
+    expect(await bar.getByRole("button", { name: /^(Language|Theme):/ }).count()).toBe(0);
     await s.page.getByRole("button", { name: "Open navigation" }).click();
     const drawer = s.page.getByRole("dialog");
     await drawer.getByRole("link", { name: "Settings" }).waitFor();
+    await drawer.getByRole("button", { name: "Language: English" }).waitFor();
+    await drawer.getByRole("button", { name: "Theme: System" }).waitFor();
     expect(await drawer.getByRole("combobox").count()).toBe(0);
     // The drawer panel pads by the safe area on the top, the bottom and its screen edge. A
     // browser here reports every inset as 0, so this reads the rules that apply to the panel.
@@ -241,10 +247,11 @@ describe("phone end to end", () => {
     await s.page.keyboard.press("Escape");
   });
 
-  test("switches theme and language from their menus, the current choice checked", async () => {
+  test("switches theme and language from their menus in the drawer, the current choice checked", async () => {
     await go("/", `[data-message-row="note3"]`);
-    // The app bar by its place, not its name: the name changes with the language.
-    const bar = s.page.getByRole("navigation").first();
+    await s.page.getByRole("button", { name: "Open navigation" }).click();
+    const bar = s.page.getByRole("dialog");
+    await bar.getByRole("link", { name: "Settings" }).waitFor();
     const choices = async (button: string) => {
       await bar.getByRole("button", { name: button }).click();
       const items = s.page.getByRole("menuitemradio");
@@ -399,6 +406,8 @@ describe("phone end to end", () => {
   test("puts star and read state in the list's More menu", async () => {
     await go("/", `[data-message-row="note3"]`);
     const bar = s.page.getByRole("toolbar", { name: "Actions on selected messages" });
+    expect(await bar.count()).toBe(0);
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
     expect(await bar.getByRole("button").evaluateAll((b) => b.map((e) => e.ariaLabel))).toEqual([
       "Archive",
       "Move to Trash",
@@ -432,5 +441,295 @@ describe("phone end to end", () => {
       viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
       statusBar: "black-translucent",
     });
+  });
+
+  test("paints html and body in the theme body colour, light and dark", async () => {
+    const colours = () =>
+      s.page.evaluate(() => {
+        const probe = document.createElement("div");
+        probe.style.backgroundColor = "var(--color-background-body)";
+        document.body.append(probe);
+        const theme = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return {
+          theme,
+          html: getComputedStyle(document.documentElement).backgroundColor,
+          body: getComputedStyle(document.body).backgroundColor,
+        };
+      });
+    for (const mode of ["light", "dark"]) {
+      await s.page.evaluate((m) => localStorage.setItem("melodymail.mode", m), mode);
+      await go("/", `[data-message-row="note3"]`);
+      const found = await colours();
+      expect([mode, found.html, found.body]).toEqual([mode, found.theme, found.theme]);
+    }
+    await s.page.evaluate(() => localStorage.removeItem("melodymail.mode"));
+  });
+});
+
+// A real touch through the browser (Chrome DevTools Protocol): it raises pointer events and
+// honours touch-action, which page.touchscreen.tap does not cover for a drag or a hold.
+type Point = { x: number; y: number };
+async function touchGesture(path: Point[], { holdMs = 0, stepMs = 0 } = {}) {
+  const cdp = await s.page.context().newCDPSession(s.page);
+  const send = (type: "touchStart" | "touchMove" | "touchEnd", points: Point[]) =>
+    cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points });
+  const [first, ...rest] = path;
+  if (!first) return;
+  await send("touchStart", [first]);
+  if (holdMs) await s.page.waitForTimeout(holdMs);
+  for (const point of rest) {
+    await send("touchMove", [point]);
+    if (stepMs) await s.page.waitForTimeout(stepMs);
+  }
+  await send("touchEnd", []);
+  await cdp.detach();
+}
+
+/** Points from `from` to `to` in `steps` equal moves. */
+const line = (from: Point, to: Point, steps = 8): Point[] =>
+  Array.from({ length: steps + 1 }, (_, i) => ({
+    x: from.x + ((to.x - from.x) * i) / steps,
+    y: from.y + ((to.y - from.y) * i) / steps,
+  }));
+
+/** The middle of a message row, clear of its selection cell. */
+async function rowPoint(id: string): Promise<Point> {
+  const box = await rect(s.page.locator(`[data-message-row="${id}"]`));
+  return { x: box.left + 200, y: (box.top + box.bottom) / 2 };
+}
+
+describe("phone list", () => {
+  const checkboxes = () => s.page.locator("[data-select-cell]");
+  const bulkBar = () => s.page.getByRole("toolbar", { name: "Actions on selected messages" });
+
+  test("puts Refresh and Select in the title row and floats Compose", async () => {
+    await go("/", `[data-message-row="note3"]`);
+    const title = await rect(s.page.getByRole("heading", { level: 1, name: "Inbox" }));
+    for (const name of ["Refresh", "Select"]) {
+      const box = await rect(s.page.getByRole("button", { name, exact: true }));
+      expect([name, box.top >= title.top - 20 && box.bottom <= title.bottom + 20]).toEqual([
+        name,
+        true,
+      ]);
+    }
+    const compose = s.page.getByRole("button", { name: "Compose", exact: true });
+    expect(await compose.count()).toBe(1);
+    expect(
+      await compose.evaluate((el) => getComputedStyle(el.parentElement as Element).position),
+    ).toBe("fixed");
+    const box = await rect(compose);
+    const view = await s.page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+    expect(view.w - box.right).toBeLessThan(40);
+    expect(view.h - box.bottom).toBeLessThan(40);
+    await compose.tap();
+    await s.page.locator("[data-compose]").waitFor();
+  });
+
+  test("lets the list scroll clear of the floating Compose", async () => {
+    for (let i = 0; i < 14; i++)
+      app.store.set(
+        `fill${i}`,
+        message(`fill${i}`, LONG_MAIL, `Filler ${i}`, Date.now() - 100000 - i),
+      );
+    await s.page.goto(`${app.origin}/`);
+    await s.page.locator(`[data-message-row="fill13"]`).waitFor();
+    await s.page.locator(`[data-message-row="fill13"]`).evaluate((row) => {
+      for (let p = row.parentElement; p; p = p.parentElement) p.scrollTop = p.scrollHeight;
+    });
+    const last = await rect(s.page.locator(`[data-message-row="fill13"]`));
+    const fab = await rect(s.page.getByRole("button", { name: "Compose", exact: true }));
+    expect(last.bottom).toBeLessThanOrEqual(fab.top);
+    for (let i = 0; i < 14; i++) app.store.delete(`fill${i}`);
+  });
+
+  test("enters selection mode with Select and leaves it with Done", async () => {
+    await go("/", `[data-message-row="note3"]`);
+    expect(await checkboxes().count()).toBe(0);
+    expect(await bulkBar().count()).toBe(0);
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
+    await bulkBar().waitFor();
+    expect(await checkboxes().count()).toBeGreaterThan(0);
+    expect(await s.page.getByRole("button", { name: "Compose", exact: true }).count()).toBe(0);
+    // A tap on a row selects it and does not open it; clearing the last one leaves the mode.
+    const point = await rowPoint("note1");
+    await s.page.touchscreen.tap(point.x, point.y);
+    await s.page.getByText("Selected: 1").waitFor();
+    expect(s.page.url()).toBe(`${app.origin}/`);
+    await s.page.touchscreen.tap(point.x, point.y);
+    await bulkBar().waitFor({ state: "detached" });
+    expect(await checkboxes().count()).toBe(0);
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
+    await s.page.getByRole("button", { name: "Done", exact: true }).tap();
+    await bulkBar().waitFor({ state: "detached" });
+  });
+
+  test("enters selection mode on a long press, and a press never opens the row", async () => {
+    await go("/", `[data-message-row="note3"]`);
+    const point = await rowPoint("note1");
+    await touchGesture([point, point], { holdMs: 700 });
+    await s.page.getByText("Selected: 1").waitFor();
+    await bulkBar().waitFor();
+    // The click that follows the release must not toggle the row it just selected.
+    await s.page.waitForTimeout(100);
+    await s.page.getByText("Selected: 1").waitFor();
+    expect(s.page.url()).toBe(`${app.origin}/`);
+    expect(
+      await s.page.locator(`[data-message-row="note1"] input[type=checkbox]`).isChecked(),
+    ).toBe(true);
+  });
+
+  test("leaves a vertical drag to scrolling: no swipe, no selection", async () => {
+    await go("/", `[data-message-row="note3"]`);
+    const patches = app.patches.length;
+    const from = await rowPoint("note1");
+    // Slower than the long-press time, so only the movement keeps the timer from firing.
+    await touchGesture(line(from, { x: from.x, y: from.y - 120 }, 6), { stepMs: 120 });
+    await s.page.waitForTimeout(200);
+    expect(await bulkBar().count()).toBe(0);
+    expect(await checkboxes().count()).toBe(0);
+    expect(s.page.url()).toBe(`${app.origin}/`);
+    expect(app.patches.length).toBe(patches);
+  });
+
+  test("shows the Trash note as a folder row outside selection mode", async () => {
+    app.store.set("gone", message("gone", LONG_MAIL, "Gone", Date.now(), { trashed: true }));
+    await go("/trash", `[data-message-row="gone"]`);
+    const note = s.page.getByText("Mail in Trash for 30 days is deleted forever.");
+    await note.waitFor();
+    expect(await bulkBar().count()).toBe(0);
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
+    await bulkBar().waitFor();
+    app.store.delete("gone");
+  });
+});
+
+describe("phone swipe", () => {
+  const bulkBar = () => s.page.getByRole("toolbar", { name: "Actions on selected messages" });
+
+  /** Adds a row to the stand-in and opens `path`, where it shows. */
+  async function withRow(id: string, path: string, flags: Record<string, unknown> = {}) {
+    app.store.set(id, message(id, LONG_MAIL, `Swipe ${id}`, Date.now() + 5000, flags));
+    await go(path, `[data-message-row="${id}"]`);
+  }
+
+  /** Swipes a row by `dx` px (right is positive) and returns the style values it showed. */
+  async function swipe(id: string, dx: number) {
+    const row = s.page.locator(`[data-message-row="${id}"]`);
+    await row.evaluate((el, rowId) => {
+      const win = window as unknown as { seen?: Record<string, string[]> };
+      const store = win.seen ?? {};
+      win.seen = store;
+      const log: string[] = [];
+      store[rowId] = log;
+      new MutationObserver(() => log.push(el.getAttribute("style") ?? "")).observe(el, {
+        attributes: true,
+        attributeFilter: ["style"],
+      });
+    }, id);
+    const from = await rowPoint(id);
+    const start = { x: dx > 0 ? 40 : 360, y: from.y };
+    await touchGesture(line(start, { x: start.x + dx, y: start.y }, 10), { stepMs: 16 });
+    return row;
+  }
+
+  const seen = (id: string) =>
+    s.page.evaluate(
+      (rowId) => (window as unknown as { seen?: Record<string, string[]> }).seen?.[rowId] ?? [],
+      id,
+    );
+
+  const patched = () => app.patches.at(-1);
+
+  test("archives the row on a swipe right past 40% of its width", async () => {
+    await withRow("sw1", "/");
+    const before = app.patches.length;
+    const row = await swipe("sw1", 280);
+    await row.waitFor({ state: "detached" });
+    expect(app.patches.length).toBe(before + 1);
+    expect(patched()).toEqual({ path: "/api/messages/sw1", body: { archived: true } });
+    // A swipe never opens the row or starts selection mode.
+    expect(s.page.url()).toBe(`${app.origin}/`);
+    expect(await bulkBar().count()).toBe(0);
+  });
+
+  test("moves the row to Trash on a swipe left", async () => {
+    await withRow("sw2", "/");
+    const row = await swipe("sw2", -280);
+    await row.waitFor({ state: "detached" });
+    expect(patched()).toEqual({ path: "/api/messages/sw2", body: { trashed: true } });
+    expect(s.page.url()).toBe(`${app.origin}/`);
+  });
+
+  test("springs back, and runs nothing, when released before the arm point", async () => {
+    await withRow("sw3", "/");
+    const before = app.patches.length;
+    const row = await swipe("sw3", 100);
+    await s.page.waitForFunction((id) => {
+      const el = document.querySelector(`[data-message-row="${id}"]`) as HTMLElement | null;
+      return el !== null && el.style.transform === "";
+    }, "sw3");
+    expect(app.patches.length).toBe(before);
+    expect(await row.count()).toBe(1);
+    // Safari may send the click that follows a drag; it must not open the row.
+    await row.evaluate((el) => el.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await s.page.waitForTimeout(100);
+    expect(s.page.url()).toBe(`${app.origin}/`);
+    expect(await bulkBar().count()).toBe(0);
+  });
+
+  test("keeps the list where it is while a row is held mid-swipe", async () => {
+    await withRow("sw8", "/");
+    const list = s.page.locator(".astryx-table-scroll-wrapper");
+    const before = await rect(list);
+    const from = await rowPoint("sw8");
+    const cdp = await s.page.context().newCDPSession(s.page);
+    const send = (type: "touchStart" | "touchMove" | "touchEnd", points: Point[]) =>
+      cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points });
+    await send("touchStart", [{ x: 40, y: from.y }]);
+    for (const x of [60, 100, 160, 240]) await send("touchMove", [{ x, y: from.y }]);
+    await s.page.locator(".mail-swipe-backdrop").waitFor();
+    const during = await rect(list);
+    await send("touchEnd", []);
+    await cdp.detach();
+    expect(during.top).toBe(before.top);
+    await s.page.waitForFunction(
+      (id) => document.querySelector(`[data-message-row="${id}"]`) === null,
+      "sw8",
+    );
+  });
+
+  test("slides the row with motion and not at all under reduced motion", async () => {
+    await withRow("sw4", "/");
+    const row = await swipe("sw4", 280);
+    await row.waitFor({ state: "detached" });
+    expect((await seen("sw4")).some((v) => v.includes("transition: transform"))).toBe(true);
+    await s.page.emulateMedia({ reducedMotion: "reduce" });
+    try {
+      await withRow("sw5", "/");
+      const reduced = await swipe("sw5", 280);
+      await reduced.waitFor({ state: "detached" });
+      expect((await seen("sw5")).some((v) => v.includes("transition: transform"))).toBe(false);
+      expect(patched()).toEqual({ path: "/api/messages/sw5", body: { archived: true } });
+    } finally {
+      await s.page.emulateMedia({ reducedMotion: "no-preference" });
+    }
+  });
+
+  test("moves a row in Archive to the Inbox and one in Trash back, and never deletes", async () => {
+    await withRow("sw6", "/archive", { archived: true });
+    const archived = await swipe("sw6", 280);
+    await archived.waitFor({ state: "detached" });
+    expect(patched()).toEqual({ path: "/api/messages/sw6", body: { archived: false } });
+
+    await withRow("sw7", "/trash", { trashed: true });
+    const beforeTrash = app.patches.length;
+    const trashLeft = await swipe("sw7", -280);
+    await s.page.waitForTimeout(500);
+    expect(await trashLeft.count()).toBe(1);
+    expect(app.patches.length).toBe(beforeTrash);
+    const restored = await swipe("sw7", 280);
+    await restored.waitFor({ state: "detached" });
+    expect(patched()).toEqual({ path: "/api/messages/sw7", body: { trashed: false } });
   });
 });

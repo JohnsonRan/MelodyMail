@@ -4,6 +4,8 @@ import "@astryxdesign/core/astryx.css";
 import "./fonts.css";
 // The phone navigation drawer inside the safe area (see the file).
 import "./mobileNav.css";
+// The page background behind the app shell (see the file).
+import "./page.css";
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
