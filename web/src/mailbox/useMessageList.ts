@@ -40,6 +40,8 @@ export function useMessageList(
 ) {
   const { onMail } = useMailbox();
   const [list, setList] = useState<ListState>(LOADING);
+  const loading = useRef(true);
+  loading.current = list.status === "loading";
   const sentinel = useRef<HTMLElement>(null);
   const queryKey = JSON.stringify(query);
   const queryRef = useRef(query);
@@ -64,6 +66,12 @@ export function useMessageList(
     }
   }, []);
 
+  /** A failed first page: sign-in lost, or the error state unless rows are shown. */
+  const fail = useCallback(async (err: unknown) => {
+    if (err instanceof ApiError && err.code === "unauthorized") await failedRef.current(err);
+    else setList((prev) => (prev.status === "ready" ? prev : { ...LOADING, status: "error" }));
+  }, []);
+
   /** The first page in place of the list, without the skeleton when rows are shown. */
   const fill = useCallback(async () => {
     try {
@@ -77,10 +85,9 @@ export function useMessageList(
         });
       }
     } catch (err) {
-      if (err instanceof ApiError && err.code === "unauthorized") await failedRef.current(err);
-      else setList((prev) => (prev.status === "ready" ? prev : { ...LOADING, status: "error" }));
+      await fail(err);
     }
-  }, [fetchPage]);
+  }, [fail, fetchPage]);
 
   const reload = useCallback(async () => {
     generation.current++;
@@ -201,9 +208,9 @@ export function useMessageList(
               return { ...prev, items: [...fresh, ...updated] };
             });
           })
-          .catch(() => {});
+          .catch((err) => (loading.current ? fail(err) : undefined));
       }),
-    [fetchPage, onMail, reconcile],
+    [fail, fetchPage, onMail, reconcile],
   );
 
   /** Applies changed flags locally; messages that leave the view are removed. */

@@ -90,8 +90,8 @@ const isPurge = (url: URL, method: string) =>
 const isList = (url: URL, method: string) => method === "GET" && url.pathname === "/api/messages";
 const purges = () => app.mailbox.calls.filter((c) => c.path === "/api/messages/purge");
 
-async function until(check: () => boolean) {
-  for (let i = 0; i < 200 && !check(); i++) await Bun.sleep(20);
+async function until(check: () => boolean, ms = 4000) {
+  for (let i = 0; i < ms / 20 && !check(); i++) await Bun.sleep(20);
   expect(check()).toBe(true);
 }
 
@@ -247,6 +247,66 @@ describe("Spam", () => {
     first?.release();
     await row(page, "note1").waitFor({ timeout: 5000 });
     expect(await row(page, "hostile").count()).toBe(0);
+  });
+
+  test("shows the error state when the replacement of a discarded first load fails", async () => {
+    let lists = 0;
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    session = await openSession(app.origin, "/", {
+      prepare: async (page) => {
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await page.route(
+          (url) => url.pathname === "/api/messages",
+          async (route) => {
+            if (route.request().method() !== "GET") return route.fallback();
+            if (lists++ > 0) {
+              return route.fulfill({ status: 503, json: { error: "internal" } });
+            }
+            await gate;
+            return route.continue();
+          },
+        );
+      },
+    });
+    const page = session.page;
+    await until(() => lists === 1 && app.sockets.size > 0);
+    for (const ws of app.sockets) ws.send(JSON.stringify({ type: "filed", id: "hostile" }));
+    await until(() => lists >= 2);
+    release();
+    await text(page, "The messages could not be loaded.").waitFor({ timeout: 5000 });
+    expect(await row(page, "note1").count()).toBe(0);
+  });
+
+  test("keeps a shown list when an event's refresh is refused", async () => {
+    const page = await open("/", `[data-message-row="note1"]`);
+    let refused = 0;
+    await page.evaluate(() => {
+      const w = window as unknown as { navs: string[] };
+      w.navs = [];
+      for (const name of ["pushState", "replaceState"] as const) {
+        const original = history[name].bind(history);
+        history[name] = (data, unused, url) => {
+          w.navs.push(String(url));
+          original(data, unused, url);
+        };
+      }
+    });
+    await page.route(
+      (url) => url.pathname === "/api/messages",
+      (route) => {
+        if (route.request().method() !== "GET") return route.fallback();
+        refused++;
+        return route.fulfill({ status: 401, json: { error: "unauthorized" } });
+      },
+    );
+    for (const ws of app.sockets) ws.send(JSON.stringify({ type: "filed", id: "hostile" }));
+    await until(() => refused === 1);
+    await Bun.sleep(500);
+    expect(await page.evaluate(() => (window as unknown as { navs: string[] }).navs)).toEqual([]);
+    expect(await row(page, "note1").count()).toBe(1);
   });
 
   test("drops both rows when two filed events arrive close together", async () => {
