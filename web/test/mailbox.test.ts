@@ -236,6 +236,7 @@ describe("mailbox end to end", () => {
       "Addresses",
       "Forwarding",
       "Rules",
+      "Spam senders",
       "Notifications",
       "Security",
       "API keys",

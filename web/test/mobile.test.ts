@@ -314,7 +314,7 @@ describe("phone end to end", () => {
   test("lists the settings sections at /settings", async () => {
     await go("/settings", "text=API keys");
     expect(s.page.url()).toBe(`${app.origin}/settings`);
-    expect(await s.page.locator(".astryx-list-item").count()).toBe(7);
+    expect(await s.page.locator(".astryx-list-item").count()).toBe(8);
     const main = s.page.getByRole("main");
     expect(await main.getByRole("heading", { level: 1 }).textContent()).toBe("Settings");
     expect(await main.getByRole("link").allTextContents()).toEqual([
@@ -322,6 +322,7 @@ describe("phone end to end", () => {
       "Addresses",
       "Forwarding",
       "Rules",
+      "Spam senders",
       "Notifications",
       "Security",
       "API keys",

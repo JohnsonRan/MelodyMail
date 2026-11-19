@@ -15,6 +15,7 @@
     "forwarding": "转发",
     "notifications": "通知",
     "rules": "规则",
+    "spamSenders": "垃圾邮件发件人",
     "apiKeys": "API 密钥"
   },
   "folder": {
@@ -332,6 +333,15 @@
     "remove": "移除",
     "delete": "删除",
     "note": "备注"
+  },
+  "spamSenders": {
+    "title": "垃圾邮件发件人",
+    "description": "来自这些发件人的邮件到达时会移到“垃圾邮件”。报告垃圾邮件会添加发件人；标记为非垃圾邮件或移除会将其从列表中删去。已在“垃圾邮件”中的邮件保持不变。",
+    "address": "发件人",
+    "added": "添加时间",
+    "removed": "已移除发件人",
+    "emptyTitle": "没有垃圾邮件发件人",
+    "emptyDescription": "你报告为垃圾邮件的发件人会显示在这里。"
   },
   "domains": {
     "title": "域名",

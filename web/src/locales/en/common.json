@@ -15,6 +15,7 @@
     "forwarding": "Forwarding",
     "notifications": "Notifications",
     "rules": "Rules",
+    "spamSenders": "Spam senders",
     "apiKeys": "API keys"
   },
   "folder": {
@@ -332,6 +333,15 @@
     "remove": "Remove",
     "delete": "Delete",
     "note": "Note"
+  },
+  "spamSenders": {
+    "title": "Spam senders",
+    "description": "Mail from these senders is moved to Spam when it arrives. Report spam adds a sender; Not spam or Remove takes it off the list. Mail already in Spam stays there.",
+    "address": "Sender",
+    "added": "Added",
+    "removed": "Sender removed",
+    "emptyTitle": "No spam senders",
+    "emptyDescription": "Senders you report as spam are listed here."
   },
   "domains": {
     "title": "Domains",

@@ -4,7 +4,7 @@ import { StubApp } from "./stub-app";
 
 // Settings > Rules against the API stand-in (docs/M6-rules-api.md, "Screens"): create through the
 // dialog with a test against a stored message, reorder, switch off and delete with the keyboard,
-// the phone layout and the copy in another locale; the Move to Spam action.
+// the phone layout and the copy in another locale; Settings > Spam senders with Remove.
 
 let app: StubApp;
 let session: Session | null = null;
@@ -155,5 +155,35 @@ describe("Move to Spam", () => {
     await dialog.getByRole("button", { name: "Create rule" }).click();
     await page.getByText('From contains "@junk.test" → Move to Spam').first().waitFor();
     expect(app.rules.rules[0]).toMatchObject({ name: "Junk", spam: true, trash: false });
+  });
+});
+
+describe("Settings > Spam senders", () => {
+  test("lists the remembered senders, newest first, and removes one", async () => {
+    app.mailbox.senders.set("old@spam.test", Date.UTC(2026, 0, 2));
+    app.mailbox.senders.set("new@spam.test", Date.UTC(2026, 10, 18));
+    session = await openSession(app.origin, "/settings/spam-senders", {
+      prepare: (page) => page.setViewportSize({ width: 1280, height: 900 }),
+    });
+    const page = session.page;
+    await page.getByText("new@spam.test").first().waitFor();
+    const nav = page.getByRole("navigation", { name: "Side navigation" });
+    expect(await nav.locator("[aria-current=page]").allTextContents()).toEqual(["Spam senders"]);
+    const rows = await page.locator("tbody tr").allTextContents();
+    expect(rows.map((r) => r.slice(0, 13))).toEqual(["new@spam.test", "old@spam.test"]);
+    await page
+      .getByRole("row", { name: /new@spam.test/ })
+      .getByRole("button", { name: "Remove" })
+      .click();
+    await page.getByText("Sender removed").first().waitFor();
+    await page.getByText("new@spam.test").first().waitFor({ state: "detached" });
+    expect(app.mailbox.calls.at(-2)).toEqual({
+      method: "DELETE",
+      path: "/api/spam-senders",
+      body: { address: "new@spam.test" },
+    });
+    expect([...app.mailbox.senders.keys()]).toEqual(["old@spam.test"]);
+    await page.getByRole("button", { name: "Remove" }).click();
+    await page.getByText("No spam senders").first().waitFor();
   });
 });

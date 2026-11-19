@@ -99,6 +99,11 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
     path: "/settings/rules",
     component: lazyRouteComponent(() => import("./pages/RulesPage"), "RulesPage"),
   });
+  const spamSendersRoute = createRoute({
+    getParentRoute: () => shellRoute,
+    path: "/settings/spam-senders",
+    component: lazyRouteComponent(() => import("./pages/SpamSendersPage"), "SpamSendersPage"),
+  });
   const apiKeysRoute = createRoute({
     getParentRoute: () => shellRoute,
     path: "/settings/api-keys",
@@ -149,6 +154,7 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
       addressesRoute,
       forwardingRoute,
       rulesRoute,
+      spamSendersRoute,
       apiKeysRoute,
     ]),
     setupRoute,

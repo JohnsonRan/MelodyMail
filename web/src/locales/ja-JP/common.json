@@ -15,6 +15,7 @@
     "forwarding": "転送",
     "notifications": "通知",
     "rules": "ルール",
+    "spamSenders": "迷惑メールの送信者",
     "apiKeys": "API キー"
   },
   "folder": {
@@ -332,6 +333,15 @@
     "remove": "削除",
     "delete": "削除",
     "note": "メモ"
+  },
+  "spamSenders": {
+    "title": "迷惑メールの送信者",
+    "description": "これらの送信者からのメールは、届いたときに迷惑メールに移動されます。迷惑メールとして報告すると送信者が追加され、迷惑メールではないとするか削除すると一覧から外れます。すでに迷惑メールにあるメールはそのままです。",
+    "address": "送信者",
+    "added": "追加日時",
+    "removed": "送信者を削除しました",
+    "emptyTitle": "迷惑メールの送信者はいません",
+    "emptyDescription": "迷惑メールとして報告した送信者がここに表示されます。"
   },
   "domains": {
     "title": "ドメイン",

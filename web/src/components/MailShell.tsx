@@ -19,6 +19,7 @@ import {
   InboxIcon,
   KeyIcon,
   MagnifyingGlassIcon,
+  NoSymbolIcon,
   PaperAirplaneIcon,
   ShieldCheckIcon,
   ShieldExclamationIcon,
@@ -154,6 +155,7 @@ export const SETTINGS_NAV: {
       { key: "addresses", path: "/settings/addresses", icon: AtSymbolIcon },
       { key: "forwarding", path: "/settings/forwarding", icon: ArrowUturnRightIcon },
       { key: "rules", path: "/settings/rules", icon: FunnelIcon },
+      { key: "spamSenders", path: "/settings/spam-senders", icon: NoSymbolIcon },
     ],
   },
   {
