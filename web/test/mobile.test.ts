@@ -201,7 +201,7 @@ describe("phone end to end", () => {
     }
   });
 
-  test("keeps the app name whole beside the language and theme buttons", async () => {
+  test("keeps the app name whole and moves the language and theme buttons to the drawer", async () => {
     await go("/", `[data-message-row="note3"]`);
     const bar = s.page.getByRole("navigation", { name: "Main navigation" });
     expect(await bar.getByRole("combobox").count()).toBe(0);
@@ -214,11 +214,13 @@ describe("phone end to end", () => {
       ]);
     }
     await s.page.setViewportSize(PHONE);
-    await bar.getByRole("button", { name: "Language: English" }).waitFor();
-    await bar.getByRole("button", { name: "Theme: System" }).waitFor();
+    // The two menus left the app bar for the end of the drawer.
+    expect(await bar.getByRole("button", { name: /^(Language|Theme):/ }).count()).toBe(0);
     await s.page.getByRole("button", { name: "Open navigation" }).click();
     const drawer = s.page.getByRole("dialog");
     await drawer.getByRole("link", { name: "Settings" }).waitFor();
+    await drawer.getByRole("button", { name: "Language: English" }).waitFor();
+    await drawer.getByRole("button", { name: "Theme: System" }).waitFor();
     expect(await drawer.getByRole("combobox").count()).toBe(0);
     // The drawer panel pads by the safe area on the top, the bottom and its screen edge. A
     // browser here reports every inset as 0, so this reads the rules that apply to the panel.
@@ -241,10 +243,11 @@ describe("phone end to end", () => {
     await s.page.keyboard.press("Escape");
   });
 
-  test("switches theme and language from their menus, the current choice checked", async () => {
+  test("switches theme and language from their menus in the drawer, the current choice checked", async () => {
     await go("/", `[data-message-row="note3"]`);
-    // The app bar by its place, not its name: the name changes with the language.
-    const bar = s.page.getByRole("navigation").first();
+    await s.page.getByRole("button", { name: "Open navigation" }).click();
+    const bar = s.page.getByRole("dialog");
+    await bar.getByRole("link", { name: "Settings" }).waitFor();
     const choices = async (button: string) => {
       await bar.getByRole("button", { name: button }).click();
       const items = s.page.getByRole("menuitemradio");
