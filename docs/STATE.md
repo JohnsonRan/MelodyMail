@@ -4305,3 +4305,7 @@ and chose four items: bulk delete and Empty Trash, select all matching, phone sw
   row; sparse-address read budget measured. Closed without code: an M7-finished export after
   0016 restores (named-column INSERTs, trigger numbers the rows). Accepted: a confirm dialog open
   across a Time Travel restore (runbook says close tabs first).
+- Plan review 5: FIX FIRST, five Mediums; all fixed. Purge also requires the folder clock at or
+  before the dialog's `asOf`; Trash's folder test has no Spam filter; `counters` is not exported
+  and restore recomputes it; the sender INSERT names both columns; a `changed` event discards
+  in-flight list pages and refreshes the open reader.

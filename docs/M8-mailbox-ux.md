@@ -73,10 +73,13 @@ This plan is reviewed before coding (`AGENTS.md`, "Change risk"). The first cros
 - When a call fails without an answer (network error, timeout), the client cannot know whether
   the batch committed. It stops the loop, reloads the list and the counts, and the toast says
   the result is unknown and the list was refreshed.
-- The watermark comes from the count route (section 2) when the confirm dialog opens. A message
-  stored before it but moved into Trash or Spam after the confirmation is deleted too. Accepted:
-  the owner confirmed emptying the folder; the watermark spares mail that arrived later,
-  including new mail filed into Spam.
+- The watermark and a server time `asOf` come from the count route (section 2) when the confirm
+  dialog opens. Purge deletes only rows with `seq <= watermark` whose folder clock
+  (`trashed_at` or `spam_at`) is at or before `asOf`. A message that arrived later, or an older
+  message moved or filed into the folder after the dialog opened (for example by the consumer),
+  is kept. Empty and a whole-folder Delete forever therefore delete exactly what was in the
+  folder when the owner confirmed (review 5, finding 1). Rows in Trash without a clock (before
+  migration 0015) were stamped by the cron, so every Trash row has one.
 - Session routes only (decision 5).
 
 ### UI
@@ -103,8 +106,8 @@ Today the header checkbox selects the loaded rows only (50 per page, more after 
 
 ### API
 
-- `GET /api/messages/count?folder=&address=` returns `{ total, watermark }`: the counter value
-  and the rows of that view with `seq <= watermark`, in one D1 batch.
+- `GET /api/messages/count?folder=&address=` returns `{ total, watermark, asOf }`: the counter
+  value, the server time, and the rows of that view with `seq <= watermark`, in one D1 batch.
 - `PATCH /api/messages` accepts, instead of `ids`, `{ folder, address?, watermark, after?,
   ...flags }`. It updates at most `FOLDER_PATCH_MAX` (500) rows of the view with
   `seq <= watermark` and `seq < after`, highest `seq` first, and returns
@@ -154,8 +157,10 @@ A table `spam_senders (address TEXT PRIMARY KEY, created_at INTEGER NOT NULL)` h
 senders. The rules table gains the `spam` action column. The migration is additive and safe on a
 database that holds rows; it also adds `seq`, `counters` and the trigger (decision 3).
 
-- The backup table list (`worker/src/backup/tables.ts`) gains the new columns, and `counters`
-  and `spam_senders` are appended at the end of the list. Appending keeps the numeric table
+- The backup table list (`worker/src/backup/tables.ts`) gains the new columns, and
+  `spam_senders` is appended at the end of the list. `counters` is not exported: it is derived
+  state, and the migration already seeds its row in a fresh target, so an exported INSERT would
+  collide with it (review 5, finding 3). Appending keeps the numeric table
   cursor of an export that is in progress during the deploy pointing at the same tables
   (review 2, finding 7).
 - An export records the column list of every table when it starts. If a part is written after
@@ -169,18 +174,21 @@ database that holds rows; it also adds `seq`, `counters` and the trigger (decisi
   watermark above it. Not designed for: the runbook's restore is a maintenance step, and the
   dialog's watermark lives for seconds. The runbook's restore step gains "close open MelodyMail
   tabs first" (review 4, finding 1, accepted).
-- Restore writes `seq` as stored (the trigger skips it), then replaces the counter row with
-  `MAX(value, MAX(seq))`. The restore drill checks that the first INSERT after a restore gets a
-  `seq` above every restored one.
+- Restore writes `seq` as stored (the trigger skips it), then ends with `UPDATE counters SET
+  value = MAX(value, (SELECT COALESCE(MAX(seq), 0) FROM messages)) WHERE name =
+  'messages_seq'`. The restore drill restores a full M8 export into a freshly migrated database
+  and checks that the first INSERT afterwards gets a `seq` above every restored one.
 - Deploy order: `migrate:prod` before `deploy:prod`, as for every migration; the runbook step for
   M8 says so.
 
 ### Folder rules
 
-- `FOLDERS.spam = "spam = 1 AND trashed = 0"`, the same test the permanent delete uses, so a row
-  with both flags (written by an M7 Worker after a rollback) shows in Trash only and is deleted
-  by Trash's rules. Every other folder condition gains `spam = 0`; so do search, the thread view
-  outside Spam, and the unread counts.
+- `FOLDERS.spam = "spam = 1 AND trashed = 0"`, the same test the permanent delete uses.
+  `FOLDERS.trash` stays `trashed = 1` with no Spam test, so a row with both flags (written by an
+  M7 Worker after a rollback) shows in Trash, is counted there, and expires by Trash's rules,
+  exactly as the cron already treats it (review 5, finding 2). Inbox, Sent, Starred and Archive
+  gain `spam = 0`; so do search, the thread view outside Spam and Trash, and their unread
+  counts.
 - Rollback to M7 code leaves the columns in place. M7 ignores `spam`, so Spam mail shows in the
   Inbox and Archive as ordinary mail, and its writes follow M7's rules; nothing is lost. After
   redeploying M8 the folder tests above sort every flag combination into one folder. The runbook
@@ -212,8 +220,9 @@ database that holds rows; it also adds `seq`, `counters` and the trigger (decisi
   A message not parsed, parsed before M8, or whose `From` has no address has no key; the
   migration does not backfill it.
 - **Report spam** (toolbar, reader, bulk with ids; never offered in Sent) runs one D1 batch, a
-  transaction: first `INSERT OR IGNORE INTO spam_senders SELECT from_key FROM messages WHERE id
-  IN (...) AND direction = 'in' AND spam = 0 AND from_key IS NOT NULL`, then the flag UPDATE on
+  transaction: first `INSERT OR IGNORE INTO spam_senders (address, created_at) SELECT from_key,
+  ?now FROM messages WHERE id IN (...) AND direction = 'in' AND spam = 0 AND from_key IS NOT
+  NULL` (review 5, finding 4), then the flag UPDATE on
   the same rows. The INSERT reads the rows before they change, so only rows that actually enter
   Spam in this transaction add a key: a repeated report of a message already in Spam adds
   nothing, and a sent message never adds the owner's address (review 3, finding 2; review 4,
@@ -224,10 +233,13 @@ database that holds rows; it also adds `seq`, `counters` and the trigger (decisi
   the `From` key; when it is listed and the message is in the Inbox, the UPDATE that saves the
   parse also sets `spam = 1` and `spam_at`. A message waits in the Inbox, unnotified, until the
   consumer runs, as it does today.
-- A page that already shows such a message in the Inbox drops it when the consumer's `changed`
-  event arrives: for a `changed` id that is in the list, `useMessageList` reads that message
-  (`GET /api/messages/:id`) and removes it if it no longer `belongs` to the view. Today the
-  merge only replaces rows present in the new first page (review 4, finding 5).
+- A `changed` event for an id makes the open page reconcile that id (review 4, finding 5;
+  review 5, finding 5):
+  - `useMessageList` bumps its generation, so a page fetch in flight is discarded, then reads the
+    message (`GET /api/messages/:id`) and drops it if it no longer `belongs` to the view; a
+    discarded scroll page is fetched again from its cursor;
+  - the reader, when that id is open, reloads the message's flags; a message now in Spam stops
+    loading remote images and shows the Spam actions.
 - **Forged senders.** A spammer can forge a real sender's `From`; reporting that message files
   the real sender's later mail in Spam (review, finding 4). Kept under owner ruling 2, because
   such mail is filed, not dropped: it stays visible in Spam with an unread count for 30 days, and
@@ -298,7 +310,9 @@ Worker suite (real D1 and R2 in workerd):
   nothing; `folder=spam` lists;
 - consumer: a parse failure notifies as before; a Spam-filed message does not;
 - transitions of decision 6, including Not spam on a stale archived flag landing in the Inbox;
-- spam filing: a repeated Report spam after the sender was removed adds nothing; Not spam on a
+- purge: a row filed into Spam after `asOf` with a `seq` below the watermark is kept;
+- spam filing: Report spam on a parsed message stores the key with `created_at` and the flag in
+  one batch; a repeated Report spam after the sender was removed adds nothing; Not spam on a
   row not in Spam removes nothing; Report spam adds the key, Not spam removes the same key; a
   long display name does not lose the key; Report spam on a sent id adds nothing; `email()`
   applies rules only; the consumer files mail from a listed sender; no push for spam-filed mail;
