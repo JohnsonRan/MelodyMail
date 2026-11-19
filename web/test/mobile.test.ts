@@ -433,4 +433,27 @@ describe("phone end to end", () => {
       statusBar: "black-translucent",
     });
   });
+
+  test("paints html and body in the theme body colour, light and dark", async () => {
+    const colours = () =>
+      s.page.evaluate(() => {
+        const probe = document.createElement("div");
+        probe.style.backgroundColor = "var(--color-background-body)";
+        document.body.append(probe);
+        const theme = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return {
+          theme,
+          html: getComputedStyle(document.documentElement).backgroundColor,
+          body: getComputedStyle(document.body).backgroundColor,
+        };
+      });
+    for (const mode of ["light", "dark"]) {
+      await s.page.evaluate((m) => localStorage.setItem("melodymail.mode", m), mode);
+      await go("/", `[data-message-row="note3"]`);
+      const found = await colours();
+      expect([mode, found.html, found.body]).toEqual([mode, found.theme, found.theme]);
+    }
+    await s.page.evaluate(() => localStorage.removeItem("melodymail.mode"));
+  });
 });
