@@ -4265,3 +4265,22 @@ remember recipients.
 | Sign-in pages and desktop app bar have no own test for the icon menus | review 3 (Low) | same shared component as the tested phone app bar |
 | Truncated receiving address in the drawer has no touch reveal | phone audit | existed before |
 | CPU over 10 ms on three routes in one tail sample | checklist 8 | one sample; watch more logs first |
+
+## M8: mailbox behaviour of a mail client (owner request 2026-11-19, branch `mailbox-ux`)
+
+Design: `docs/M8-mailbox-ux.md` (High: permanent bulk delete, migration 0016, inbound filing).
+The owner reported that Trash has no bulk or full delete and the app "does not feel like mail",
+and chose four items: bulk delete and Empty Trash, select all matching, phone swipe actions, Spam.
+
+### Owner rulings (2026-11-19)
+
+1. Bulk delete and Empty Trash as planned, both behind a confirmation.
+2. Spam filing: Report spam remembers the sender; later mail from that address is filed as spam;
+   Not spam forgets it; rules gain "Move to Spam". No content scoring.
+3. Swipe: right archives (Move to Inbox, Restore, Not spam in those folders), left trashes;
+   in Trash and Spam left does nothing.
+4. Select all matching covers folders only, not search results.
+
+### Progress
+
+- Plan written; cross-family plan review running (`cliproxyapi/gpt-6.2-sol`).
