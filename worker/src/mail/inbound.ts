@@ -95,6 +95,7 @@ const NO_RULES: Decision = {
   starred: false,
   archived: false,
   trashed: false,
+  spam: false,
 };
 
 /**
@@ -276,8 +277,8 @@ export async function handleEmail(message: ForwardableEmailMessage, env: Env): P
       env.DB.prepare(
         `INSERT INTO messages (id, address_id, direction, status, envelope_from, envelope_to,
            subaddress_tag, raw_size, r2_key, forward_failed, read, starred, archived, trashed,
-           trashed_at, received_at)
-         VALUES (?, ?, 'in', 'stored', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           trashed_at, spam, spam_at, received_at)
+         VALUES (?, ?, 'in', 'stored', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         id,
         address.id,
@@ -292,6 +293,8 @@ export async function handleEmail(message: ForwardableEmailMessage, env: Env): P
         Number(rules.archived),
         Number(rules.trashed),
         rules.trashed ? now : null,
+        Number(rules.spam),
+        rules.spam ? now : null,
         now,
       ),
       env.DB.prepare("UPDATE addresses SET last_received_at = ? WHERE id = ?").bind(

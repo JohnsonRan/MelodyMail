@@ -14,6 +14,7 @@ import { registerEventRoutes } from "./mail/hub";
 import { handleEmail } from "./mail/inbound";
 import { registerQuietRoutes } from "./mail/quiet";
 import { registerMailboxRoutes, registerMessageRoutes } from "./mail/routes";
+import { registerSpamSenderRoutes } from "./mail/spam";
 import { registerPushRoutes } from "./push/routes";
 import { publicRoute, requireAuthorization, requireSameOrigin } from "./routing";
 import { registerRuleRoutes } from "./rules/routes";
@@ -50,6 +51,7 @@ registerTargetRoutes(app.basePath("/forward-targets"));
 registerMessageRoutes(app.basePath("/messages"));
 registerMailboxRoutes(app);
 registerEventRoutes(app);
+registerSpamSenderRoutes(app.basePath("/spam-senders"));
 
 // Web Push for new mail: none of these is public.
 registerPushRoutes(app.basePath("/push"));

@@ -1,8 +1,8 @@
 import type { Context } from "hono";
 import type { AppEnv } from "../env";
 import { log } from "../http";
+import { updateMessageFlags } from "../mail/flags";
 import { notifyHub } from "../mail/hub";
-import { updateMessageFlags } from "../mail/routes";
 import { callBot } from "./api";
 import { type Action, type CardMail, chatData, copy, GONE, keyboard, messageLink } from "./card";
 

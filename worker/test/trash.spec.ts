@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
 import { handleScheduled } from "../src/mail/consumer";
 import { handleEmail } from "../src/mail/inbound";
-import { deleteFromTrash, expireTrash, TRASH_EXPIRE_MAX, TRASH_KEEP_MS } from "../src/mail/trash";
+import { deletePermanently, expireTrash, TRASH_EXPIRE_MAX, TRASH_KEEP_MS } from "../src/mail/trash";
 import { setupOwner } from "./helpers";
 import { addAddress, addRule, asMessage, inbound, messageRows } from "./mail-helpers";
 import { rawKey, seedMessage } from "./mailbox-helpers";
@@ -78,7 +78,11 @@ describe("automatic Trash clean-up", () => {
     await env.DB.prepare(
       "UPDATE messages SET trashed = 0, trashed_at = NULL WHERE id = 'restored'",
     ).run();
-    expect(await deleteFromTrash(env, ["restored", "untimed"], now - TRASH_KEEP_MS)).toEqual([]);
+    const bounds = { before: now - TRASH_KEEP_MS + 1 };
+    expect(await deletePermanently(env, "trash", ["restored", "untimed"], bounds)).toEqual({
+      deleted: [],
+      hasMore: false,
+    });
     expect(await messageRows()).toHaveLength(2);
   });
 

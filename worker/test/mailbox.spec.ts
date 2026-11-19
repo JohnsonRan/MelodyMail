@@ -77,6 +77,7 @@ describe("message lists", () => {
         starred: true,
         archived: false,
         trashed: false,
+        spam: false,
         hasAttachments: false,
         status: "parse_failed",
         threadKey: null,
@@ -398,7 +399,7 @@ describe("counts", () => {
       { id: "6", addressId: 3, trashed: true, starred: true },
     ]);
     expect(await client.json("GET", "/api/counts")).toEqual({
-      folders: { inbox: 3, starred: 1, archive: 1, trash: 1 },
+      folders: { inbox: 3, starred: 1, archive: 1, spam: 0, trash: 1 },
       addresses: { "1": 2, "2": 1 },
     });
   });
@@ -406,7 +407,7 @@ describe("counts", () => {
   it("answers zeros for an empty mailbox", async () => {
     const { client } = await setupOwner();
     expect(await client.json("GET", "/api/counts")).toEqual({
-      folders: { inbox: 0, starred: 0, archive: 0, trash: 0 },
+      folders: { inbox: 0, starred: 0, archive: 0, spam: 0, trash: 0 },
       addresses: {},
     });
   });

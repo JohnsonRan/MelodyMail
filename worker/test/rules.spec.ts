@@ -34,7 +34,14 @@ function source(headers: Record<string, string | string[]> = {}, extra: Partial<
   };
 }
 
-const NONE = { markRead: false, star: false, archive: false, trash: false, stop: false };
+const NONE = {
+  markRead: false,
+  star: false,
+  archive: false,
+  trash: false,
+  spam: false,
+  stop: false,
+};
 
 function rule(conditions: Condition[], extra: Partial<Rule> = {}): Rule {
   return { match: "all", conditions, targets: [], ...NONE, markRead: true, ...extra };
@@ -254,6 +261,7 @@ describe("rule order and actions", () => {
       starred: true,
       archived: true,
       trashed: false,
+      spam: false,
     });
   });
 
@@ -595,6 +603,7 @@ describe("POST /api/rules/test", () => {
       star: false,
       archive: false,
       trash: false,
+      spam: false,
       stop: false,
       targets: [],
     });
@@ -605,6 +614,7 @@ describe("POST /api/rules/test", () => {
       star: true,
       archive: false,
       trash: true,
+      spam: false,
       stop: true,
       targets: ["a@out.test"],
     });
