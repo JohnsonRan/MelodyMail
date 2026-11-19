@@ -4284,3 +4284,8 @@ and chose four items: bulk delete and Empty Trash, select all matching, phone sw
 ### Progress
 
 - Plan written; cross-family plan review running (`cliproxyapi/gpt-6.2-sol`).
+- Plan review 1 (`cliproxyapi/gpt-6.2-sol`): FIX FIRST, six Mediums, one Low, a performance note.
+  All folded into the plan; sender learning kept under ruling 2 with a Spam senders list.
+- Owner rulings 5 (2026-11-19, iPhone 17 Pro screenshot): fix the bottom black band; phone
+  Compose as a floating button and pull to refresh; phone bulk bar only in selection mode; phone
+  language and theme move to the drawer (supersedes the post-launch app-bar placement on phones).
