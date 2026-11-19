@@ -4299,3 +4299,9 @@ and chose four items: bulk delete and Empty Trash, select all matching, phone sw
   sender key stored as `from_key` from the structured parse, learned in the same batch only for
   inbound rows that entered Spam; purge returns `hasMore` from an EXISTS probe; list fetches
   pause during loops; v1 PATCH keeps its own ids-only schema; OpenAPI gains `spam`.
+- Plan review 4: FIX FIRST, six Mediums. Fixed: sender learning and forgetting read rows before
+  the UPDATE in the same batch (only real transitions count); Spam folder test is
+  `spam = 1 AND trashed = 0`, rollback to M7 documented; a `changed` event re-checks a listed
+  row; sparse-address read budget measured. Closed without code: an M7-finished export after
+  0016 restores (named-column INSERTs, trigger numbers the rows). Accepted: a confirm dialog open
+  across a Time Travel restore (runbook says close tabs first).

@@ -161,6 +161,14 @@ database that holds rows; it also adds `seq`, `counters` and the trigger (decisi
 - An export records the column list of every table when it starts. If a part is written after
   the columns changed (an export running across the 0016 deploy), the export is discarded and
   starts again, so one export never mixes rows with and without `seq` (review 3, finding 1).
+- An export finished by the M7 Worker after 0016 landed (the migrate-before-deploy window) has
+  parts without `seq` under a 0016 manifest. It still restores: every exported INSERT names its
+  columns (`worker/src/backup/sql.ts`), so the missing `seq` is NULL and the trigger numbers the
+  row (review 4, finding 2).
+- A Time Travel restore rewinds the counter. A confirm dialog open across a restore could hold a
+  watermark above it. Not designed for: the runbook's restore is a maintenance step, and the
+  dialog's watermark lives for seconds. The runbook's restore step gains "close open MelodyMail
+  tabs first" (review 4, finding 1, accepted).
 - Restore writes `seq` as stored (the trigger skips it), then replaces the counter row with
   `MAX(value, MAX(seq))`. The restore drill checks that the first INSERT after a restore gets a
   `seq` above every restored one.
@@ -169,8 +177,14 @@ database that holds rows; it also adds `seq`, `counters` and the trigger (decisi
 
 ### Folder rules
 
-- `FOLDERS.spam = "spam = 1"`. Every other folder condition gains `spam = 0`; so do search, the
-  thread view outside Spam, and the unread counts.
+- `FOLDERS.spam = "spam = 1 AND trashed = 0"`, the same test the permanent delete uses, so a row
+  with both flags (written by an M7 Worker after a rollback) shows in Trash only and is deleted
+  by Trash's rules. Every other folder condition gains `spam = 0`; so do search, the thread view
+  outside Spam, and the unread counts.
+- Rollback to M7 code leaves the columns in place. M7 ignores `spam`, so Spam mail shows in the
+  Inbox and Archive as ordinary mail, and its writes follow M7's rules; nothing is lost. After
+  redeploying M8 the folder tests above sort every flag combination into one folder. The runbook
+  records this (review 4, finding 3).
 - The contact scan keeps its read bound: it still takes the 2,000 most recent rows by its index,
   and drops Spam rows from that window afterwards, instead of reading further to fill the window
   (review 2, finding 7).
@@ -182,7 +196,10 @@ database that holds rows; it also adds `seq`, `counters` and the trigger (decisi
   route, a folder PATCH call, a purge call including the FTS delete, both cron expiry steps
   together with the backup step, and the contact scan. It also records the scheduled handler's
   binding calls and CPU time with both expiry steps and the export running, and a skewed run
-  where the 2,000 newest messages are all Spam. A query that becomes a table scan gets an index
+  where the 2,000 newest messages are all Spam, and address-scoped purge and folder PATCH calls
+  for an address with one matching row among 5,000 and with none, against an explicit budget of
+  rows read per call (review 4, finding 6; the budget goes into `REQUIREMENTS.md` with the
+  measurement). A query that becomes a table scan, or exceeds the budget, gets an index
   or a changed condition before review (review 1, performance note; review 2, finding 7).
 
 ### Filing
@@ -194,17 +211,23 @@ database that holds rows; it also adds `seq`, `counters` and the trigger (decisi
   bounce address would then block unrelated mail (review 2, finding 5; review 3, finding 2).
   A message not parsed, parsed before M8, or whose `From` has no address has no key; the
   migration does not backfill it.
-- **Report spam** (toolbar, reader, bulk with ids; never offered in Sent) runs one D1 batch: the
-  flag UPDATE, which skips outbound rows, then `INSERT OR IGNORE INTO spam_senders SELECT
-  from_key FROM messages WHERE id IN (...) AND direction = 'in' AND spam = 1 AND from_key IS NOT
-  NULL`. Only rows whose transition succeeded add a key, and the owner's own address can never be
-  learned from a sent message. In "whole folder" mode it sets the flag and adds no senders.
-- **Not spam** runs the same batch in reverse: the UPDATE, then a DELETE of the `from_key` of the
-  rows it moved out.
+- **Report spam** (toolbar, reader, bulk with ids; never offered in Sent) runs one D1 batch, a
+  transaction: first `INSERT OR IGNORE INTO spam_senders SELECT from_key FROM messages WHERE id
+  IN (...) AND direction = 'in' AND spam = 0 AND from_key IS NOT NULL`, then the flag UPDATE on
+  the same rows. The INSERT reads the rows before they change, so only rows that actually enter
+  Spam in this transaction add a key: a repeated report of a message already in Spam adds
+  nothing, and a sent message never adds the owner's address (review 3, finding 2; review 4,
+  finding 4). In "whole folder" mode it sets the flag and adds no senders.
+- **Not spam** mirrors it: first a DELETE of the keys of the listed rows with `spam = 1`, then the
+  UPDATE, so only rows that actually leave Spam forget their sender.
 - **Inbound**: `email()` does not look senders up; it has no parsed `From`. The consumer computes
   the `From` key; when it is listed and the message is in the Inbox, the UPDATE that saves the
   parse also sets `spam = 1` and `spam_at`. A message waits in the Inbox, unnotified, until the
   consumer runs, as it does today.
+- A page that already shows such a message in the Inbox drops it when the consumer's `changed`
+  event arrives: for a `changed` id that is in the list, `useMessageList` reads that message
+  (`GET /api/messages/:id`) and removes it if it no longer `belongs` to the view. Today the
+  merge only replaces rows present in the new first page (review 4, finding 5).
 - **Forged senders.** A spammer can forge a real sender's `From`; reporting that message files
   the real sender's later mail in Spam (review, finding 4). Kept under owner ruling 2, because
   such mail is filed, not dropped: it stays visible in Spam with an unread count for 30 days, and
@@ -275,10 +298,11 @@ Worker suite (real D1 and R2 in workerd):
   nothing; `folder=spam` lists;
 - consumer: a parse failure notifies as before; a Spam-filed message does not;
 - transitions of decision 6, including Not spam on a stale archived flag landing in the Inbox;
-- spam filing: Report spam adds the key, Not spam removes the same key; a long display name does
-  not lose the key; Report spam on a sent id adds nothing; `email()` applies rules only; the
-  consumer files mail from a listed sender; no push for spam-filed mail; the cron removes Spam
-  older than 30 days and keeps a row moved out; outbound cannot be spam;
+- spam filing: a repeated Report spam after the sender was removed adds nothing; Not spam on a
+  row not in Spam removes nothing; Report spam adds the key, Not spam removes the same key; a
+  long display name does not lose the key; Report spam on a sent id adds nothing; `email()`
+  applies rules only; the consumer files mail from a listed sender; no push for spam-filed mail;
+  the cron removes Spam older than 30 days and keeps a row moved out; outbound cannot be spam;
 - v1: a folder-form `PATCH /messages` with a valid `mail:write` key answers 400;
 - purge: `hasMore` without a count; a list fetch begun during the loop does not bring a row back
   (browser suite);
@@ -290,7 +314,8 @@ Worker suite (real D1 and R2 in workerd):
 Browser suite: Empty Trash with confirmation; select all matching then archive; on the 402 px
 project, swipe right archives, swipe left trashes, long press enters selection mode, a vertical
 drag neither swipes nor selects, the floating Compose opens compose, and Empty Trash is reachable
-outside selection mode; Report spam and Not spam.
+outside selection mode; Report spam and Not spam; an Inbox row the consumer files into Spam
+leaves the open list.
 
 Each behaviour hunk is ablated (High risk). The review is by a different model family.
 
