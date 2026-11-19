@@ -4844,3 +4844,12 @@ by the coordinator with a test each, red without the fix (ablated by hand):
 Final run at `f715261` (dev workstation, Ryzen 9 9950X3D, Bun 1.4.4): `bun run check` pass,
 13.3 s, 517 worker tests, CPU 2%; `bun run test:browser` 80 pass, 40.9 s, CPU 1%;
 `bun run test:folders` 37 pass, 51.5 s, CPU 4%.
+- Re-review of `f715261`: one Medium. The reload after spent retries cleared an unrelated
+  selection and could end on the error screen. Replaced by applying the filed move locally
+  (`a8e4eed`): the consumer sends `filed` only after its write moved the message into Spam.
+- Re-review of `a8e4eed`: two Mediums. Fixed: a row removed by a filed event stayed selected, so
+  a bulk action reached the hidden Spam message (`web: drop rows that leave the list from the
+  selection`). Accepted, not designed for: a newer Not spam from a second tab lost to the local
+  filed move when all four re-reads fail while the list refresh succeeds; it needs two tabs, a
+  failing detail route and a Not spam within the 7 s retry window, and the next refresh corrects
+  it. Code review stopped here.
