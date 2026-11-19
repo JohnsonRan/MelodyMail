@@ -21,6 +21,9 @@ export type ListState = {
 /** Waits before each retry of a failed re-read of a filed message. */
 const RETRY_MS = [1000, 2000, 4000];
 
+/** The flags a message takes when the consumer files it into Spam (decision 6). */
+const FILED: Flags = { spam: true, archived: false, trashed: false };
+
 const LOADING: ListState = { items: [], next: null, status: "loading", loadingMore: false };
 
 /**
@@ -160,39 +163,41 @@ export function useMessageList(
     return () => observer.disconnect();
   }, [list.next, loadMore]);
 
-  /** Drops a message that no longer belongs to the view, or takes its new flags. */
-  const reconcile = useCallback(
-    async (id: string) => {
-      const started = view.current;
-      let fresh: MessageItem | null = null;
-      for (let retry = 0; ; retry++) {
-        try {
-          fresh = (await getMessage(id)).message;
+  /**
+   * Drops a message that no longer belongs to the view, or takes its new flags. The re-read only
+   * catches a later change (Not spam from another device); when every retry fails, the row takes
+   * the move the `filed` event reports, since the consumer sends it only after its write moved the
+   * message into Spam (docs/M8-mailbox-ux.md, decision 6).
+   */
+  const reconcile = useCallback(async (id: string) => {
+    const started = view.current;
+    let fresh: MessageItem | null = null;
+    let filed = false;
+    for (let retry = 0; ; retry++) {
+      try {
+        fresh = (await getMessage(id)).message;
+        break;
+      } catch (err) {
+        if (err instanceof ApiError && err.code === "not_found") break;
+        const wait = RETRY_MS[retry];
+        if (wait === undefined) {
+          filed = true;
           break;
-        } catch (err) {
-          if (err instanceof ApiError && err.code === "not_found") break;
-          // After the last retry the view loads again: a refreshed first page keeps rows it does
-          // not hold, so only a reload drops the filed row.
-          const wait = RETRY_MS[retry];
-          if (wait === undefined) {
-            if (started === view.current) void reload();
-            return;
-          }
-          await new Promise((done) => setTimeout(done, wait));
-          if (started !== view.current) return;
         }
+        await new Promise((done) => setTimeout(done, wait));
+        if (started !== view.current) return;
       }
-      if (started !== view.current) return;
-      setList((prev) => ({
-        ...prev,
-        items: prev.items.flatMap((m) => {
-          if (m.id !== id) return [m];
-          return fresh && belongs(fresh, queryRef.current) ? [{ ...m, ...fresh }] : [];
-        }),
-      }));
-    },
-    [reload],
-  );
+    }
+    if (started !== view.current) return;
+    setList((prev) => ({
+      ...prev,
+      items: prev.items.flatMap((m) => {
+        if (m.id !== id) return [m];
+        const next = filed ? withFlags(m, FILED) : fresh;
+        return next && belongs(next, queryRef.current) ? [{ ...m, ...next }] : [];
+      }),
+    }));
+  }, []);
 
   // New mail or a changed sent message: the first page is fetched again, its new messages go on
   // top and the ones already shown take their new status. "filed" (the consumer moved new mail

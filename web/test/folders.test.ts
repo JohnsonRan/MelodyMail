@@ -418,16 +418,29 @@ describe("Spam", () => {
     expect(detail.requests).toBe(2);
   });
 
-  test("reloads the view after three failed retries, so the filed row leaves", async () => {
+  test("drops a filed row without a reload when every re-read fails", async () => {
     const page = await open("/", `[data-message-row="note1"]`);
     const detail = await failingReread(page, Number.POSITIVE_INFINITY);
+    let lists = 0;
+    await page.route(
+      (url) => url.pathname === "/api/messages",
+      (route) => {
+        if (route.request().method() === "GET") lists++;
+        return route.fallback();
+      },
+    );
+    await page.locator(`[data-message-row="note2"] input[type=checkbox]`).check();
     (app.store.get("note1")?.item as Record<string, unknown>).spam = true;
     for (const ws of app.sockets) ws.send(JSON.stringify({ type: "filed", id: "note1" }));
     await until(() => detail.requests === 4, 9000);
     await row(page, "note1").waitFor({ state: "detached", timeout: 5000 });
     await Bun.sleep(500);
     expect(detail.requests).toBe(4);
-    expect(await row(page, "note2").count()).toBe(1);
+    // The event's own refresh only; no reload, and the selection is kept.
+    expect(lists).toBe(1);
+    expect(await page.locator(`[data-message-row="note2"] input[type=checkbox]`).isChecked()).toBe(
+      true,
+    );
   });
 
   test("starts no retry once a refresh has moved the view", async () => {
