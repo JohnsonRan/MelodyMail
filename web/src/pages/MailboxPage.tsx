@@ -146,6 +146,17 @@ export function MailboxPage({ query, title }: { query: ListQuery; title: string 
     }
   }, [selected]);
 
+  // A row that leaves the list without an action here (a filed event, a change from elsewhere)
+  // leaves the selection too, so a bulk action never reaches a message the owner cannot see.
+  useEffect(() => {
+    setSelected((prev) => {
+      const shown = new Set(list.items.map((m) => m.id));
+      return [...prev].every((id) => shown.has(id))
+        ? prev
+        : new Set([...prev].filter((id) => shown.has(id)));
+    });
+  }, [list.items]);
+
   const leaveSelecting = () => {
     hadSelection.current = false;
     setSelecting(false);

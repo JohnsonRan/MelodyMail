@@ -346,6 +346,24 @@ describe("Spam", () => {
     expect(await row(page, "note1").count()).toBe(1);
   });
 
+  test("takes a filed row out of the selection, so a bulk action skips it", async () => {
+    const page = await open("/", `[data-message-row="note1"]`);
+    for (const id of ["note1", "note2"]) {
+      await page.locator(`[data-message-row="${id}"] input[type=checkbox]`).check();
+    }
+    (app.store.get("note1")?.item as Record<string, unknown>).spam = true;
+    for (const ws of app.sockets) ws.send(JSON.stringify({ type: "filed", id: "note1" }));
+    await row(page, "note1").waitFor({ state: "detached" });
+    await bar(page).getByRole("button", { name: "Move to Trash" }).click();
+    await row(page, "note2").waitFor({ state: "detached" });
+    const item = (id: string) => app.store.get(id)?.item as Record<string, unknown>;
+    expect([item("note2").trashed, item("note1").trashed, item("note1").spam]).toEqual([
+      true,
+      false,
+      true,
+    ]);
+  });
+
   test("drops both rows when two filed events arrive close together", async () => {
     const page = await open("/", `[data-message-row="note1"]`);
     const detail = await hold(
