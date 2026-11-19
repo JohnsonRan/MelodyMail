@@ -4289,3 +4289,8 @@ and chose four items: bulk delete and Empty Trash, select all matching, phone sw
 - Owner rulings 5 (2026-11-19, iPhone 17 Pro screenshot): fix the bottom black band; phone
   Compose as a floating button and pull to refresh; phone bulk bar only in selection mode; phone
   language and theme move to the drawer (supersedes the post-launch app-bar placement on phones).
+- Plan review 2: FIX FIRST, eight Mediums, one Low; all folded in. Changes: an insertion sequence
+  `seq` (counter table and trigger) replaces rowid; folder PATCH continues by `seq`; audit and
+  `remaining` in the delete batch; v1 cannot change Spam rows; sender key from the parsed From
+  only; markFailed returns flags; contact scan keeps its window; backup tables appended; pull to
+  refresh dropped (gesture conflict on iOS), Refresh stays an icon; Trash folder row on phones.
