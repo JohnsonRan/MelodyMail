@@ -113,14 +113,20 @@ is chosen for that message, and attachments are always downloaded, never opened 
 the dark theme, "Dark reading" in the reader shows one HTML message inverted; it is off for every
 message you open.
 
-The language and theme buttons in the app bar open menus of their choices. The theme button's
+The language and theme buttons open menus of their choices: in the app bar, and on a phone at the
+end of the navigation drawer. The theme button's
 icon shows the current mode: system, light or dark.
 
 On a phone (narrower than 768 px):
 
 - the reader shows Back, Reply, Archive and Move to Trash as icons, and the other actions,
   Dark reading included, under "More actions";
-- the list shows Archive and Move to Trash, with star and read state under "More actions";
+- the list title row holds Refresh and Select, and Compose floats at the bottom right; the
+  actions on selected messages (Archive and Move to Trash, with star and read state under "More
+  actions") show in selection mode, which Select or a long press on a row starts and Done ends;
+- with a finger, a row swipes right to Archive (Move to Inbox in Archive, Restore in Trash) and
+  left to Move to Trash; Trash has no left swipe;
+- Trash shows its 30-day note above the list;
 - Settings opens a list of its sections; wider screens open Domains.
 
 Compose opened as a page (narrower than 1280 px) keeps Close and Send in its title row, so both
