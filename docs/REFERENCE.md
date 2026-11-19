@@ -411,5 +411,6 @@ bun run test:browser
 ```
 
 The compose and Markdown suites run apart with `bun run test:send`, the PWA suite with
-`bun run test:pwa`, the settings suites with `bun run test:settings`, the mailbox folder suites
-with `bun run test:folders`.
+`bun run test:pwa`, the settings suites with `bun run test:settings`, the mailbox folder suites and the
+phone gesture suite (`web/test/gestures.test.ts`: long press, vertical drag, swipe actions) with
+`bun run test:folders`.

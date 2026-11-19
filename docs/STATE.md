@@ -4802,3 +4802,25 @@ Numbers after these changes: `bun run check` 17.3 and 17.6 s, passed (CPU load n
 these two; a first run at 40% load took 20.8 s); `bun run test:browser` (90 tests) 58.9, 58.7
 and 56.6 s including the web build, CPU load 22%, 20%, 20%, still over its 42 s limit (not
 changed here); `bun run test:folders` (26 tests) 38.4, 38.6, 39.5 and 39.5 s, CPU load 16% to 20%.
+
+### Owner ruling 7 (2026-11-19) and its work
+
+Ruling: the M8 phone gesture tests move out of `bun run test:browser` into the scheduled folders
+tier (`bun run test:folders`, `.github/workflows/folders.yml`), so the browser tier is back under
+its 42 s limit. Measured before the move: `web/test/mobile.test.ts` alone took 28 s (28 tests),
+about 4.5 to 7 s before M8.
+
+Done: ten tests moved from `web/test/mobile.test.ts` to the new `web/test/gestures.test.ts`
+(behaviour unchanged): the long press and vertical drag tests (2) and the whole "phone swipe"
+group (8: swipe right and left, spring back, list held mid-swipe, swipe colours, reduced motion,
+Archive and Trash, Spam). The shared viewport, sample mail and touch helpers are in
+`web/test/phone.ts`. The title row, Compose, selection with Select, drawer, folder row, header
+row and page background tests stay in `mobile.test.ts` (18 tests).
+
+Tests before and after: `test:browser` 90, now 80; `test:folders` 26, now 36; 116 in all, 116
+before.
+
+Numbers (2026-11-19, dev workstation, Ryzen 9 9950X3D, CPU load sampled every 2 s):
+`bun run test:browser` 37.4, 36.4 and 37.4 s including the web build, load about 4% (0 to 7%),
+under 42 s; `bun run test:folders` 52.4, 51.4 and 52.6 s, load about 3% (0 to 14%). The folders
+limit is now 64 s: the slowest of 3 runs (52.6 s) plus 20%, rounded up (48 s before).

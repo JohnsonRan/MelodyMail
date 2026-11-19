@@ -1,10 +1,11 @@
 name: folders
 
-# The mailbox folder suites (Playwright driven by bun test): Spam, Report spam and Not spam,
-# Delete forever and Empty with their loops, select all matching, and the `filed` event. Split
-# from the browser suite by owner ruling 1 of the M8 rulings (2026-11-19) once that tier went over
-# its 42 s limit. It runs every night on main, by hand, and on pull requests that touch web/, as
-# the browser suite does.
+# The mailbox folder suites and the phone gesture suite (Playwright driven by bun test): Spam,
+# Report spam and Not spam, Delete forever and Empty with their loops, select all matching, the
+# `filed` event, and the phone long press, vertical drag and swipe actions. The folder suites were
+# split from the browser suite by owner ruling 1 of the M8 rulings (2026-11-19) and the gesture
+# suite by ruling 7, once that tier went over its 42 s limit. It runs every night on main, by hand,
+# and on pull requests that touch web/, as the browser suite does.
 on:
   pull_request:
     paths:

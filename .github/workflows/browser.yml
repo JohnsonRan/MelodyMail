@@ -1,7 +1,7 @@
 name: browser
 
 # The browser suite (Playwright driven by bun test): the sender-HTML rendering security corpus
-# and the mailbox end to end (the PWA suite runs in pwa.yml, the sending suites in send.yml, the folder suites in folders.yml). It takes about 21 s, too long for the 12 s merge gate, so it runs
+# and the mailbox end to end (the PWA suite runs in pwa.yml, the sending suites in send.yml, the folder suites and the phone gesture suite in folders.yml). It takes about 21 s, too long for the 12 s merge gate, so it runs
 # as its own job: on pull requests that touch web/, because it guards a High-risk path, and every
 # night on main, which covers merges that skipped it.
 on:
