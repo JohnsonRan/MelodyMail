@@ -4,12 +4,14 @@
  *
  * fetch <exportId> <dir> <where>
  *   Downloads the manifest and every part with `wrangler r2 object get`, checks each part's size,
- *   MD5 and sequence against the manifest, and writes <dir>/restore.sql: the parts in order with
- *   foreign keys deferred, then the removal of rows whose parent the export lacks (an export is
- *   not one snapshot), then the seq counter moved past the restored rows. Apply it with `wrangler d1 execute <db> --file <dir>/restore.sql`.
+ *   MD5 and sequence against the manifest and that every part of a table names the same columns,
+ *   and writes <dir>/restore.sql: the parts in order with foreign keys deferred, then the removal
+ *   of rows whose parent the export lacks (an export is not one snapshot), then the seq counter
+ *   moved past the restored rows. Apply it with `wrangler d1 execute <db> --file <dir>/restore.sql`.
  * verify <dir> <database> <where> [--r2 <where>]
  *   Compares each table's row count with the manifest, requires PRAGMA foreign_key_check to be
- *   empty and, with --r2, finds 20 sampled r2_key objects in the bucket.
+ *   empty and every messages.seq to be held by one row and, with --r2, finds 20 sampled r2_key
+ *   objects in the bucket.
  *
  * <where> is --remote, or --local with an optional --persist-to <path> (`--r2-persist-to` for the
  * bucket in verify). --config <file> passes a wrangler config (the production one for --remote).
@@ -33,6 +35,9 @@ export const DANGLING = [
   "DELETE FROM rule_forwards WHERE rule_id NOT IN (SELECT id FROM rules) OR target_id NOT IN (SELECT id FROM forward_targets);",
   "DELETE FROM telegram_cards WHERE message_id NOT IN (SELECT id FROM messages);",
 ];
+/** seq values held by more than one message; the counter moves past MAX(seq) only. */
+const SEQ_DUPLICATES =
+  "SELECT seq, COUNT(*) AS n FROM messages WHERE seq IS NOT NULL GROUP BY seq HAVING COUNT(*) > 1 ORDER BY seq LIMIT 5";
 /** Tables the clean-up may shrink; a lower count there is reported, not failed. */
 const CLEANED = ["addresses", "address_forwards", "rule_forwards", "telegram_cards"];
 
@@ -69,10 +74,22 @@ function wrangler(args: string[], config: string | undefined): string {
   return run.stdout.toString();
 }
 
-/** Problems with the downloaded parts: missing, wrong size or MD5, a gap in a sequence. */
+/** The distinct INSERT column lists of a part's text. */
+function insertColumns(table: string, text: string): Set<string> {
+  const head = new RegExp(`^INSERT INTO "${table}" \\(([^)]*)\\) VALUES \\(`, "gm");
+  return new Set([...text.matchAll(head)].map((m) => m[1] ?? ""));
+}
+
+/**
+ * Problems with the downloaded parts: missing, wrong size or MD5, a gap in a sequence, or parts of
+ * one table with different columns. The last happens when an export spans a deploy or a rollback
+ * across a migration (M8 to M7): restoring it would lose the newer columns of the later rows and
+ * let the seq trigger number rows with a seq that an earlier part's row already holds.
+ */
 export function partProblems(manifest: Manifest, dir: string): string[] {
   const problems: string[] = [];
   for (const table of manifest.tables) {
+    const columns = new Map<string, string>();
     table.parts.forEach((part, seq) => {
       const expected = `part-${table.name}-${String(seq).padStart(5, "0")}.sql`;
       if (basename(part.key) !== expected) problems.push(`${part.key}: expected ${expected}`);
@@ -85,7 +102,16 @@ export function partProblems(manifest: Manifest, dir: string): string[] {
       if (bytes.byteLength !== part.bytes) problems.push(`${part.key}: ${bytes.byteLength} bytes`);
       const md5 = createHash("md5").update(bytes).digest("hex");
       if (md5 !== part.md5) problems.push(`${part.key}: MD5 differs`);
+      for (const list of insertColumns(table.name, bytes.toString("utf8"))) {
+        if (!columns.has(list)) columns.set(list, basename(part.key));
+      }
     });
+    if (columns.size > 1) {
+      const seen = [...columns].map(([list, file]) => `${file}: ${list.split(",").length}`);
+      problems.push(
+        `${table.name}: the parts have different columns (${seen.join(", ")}); the export was written by two versions of the Worker, restore another export`,
+      );
+    }
   }
   return problems;
 }
@@ -144,29 +170,48 @@ function query<T>(database: string, sql: string, argv: string[]): T[] {
   return (JSON.parse(out) as { results: T[] }[])[0]?.results ?? [];
 }
 
-function verify(argv: string[]): void {
-  const [dir, database] = argv;
-  if (!dir || !database) throw new Stop("usage: verify <dir> <database> <where>", 2);
-  const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")) as Manifest;
+/** Runs one statement on the restored database and returns its rows. */
+export type Query = <T>(sql: string) => T[];
+
+/**
+ * The checks of verify that read the restored database: each table's row count against the
+ * manifest, PRAGMA foreign_key_check and seq uniqueness. Notes are reported; problems fail the
+ * restore.
+ */
+export function databaseProblems(
+  manifest: Manifest,
+  run: Query,
+): { problems: string[]; notes: string[] } {
   const counts = manifest.tables.map((t) => `'${t.name}', (SELECT COUNT(*) FROM "${t.name}")`);
-  const [row] = query<{ c: string }>(
-    database,
-    `SELECT json_object(${counts.join(", ")}) AS c`,
-    argv,
-  );
+  const [row] = run<{ c: string }>(`SELECT json_object(${counts.join(", ")}) AS c`);
   const restored = JSON.parse(row?.c ?? "{}") as Record<string, number>;
   const problems: string[] = [];
+  const notes: string[] = [];
   for (const t of manifest.tables) {
     const n = restored[t.name];
     if (n === t.rows) continue;
     if (n !== undefined && n < t.rows && CLEANED.includes(t.name)) {
-      console.log(`${t.name}: ${t.rows - n} row(s) without a parent removed`);
+      notes.push(`${t.name}: ${t.rows - n} row(s) without a parent removed`);
     } else {
       problems.push(`${t.name}: ${n} rows, manifest ${t.rows}`);
     }
   }
-  const fk = query(database, "PRAGMA foreign_key_check", argv);
+  const fk = run("PRAGMA foreign_key_check");
   if (fk.length > 0) problems.push(`foreign_key_check: ${fk.length} row(s)`);
+  for (const { seq, n } of run<{ seq: number; n: number }>(SEQ_DUPLICATES)) {
+    problems.push(
+      `messages: seq ${seq} is held by ${n} rows; the counter would hand out a seq that a row already has`,
+    );
+  }
+  return { problems, notes };
+}
+
+function verify(argv: string[]): void {
+  const [dir, database] = argv;
+  if (!dir || !database) throw new Stop("usage: verify <dir> <database> <where>", 2);
+  const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")) as Manifest;
+  const { problems, notes } = databaseProblems(manifest, (sql) => query(database, sql, argv));
+  for (const note of notes) console.log(note);
   if (argv.includes("--r2-local") || argv.includes("--r2-remote")) {
     const keys = query<{ key: string }>(
       database,
@@ -185,7 +230,7 @@ function verify(argv: string[]): void {
     }
   }
   if (problems.length > 0) throw new Stop(problems.join("\n"), 1);
-  console.log(`${manifest.exportId}: counts match, no foreign key problem`);
+  console.log(`${manifest.exportId}: counts match, no foreign key problem, no duplicate seq`);
 }
 
 if (import.meta.main) {

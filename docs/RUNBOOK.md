@@ -320,7 +320,31 @@ Spam then shows in the Inbox or Archive as ordinary mail, mail from reported sen
 filed, and that code's flag changes follow its own rules. Nothing is lost. Folder lists sort more
 slowly, because 0016 added `spam` to the folder indexes. Once M8 code runs again, every flag
 combination falls in one folder: a message with both `trashed` and `spam` shows in Trash and
-expires on Trash's clock. No clean-up step is needed.
+expires on Trash's clock. Mail needs no clean-up step; a running export does.
+
+An export that M8 code started writes `messages` parts with `seq`, `spam`, `spam_at` and
+`from_key`. M7 code does not know that the columns changed, so its cron would continue the export
+without them, and the restore tool refuses the mixed export. Stop the running export before the
+M7 Worker's cron runs. The cron runs every 15 minutes, at minutes 00, 15, 30 and 45 (UTC):
+
+1. Right after one of those minutes, roll back (`bun run wrangler rollback`, above).
+2. At once, mark every running export failed:
+
+   ```sh
+   bun run wrangler d1 execute melodymail --remote --config .wrangler-production.jsonc --command "UPDATE backup_exports SET status = 'failed', error = 'rolled_back', finished_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000 WHERE status = 'running'"
+   ```
+
+3. Check that no row is running:
+
+   ```sh
+   bun run wrangler d1 execute melodymail --remote --config .wrangler-production.jsonc --command "SELECT id, status, error FROM backup_exports WHERE status = 'running'"
+   ```
+
+Run step 2 after the rollback, not before: the M8 cron would start a new export in place of one
+from an earlier day. A failed export of the current day counts as that day's, so when the stopped
+export started that day, the next one starts on the following day at 03:00 UTC. Incomplete
+exports are pruned after 2 days. If the M7 cron ran between steps 1 and 2, that export is mixed:
+`bun run backup-restore fetch` refuses it, so restore from another export.
 
 ## Backups
 
@@ -393,7 +417,9 @@ passed, 1 a check failed, 2 could not run.
 bun run backup-restore fetch 2026-11-18T0300Z ~/melodymail-restore --remote --config .wrangler-production.jsonc
 ```
 
-   It checks every part's size, MD5 and sequence against the manifest. It writes
+   It checks every part's size, MD5 and sequence against the manifest, and that all parts of a
+   table name the same columns: an export continued across a deploy or a rollback that changed
+   them is refused (exit 1); take an older export. It writes
    `~/melodymail-restore/restore.sql`: the parts in order with foreign keys deferred, then the
    removal of rows whose parent the export lacks, then the message sequence counter moved past
    every restored message (M8).
@@ -435,8 +461,8 @@ bun run migrate:prod
 bun run wrangler d1 execute melodymail --remote --file ~/melodymail-restore/restore.sql --config .wrangler-production.jsonc
 ```
 
-6. Verify the import: row counts against the manifest, an empty `PRAGMA foreign_key_check`, and 20
-   sampled raw objects present in R2.
+6. Verify the import: row counts against the manifest, an empty `PRAGMA foreign_key_check`, no
+   message sequence number held by two messages, and 20 sampled raw objects present in R2.
 
 ```sh
 bun run backup-restore verify ~/melodymail-restore melodymail --remote --r2-remote --config .wrangler-production.jsonc
@@ -498,7 +524,7 @@ access to the Cloudflare, Resend and domain registrar accounts, and the off-acco
 
 | Check | Expected |
 | --- | --- |
-| `bun run backup-restore verify ...` (export restores only) | exit 0: counts match, no foreign key problem |
+| `bun run backup-restore verify ...` (export restores only) | exit 0: counts match, no foreign key problem, no duplicate seq |
 | Sign in, open the Inbox | the newest message from before the restore point is there |
 | Search for a word from a message body | the message is found |
 | Open a message | it renders, so its raw object is reachable |
