@@ -4768,3 +4768,12 @@ CPU load is the mean of samples about every 3 s during each run. Limits are not 
 - A count in Trash now leaves out rows without a clock (from before migration 0015) until the
   cron stamps them; the "select all N" offer in Trash shows that count too, while a folder-form
   PATCH still acts on those rows.
+
+### Owner rulings 6 (2026-11-19, after the screenshots)
+
+1. `web/test/folders.test.ts` moves to its own scheduled tier, like send and PWA; the main
+   browser tier keeps its 42 s limit (idle run with it: 72.2 to 78.2 s at 6 to 11% load).
+2. Swipe colours: archive green, delete red (the iOS convention), instead of the theme accent.
+3. Report spam stays out of Trash.
+4. Merge gate (18 s) and worker suite (16 s) limits stay: idle runs were 15.0 to 15.7 s and
+   14.0 to 14.7 s; the earlier overruns were on a loaded host.
