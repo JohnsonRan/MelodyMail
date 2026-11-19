@@ -18,7 +18,7 @@ import {
   SPLIT_BYTES,
   splitQuery,
 } from "./sql";
-import { EXPORTED, type ExportTable } from "./tables";
+import { EXPORT_COLUMNS, EXPORTED, type ExportTable } from "./tables";
 
 // The daily D1 export to R2 (docs/M7-ops.md, "Backups"), the last step of every cron run. Each
 // run writes pages until its byte or call budget is spent and keeps its cursor in
@@ -52,6 +52,8 @@ type Latest = {
   lastRowid: number;
   partSeq: number;
   startedAt: number;
+  error: string | null;
+  columns: string | null;
   lastComplete: number | null;
   firstStarted: number;
   pruneId: string | null;
@@ -71,7 +73,7 @@ async function readLatest(db: D1Database): Promise<Latest | null | "no_table"> {
     return await db
       .prepare(
         `SELECT id, status, table_index AS tableIndex, last_rowid AS lastRowid,
-           part_seq AS partSeq, started_at AS startedAt,
+           part_seq AS partSeq, started_at AS startedAt, error, columns,
            (SELECT MAX(started_at) FROM backup_exports WHERE status = 'complete') AS lastComplete,
            (SELECT MIN(started_at) FROM backup_exports) AS firstStarted,
            (SELECT CASE WHEN pruned_at IS NULL THEN id END FROM backup_exports
@@ -197,6 +199,17 @@ async function finish(env: Env, id: string, now: number): Promise<void> {
  * parts do not pile up while exports keep failing; the next run starts a new one.
  */
 async function cursorFor(env: Env, latest: Latest | null, now: number): Promise<Cursor | null> {
+  if (latest?.status === "running" && latest.columns !== EXPORT_COLUMNS) {
+    // Started by code with other column lists, or by code from before migration 0016. The next
+    // run starts the new export, in a later minute, so its id differs from this one's.
+    await env.DB.prepare(
+      "UPDATE backup_exports SET status = 'failed', error = 'columns_changed', finished_at = ? WHERE id = ?",
+    )
+      .bind(now, latest.id)
+      .run();
+    log("warn", "backup_export_restarted", { exportId: latest.id });
+    return null;
+  }
   if (latest?.status === "running") {
     if (latest.startedAt > now - RUNNING_MAX_MS) return { ...latest };
     await env.DB.prepare(
@@ -207,14 +220,15 @@ async function cursorFor(env: Env, latest: Latest | null, now: number): Promise<
     log("error", "backup_export_failed", { exportId: latest.id, error: "timeout" });
     await pruneExports(env, now, null);
     return null;
-  } else if (latest && latest.startedAt >= dayStart(now)) {
+  } else if (latest && latest.error !== "columns_changed" && latest.startedAt >= dayStart(now)) {
+    // A discarded export is not the day's export.
     return null;
   }
   const id = exportIdOf(now);
   await env.DB.prepare(
-    "INSERT INTO backup_exports (id, status, started_at) VALUES (?, 'running', ?) ON CONFLICT DO NOTHING",
+    "INSERT INTO backup_exports (id, status, started_at, columns) VALUES (?, 'running', ?, ?) ON CONFLICT DO NOTHING",
   )
-    .bind(id, now)
+    .bind(id, now, EXPORT_COLUMNS)
     .run();
   log("info", "backup_export_started", { exportId: id });
   return { id, tableIndex: 0, lastRowid: 0, partSeq: 0 };

@@ -31,6 +31,7 @@ type RuleRow = {
   star: number;
   archive: number;
   trash: number;
+  spam: number;
   stop: number;
   targetIds: string;
   createdAt: number;
@@ -38,7 +39,7 @@ type RuleRow = {
 };
 
 const SELECT_RULES = `SELECT id, name, enabled, position, match, conditions, mark_read AS markRead,
-  star, archive, trash, stop, created_at AS createdAt, updated_at AS updatedAt,
+  star, archive, trash, spam, stop, created_at AS createdAt, updated_at AS updatedAt,
   (SELECT json_group_array(target_id) FROM rule_forwards f WHERE f.rule_id = rules.id) AS targetIds
   FROM rules`;
 
@@ -50,6 +51,7 @@ const toRule = (r: RuleRow) => ({
   star: r.star === 1,
   archive: r.archive === 1,
   trash: r.trash === 1,
+  spam: r.spam === 1,
   stop: r.stop === 1,
   targetIds: (JSON.parse(r.targetIds) as number[]).sort((x, y) => x - y),
 });
@@ -66,6 +68,7 @@ function columns(r: RuleInput) {
     bit(r.star),
     bit(r.archive),
     bit(r.trash),
+    bit(r.spam),
     bit(r.stop),
   ];
 }
@@ -127,8 +130,8 @@ export function registerRuleRoutes(rules: Hono<AppEnv>): void {
       db
         .prepare(
           `INSERT INTO rules (name, enabled, match, conditions, mark_read, star, archive, trash,
-             stop, position, created_at, updated_at)
-           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(top, 0) + 1, ?, ?
+             spam, stop, position, created_at, updated_at)
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(top, 0) + 1, ?, ?
              FROM (SELECT COUNT(*) AS n, MAX(position) AS top FROM rules) WHERE n < ?
            RETURNING id`,
         )
@@ -225,6 +228,7 @@ export function registerRuleRoutes(rules: Hono<AppEnv>): void {
       star: decision.starred,
       archive: decision.archived,
       trash: decision.trashed,
+      spam: decision.spam,
       stop: matched && rule.stop,
       targets: decision.targets,
     });
@@ -245,7 +249,7 @@ export function registerRuleRoutes(rules: Hono<AppEnv>): void {
       db
         .prepare(
           `UPDATE rules SET name = ?, enabled = ?, match = ?, conditions = ?, mark_read = ?,
-             star = ?, archive = ?, trash = ?, stop = ?, updated_at = ? WHERE id = ?`,
+             star = ?, archive = ?, trash = ?, spam = ?, stop = ?, updated_at = ? WHERE id = ?`,
         )
         .bind(...columns(rule.value), now, id),
       db.prepare("DELETE FROM rule_forwards WHERE rule_id = ?").bind(id),

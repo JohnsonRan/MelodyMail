@@ -11,6 +11,11 @@ export type Seed = {
   starred?: boolean;
   archived?: boolean;
   trashed?: boolean;
+  trashedAt?: number | null;
+  spam?: boolean;
+  spamAt?: number | null;
+  fromKey?: string | null;
+  direction?: "in" | "out";
   status?: "stored" | "parsed" | "parse_failed";
   threadKey?: string | null;
   subject?: string | null;
@@ -31,13 +36,14 @@ export async function seedMessage(seed: Seed): Promise<void> {
   await env.DB.prepare(
     `INSERT INTO messages (id, address_id, direction, status, envelope_from, envelope_to,
        thread_key, subject, from_hdr, to_hdr, snippet, raw_size, r2_key, read, starred, archived,
-       trashed, received_at)
-     VALUES (?, ?, 'in', ?, 'env@example.org', 'shop@example.com', ?, ?, ?, 'shop@example.com', ?,
-       ?, ?, ?, ?, ?, ?, ?)`,
+       trashed, trashed_at, spam, spam_at, from_key, received_at)
+     VALUES (?, ?, ?, ?, 'env@example.org', 'shop@example.com', ?, ?, ?, 'shop@example.com', ?,
+       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       seed.id,
       seed.addressId ?? 1,
+      seed.direction ?? "in",
       seed.status ?? "parsed",
       seed.threadKey ?? null,
       seed.subject ?? null,
@@ -49,6 +55,10 @@ export async function seedMessage(seed: Seed): Promise<void> {
       seed.starred ? 1 : 0,
       seed.archived ? 1 : 0,
       seed.trashed ? 1 : 0,
+      seed.trashedAt ?? (seed.trashed ? Date.now() : null),
+      seed.spam ? 1 : 0,
+      seed.spamAt ?? (seed.spam ? Date.now() : null),
+      seed.fromKey ?? null,
       seed.receivedAt ?? Date.now(),
     )
     .run();

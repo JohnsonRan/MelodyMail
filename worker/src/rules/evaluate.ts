@@ -17,6 +17,7 @@ export type Actions = {
   star: boolean;
   archive: boolean;
   trash: boolean;
+  spam: boolean;
   stop: boolean;
 };
 
@@ -42,6 +43,7 @@ export type Decision = {
   starred: boolean;
   archived: boolean;
   trashed: boolean;
+  spam: boolean;
 };
 
 /** Each header value is cut to this before decoding, as ADDRESS_LIST_MAX in mail/parse.ts. */
@@ -171,13 +173,14 @@ export function ruleMatches(rule: Rule, reader: FieldReader): boolean {
 
 /**
  * Runs the enabled rules in order. Every matching rule adds its actions; a matching rule with
- * `stop` ends the evaluation. Trash wins over archive: a rule-trashed message is not also archived,
- * so restoring it from Trash brings it back to the Inbox.
+ * `stop` ends the evaluation. Trash beats Spam and Spam beats Archive (docs/M8-mailbox-ux.md,
+ * decision 6): a rule-trashed message is neither in Spam nor archived, so restoring it from Trash
+ * brings it back to the Inbox.
  */
 export function evaluateRules(rules: Rule[], source: MailSource): Decision {
   const reader = new FieldReader(source);
   const targets = new Set<string>();
-  const d = { read: false, starred: false, archived: false, trashed: false };
+  const d = { read: false, starred: false, archived: false, trashed: false, spam: false };
   for (const rule of rules) {
     if (!ruleMatches(rule, reader)) continue;
     for (const t of rule.targets) targets.add(t);
@@ -185,9 +188,11 @@ export function evaluateRules(rules: Rule[], source: MailSource): Decision {
     d.starred ||= rule.star;
     d.archived ||= rule.archive;
     d.trashed ||= rule.trash;
+    d.spam ||= rule.spam;
     if (rule.stop) break;
   }
-  return { ...d, archived: d.archived && !d.trashed, targets: [...targets] };
+  const spam = d.spam && !d.trashed;
+  return { ...d, spam, archived: d.archived && !d.trashed && !spam, targets: [...targets] };
 }
 
 /** One stored rule as loadRules reads it; `conditions` and `targets` are JSON text. */
@@ -198,6 +203,7 @@ export type RuleRow = {
   star: number;
   archive: number;
   trash: number;
+  spam: number;
   stop: number;
   targets: string;
 };
@@ -210,6 +216,7 @@ export function toRule(row: RuleRow): Rule {
     star: row.star === 1,
     archive: row.archive === 1,
     trash: row.trash === 1,
+    spam: row.spam === 1,
     stop: row.stop === 1,
     targets: JSON.parse(row.targets) as string[],
   };
@@ -219,7 +226,7 @@ export function toRule(row: RuleRow): Rule {
 export async function loadRules(db: D1Database): Promise<Rule[]> {
   const { results } = await db
     .prepare(
-      `SELECT r.match, r.conditions, r.mark_read, r.star, r.archive, r.trash, r.stop,
+      `SELECT r.match, r.conditions, r.mark_read, r.star, r.archive, r.trash, r.spam, r.stop,
          (SELECT json_group_array(email) FROM (
             SELECT t.email FROM rule_forwards f JOIN forward_targets t ON t.id = f.target_id
              WHERE f.rule_id = r.id ORDER BY t.id)) AS targets

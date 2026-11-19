@@ -1,0 +1,9 @@
+/*
+ * The page itself carries the theme's body colour. The app shell is 100dvh tall; below it (the
+ * home-indicator area of an iPhone with viewport-fit=cover) the page showed the browser's default
+ * canvas, a black band in dark mode.
+ */
+html,
+body {
+  background: var(--color-background-body);
+}

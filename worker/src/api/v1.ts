@@ -1,15 +1,16 @@
 import type { Context, Hono } from "hono";
 import type { AppEnv } from "../env";
 import { fail, readJson } from "../http";
+import { parseFlags, updateMessageFlags, V1_FLAGS } from "../mail/flags";
 import { notifyHub } from "../mail/hub";
 import {
+  BULK_MAX,
   getMessage,
   getRaw,
   getThread,
   listMessages,
-  patchMessage,
-  patchMessages,
   searchMessages,
+  validId,
 } from "../mail/routes";
 import { apiRoute } from "../routing";
 import { sendMessage } from "../send/send";
@@ -71,23 +72,49 @@ async function send(c: Ctx) {
 }
 
 /**
- * A script's flag change tells open pages to refresh, as a Telegram button does; the session
- * routes are unchanged. One event per request: pages refresh whole lists on any "changed", and a
- * bulk change of 100 ids must not cost 100 Durable Object calls.
+ * Fields the session PATCH accepts and a key may not use: a key cannot change Spam or move a whole
+ * folder (docs/M8-mailbox-ux.md, decision 5).
+ */
+const SESSION_ONLY = ["spam", "folder", "address", "watermark", "after"];
+
+/** The four flags of a v1 PATCH body; null for a session-only field or a bad value. */
+function v1Flags(body: Record<string, unknown> | null) {
+  if (!body || SESSION_ONLY.some((key) => body[key] !== undefined)) return null;
+  return parseFlags(body, V1_FLAGS);
+}
+
+/**
+ * A Spam row is never changed through a key (`spam = 0`), so an archive or a move to Trash cannot
+ * pull it out of Spam and stop its clock; it counts as not found.
+ */
+const NOT_SPAM = { only: "spam = 0" };
+
+/**
+ * A script's flag change tells open pages to refresh, as a Telegram button does. One event per
+ * request: pages refresh whole lists on any "changed", and a bulk change of 100 ids must not cost
+ * 100 Durable Object calls.
  */
 async function patchOne(c: Context<AppEnv, "/:id">) {
-  const res = await patchMessage(c);
-  if (res.ok) await notifyHub(c.env, { type: "changed", id: c.req.param("id") });
-  return res;
+  const flags = v1Flags(await readJson(c));
+  if (!flags) return fail(c, 400, "bad_request");
+  const id = c.req.param("id");
+  const result = await updateMessageFlags(c.env, [id], flags, NOT_SPAM);
+  if (result.meta.changes === 0) return fail(c, 404, "not_found");
+  await notifyHub(c.env, { type: "changed", id });
+  return c.json({ ok: true });
 }
 
 async function patchMany(c: Ctx) {
-  const res = await patchMessages(c);
-  const ids = (await readJson(c))?.ids;
-  if (res.ok && Array.isArray(ids) && typeof ids[0] === "string") {
-    await notifyHub(c.env, { type: "changed", id: ids[0] });
+  const body = await readJson(c);
+  const flags = v1Flags(body);
+  const ids = body?.ids;
+  if (!flags || !Array.isArray(ids) || ids.length === 0 || !ids.every(validId)) {
+    return fail(c, 400, "bad_request");
   }
-  return res;
+  if (ids.length > BULK_MAX) return fail(c, 400, "too_many_ids");
+  const result = await updateMessageFlags(c.env, ids, flags, NOT_SPAM);
+  await notifyHub(c.env, { type: "changed", id: ids[0] as string });
+  return c.json({ updated: result.meta.changes });
 }
 
 /** Every address with whether its domain may send; a key picks `from` here. */

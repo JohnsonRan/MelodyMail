@@ -22,6 +22,7 @@ export class RulesStub {
     star: false,
     archive: true,
     trash: false,
+    spam: false,
     stop: false,
     targets: [],
   };

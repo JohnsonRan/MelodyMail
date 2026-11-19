@@ -4265,3 +4265,591 @@ remember recipients.
 | Sign-in pages and desktop app bar have no own test for the icon menus | review 3 (Low) | same shared component as the tested phone app bar |
 | Truncated receiving address in the drawer has no touch reveal | phone audit | existed before |
 | CPU over 10 ms on three routes in one tail sample | checklist 8 | one sample; watch more logs first |
+
+## M8: mailbox behaviour of a mail client (owner request 2026-11-19, branch `mailbox-ux`)
+
+Design: `docs/M8-mailbox-ux.md` (High: permanent bulk delete, migration 0016, inbound filing).
+The owner reported that Trash has no bulk or full delete and the app "does not feel like mail",
+and chose four items: bulk delete and Empty Trash, select all matching, phone swipe actions, Spam.
+
+### Owner rulings (2026-11-19)
+
+1. Bulk delete and Empty Trash as planned, both behind a confirmation.
+2. Spam filing: Report spam remembers the sender; later mail from that address is filed as spam;
+   Not spam forgets it; rules gain "Move to Spam". No content scoring.
+3. Swipe: right archives (Move to Inbox, Restore, Not spam in those folders), left trashes;
+   in Trash and Spam left does nothing.
+4. Select all matching covers folders only, not search results.
+
+### Progress
+
+- Plan written; cross-family plan review running (`cliproxyapi/gpt-6.2-sol`).
+- Plan review 1 (`cliproxyapi/gpt-6.2-sol`): FIX FIRST, six Mediums, one Low, a performance note.
+  All folded into the plan; sender learning kept under ruling 2 with a Spam senders list.
+- Owner rulings 5 (2026-11-19, iPhone 17 Pro screenshot): fix the bottom black band; phone
+  Compose as a floating button and pull to refresh; phone bulk bar only in selection mode; phone
+  language and theme move to the drawer (supersedes the post-launch app-bar placement on phones).
+- Plan review 2: FIX FIRST, eight Mediums, one Low; all folded in. Changes: an insertion sequence
+  `seq` (counter table and trigger) replaces rowid; folder PATCH continues by `seq`; audit and
+  `remaining` in the delete batch; v1 cannot change Spam rows; sender key from the parsed From
+  only; markFailed returns flags; contact scan keeps its window; backup tables appended; pull to
+  refresh dropped (gesture conflict on iOS), Refresh stays an icon; Trash folder row on phones.
+- Plan review 3: FIX FIRST, five Mediums, one Low; all folded in. Changes: trigger skips an
+  explicit `seq`, restore resets the counter, an export restarts if columns change mid-run;
+  sender key stored as `from_key` from the structured parse, learned in the same batch only for
+  inbound rows that entered Spam; purge returns `hasMore` from an EXISTS probe; list fetches
+  pause during loops; v1 PATCH keeps its own ids-only schema; OpenAPI gains `spam`.
+- Plan review 4: FIX FIRST, six Mediums. Fixed: sender learning and forgetting read rows before
+  the UPDATE in the same batch (only real transitions count); Spam folder test is
+  `spam = 1 AND trashed = 0`, rollback to M7 documented; a `changed` event re-checks a listed
+  row; sparse-address read budget measured. Closed without code: an M7-finished export after
+  0016 restores (named-column INSERTs, trigger numbers the rows). Accepted: a confirm dialog open
+  across a Time Travel restore (runbook says close tabs first).
+- Plan review 5: FIX FIRST, five Mediums; all fixed. Purge also requires the folder clock at or
+  before the dialog's `asOf`; Trash's folder test has no Spam filter; `counters` is not exported
+  and restore recomputes it; the sender INSERT names both columns; a `changed` event discards
+  in-flight list pages and refreshes the open reader.
+- Plan review 6: FIX FIRST, four Mediums. Fixed: purge body carries `asOf` with a strict
+  cutoff; whole-folder spam action labelled Move to Spam; consumer filing gets its own Hub event
+  `filed`, `changed` keeps its refresh. Accepted: a same-millisecond `asOf` tie; whole-folder
+  flag changes act on live membership below the watermark (reversible, as in Gmail).
+- Plan review stopped after six rounds; residual items accepted with reasons. Waiting for the
+  owner's approval of `docs/M8-mailbox-ux.md` before coding.
+
+### Build (owner approved the plan 2026-11-19)
+
+| Phase | Scope | Agent | Status |
+| --- | --- | --- | --- |
+| A | worker: migration 0016, seq, transitions, routes, v1, consumer, cron, contacts, backup, measurements | claude-opus-5-5 | done (see "Phase A" below) |
+| C | web: phone layout (section 5) and swipe (section 3), worktree | claude-sonnet-5-5 (served, read from the run record) | done, merged |
+| B | web: Spam, Delete forever, Empty, select all, filed event, reader refresh, i18n | claude-opus-5-5 | done (see "Phase B" below) |
+| R | cross-family code review, ablation check, owner screenshots | after B and C | waiting |
+
+### Phase A progress (worker, branch `mailbox-ux`)
+
+- Migration 0016 done (`891aae2`): seq, counters, trigger, backfill, spam, spam_at, from_key,
+  spam_senders, rules.spam, backup_exports.columns; tested on a database holding rows
+  (`worker/test/migration-0016.spec.ts`).
+- Measurement done before the routes (`worker/bench/folders.d1.ts`, `bun run bench:folders`,
+  local D1 in workerd). The first pass found, on the plan's statements and the M7 indexes:
+  - every statement of the delete batch walked the whole folder through
+    `messages_folder_received` instead of the primary key (dense Trash: up to 25,403 rows read
+    per purge call, 657,649 for a complete Empty of 5,000);
+  - purge candidates and the hasMore probe sorted the folder instead of reading the clock index;
+  - address-scoped calls read the whole folder for an address with one row or none (folder
+    PATCH 4,009 rows, purge 6,410);
+  - the skewed Inbox list page read 2,058 rows (it walked the 2,000 newest Spam rows);
+  - unread counts moved onto the new folder index (6,340 rows instead of 4,175).
+  Fixes, all in 0016 or the statements: spam added to `messages_folder_received`,
+  `messages_starred_received` and `messages_unread`; partial indexes
+  `messages_address_trashed_at` and `messages_address_spam_at`; candidates and probe name the
+  clock index (`INDEXED BY`); the delete statements keep the folder test behind a unary plus so
+  the planner stays on the primary key; an address-scoped folder PATCH names
+  `messages_address_received`; a purge with nothing left writes nothing. After the fixes every
+  call is within the budget (numbers in `REQUIREMENTS.md`); no table scan of `messages`.
+  The FTS delete (`message_id` UNINDEXED, M4) still reads every search row per call: 5,300 rows
+  per purge call on 5,000 messages, 142,500 for a complete Empty. Deferred (see Deferred below).
+- Routes done (`19891ac`): transition policy, Report spam / Not spam, folders and counts, bulk
+  delete, purge, count route, folder-form PATCH, Spam senders routes, v1, OpenAPI.
+- Consumer done (`afec005`): `from_key`, filing listed senders, flags from the last write,
+  `filed` Hub event, Spam expiry in the cron.
+- Backup done (`d2772b1`): export restart on changed column lists, counter recomputed on restore;
+  local restore drill passed (below).
+- Benchmark committed (`7264407`) with the budget in `REQUIREMENTS.md`, "Numbers".
+
+### Phase A proof (worker suite, real D1 and R2 in workerd)
+
+- `test/migration-0016.spec.ts` (1): 0016 on a database holding rows; seq in (received_at, id)
+  order, counter, trigger numbering later rows (an older received_at included), an explicit seq
+  kept, defaults, indexes and trigger present.
+- `test/spam.spec.ts` (14): decision 6 (entering Spam, leaving for Trash or Archive, precedence,
+  Not spam on a stale archived flag, outbound never Spam); Spam out of Inbox, Starred, Archive,
+  search, contacts and their counts, a both-flags row in Trash, threads by folder; the contact
+  window; Report spam stores the key with `created_at`, Not spam removes it, a repeated report,
+  a sent message and a Trash-and-Spam request add nothing, Not spam outside Spam removes nothing;
+  the folder form learns nothing; Spam senders list and Remove; rules with Move to Spam (save,
+  update, list, test); v1 reads Spam, cannot change it, refuses `spam` and the folder form; the
+  OpenAPI folder enum equals the folders.
+- `test/filing.spec.ts` (6): the consumer files a listed sender (`email()` does not), `filed` and
+  no push; a long display name keeps the key; a rule-archived message stays; a failed parse
+  notifies as before and an archived one as `changed`; a write that changed no row notifies
+  nothing and acks; Move to Spam rule on arrival, Trash beats it, Spam beats Archive.
+- `test/bulk.spec.ts` (13): seq on both INSERT sites and the count route; 1,200 Inbox rows read in
+  three calls; the continuation moves when rows leave; folder, address and watermark bounds;
+  malformed folder forms; bulk delete in Trash and Spam with FTS rows, R2 objects and audit, 101
+  ids and other folders refused, a moved row kept, a both-flags row skipped by a Spam delete;
+  single delete in Spam; purge 100 per call with hasMore and audit, nothing after the last call;
+  watermark, address and strict asOf bounds; new mail after a full purge numbered above the
+  watermark and kept; malformed purges.
+- `test/trash.spec.ts` (+1): Spam expiry after 30 days, a row moved out or into Trash kept.
+- `test/backup.spec.ts` (+1 and the round trip): new columns, `spam_senders` and the rule action
+  round-trip; the first INSERT after a restore gets max seq + 1; an export started without the
+  current column lists is discarded, gets no new part, and the next run starts a new one that
+  completes; a running export with the same lists continues.
+
+### Phase A ablation
+
+`m8a/ablate.ts` (scratchpad, not committed) applied 67 mutations one at a time and ran the named
+specs (1.8–8.0 s each), restoring the file after each run. 65 went red at once; 2 survived and got
+tests, both red on the rerun: the "no row changed" guard in the consumer (the test now also
+requires the job to be acked, not retried) and the OpenAPI folder enum (a test compares it with
+the folders). Five hunks added later were ablated by hand, all red: the export restart's early
+return, the day check skipping a discarded export, and three hunks of the Spam senders routes
+(delete, order, audit).
+
+Groups ablated: migration (backfill, counter seed, trigger condition, trigger increment); folder
+tests (Inbox, Starred, Archive, Spam); delete condition (Spam test by id, address, watermark,
+clock); folder PATCH (watermark, after, next); decision 6 (11 hunks); sender learning (8 hunks);
+lists, search, threads, counts, single delete in Spam, contacts; delete audit and hasMore probe;
+consumer (from_key, filing, spam_at, Inbox only, `filed`, no push, no-row guard, lowercase key);
+rules (7 hunks) and the inbound INSERT (2); v1 (3); backup (restart, column record, restore
+counter, exported column and table); OpenAPI enum.
+
+Not ablated, with the reason: `FOLDERS.sent` gaining `spam = 0` and the count route's
+`seq <= counter` (no reachable row differs: outbound never enters Spam, and every row has a seq
+at or below the counter); the `INDEXED BY` choices, the unary plus in the delete statements and
+the skipped batch of an empty purge (plans and rows read only, shown by the benchmark, not by
+results); `RESTORE_COUNTER` inside `restoreSql` of `worker/scripts/backup-restore.ts` (a Bun
+script with no test; the local drill below ran it and showed counter 17 = max seq).
+
+### Local restore drill (2026-11-19, wrangler 4.162 local)
+
+`m8a/drill.ts` (scratchpad, not committed), the RUNBOOK steps with M8 checks: migrations on a
+scratch database, `wrangler dev --test-scheduled` on port 8799 with an empty env file and metrics
+and the cf fetch off, the 15 fixtures through `/cdn-cgi/local/email`, then a listed sender and a
+Move to Spam rule (filed by the real consumer and `email()`), one message reported by SQL. The
+first cron run started an export; its column lists were then cleared (as if M7 code had started
+it); the next run discarded it (`columns_changed`) and the one after started
+`2026-11-19T1000Z`, complete after 34 runs. `backup-restore fetch` 6.9 s (38 rows, restore.sql
+20,483 bytes), import into a freshly migrated database 0.9 s, `verify` passed. messages (id, seq,
+spam, spam_at, from_key, trashed, trashed_at), `spam_senders` and the rules' actions compared
+equal; restored max seq 17, counter 17, the first INSERT afterwards got seq 18. Total 89.7 s.
+The first run of the drill found the restart defect fixed in `d2772b1` (deviation 4).
+
+### Phase A numbers (2026-11-19, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
+
+| Item | Result | CPU load |
+| --- | --- | --- |
+| `bun run --cwd worker bench:folders`, 3 runs | rows identical in each run (`REQUIREMENTS.md`); purge call 31–50 ms, cron run 165–178 ms wall locally; vitest Duration 12.6–13.0 s | 30%, 100%, 96% |
+| `bun run check` at `7264407` plus these docs, in a clean worktree, 4 runs | all passed (514 worker tests); 26.6 s (cold transform cache), then 18.0, 16.4, 17.8 s | 73%, 4%, 3%, 2% |
+| Worker suite in those runs (vitest Duration) | 23.82 s, then 16.80, 15.24, 16.69 s | as above |
+
+### Deviations (phase A)
+
+1. Indexes beyond the plan's three, from the measurement (the plan asks for an index where a
+   query scans or passes the budget): spam added to `messages_folder_received`,
+   `messages_starred_received` and `messages_unread`; `messages_address_trashed_at` and
+   `messages_address_spam_at` added. Statements name the index (`INDEXED BY`) where the planner,
+   without statistics, chose a worse one.
+2. A folder PATCH call reads its index range once and sorts it by seq (one pass over the Inbox,
+   or over the address's rows), not a page's worth: "highest seq first" needs seq order, and an
+   index ordered by seq per folder would add four indexes. The budget is written that way.
+3. `GET /api/spam-senders` and `DELETE /api/spam-senders` added (not in the phase A list): the
+   plan's Settings list with Remove needs them. Recorded in the plan's session API table.
+4. The export restart: `backup_exports.columns` records the lists (the plan did not say where).
+   The discarding run does not start the new export; the next run does, so the new id (the start
+   minute) cannot equal the discarded one, and a discarded export does not count as the day's.
+   The first drill run showed the collision: discarded and restarted in one minute, no export
+   for the rest of the day.
+5. A From address longer than 254 characters gets no `from_key`.
+6. Folder-form Not spam forgets no sender, mirroring folder-form Move to Spam.
+7. The single delete answers `409 not_in_trash` for a message outside Trash and Spam (code kept
+   for the web client); its audit row moved into the delete batch.
+8. The count route reads the counter and the total in one statement rather than a batch.
+9. Spam expiry is its own cron job, `expire_spam`, logging `spam_expired`.
+
+### Open questions for the owner (phase A)
+
+1. **FTS delete**: every permanent delete reads the whole `messages_fts` (5,300 rows per purge
+   call at 5,000 messages; 142,500 to empty 5,000). Recommended: defer, as the plan says, and
+   revisit with production rows read; a fix needs the FTS rowid stored on `messages`.
+2. **Gate limits**: with 514 worker tests (463 at M7) the merge gate ran 18.0, 16.4 and 17.8 s at
+   2–4% load (limit 18 s) and the worker suite 16.80, 15.24 and 16.69 s (limit 16 s, "Slowest test
+   package"), over in two of three runs. Recommended: raise them by the file's method (baseline
+   plus 20%): merge gate 21 s, slowest test package 20 s. Not changed without the owner's approval.
+
+### Deferred (phase A)
+
+- The FTS delete scan above (source: the M8 measurement; reason: predates M8, within the free
+  quota at this size).
+- Rows written by a folder PATCH: about 5 per changed message (the row and its index entries);
+  marking 4,000 messages read writes about 20,000 rows of the 100,000 a day Workers Free allows
+  (source: the M8 measurement; reason: inherent to a bulk change, not a defect).
+
+### Not verified (phase A)
+
+- Anything on Cloudflare: plans and `rows_read` in production D1, CPU time of the cron and of a
+  purge call (local wall time includes I/O), `migrate:prod` of 0016 on the production database
+  (backfill and three index rebuilds), the trigger under a `--remote` import.
+- The web side of every route (phase B), the `filed` event on a real open page (tests record the
+  Hub call only).
+- `bun run test:browser` and the other browser tiers were not run (no web change in phase A).
+
+### Phase C notes (branch `mailbox-ux-phone`)
+
+- Built: page background, drawer preferences, phone title row, floating Compose, selection mode,
+  Trash folder row, long press and swipe (`web/src/mailbox/useRowGestures.ts`,
+  `web/src/mailbox/actions.ts`, `swipeActions`). Spam is one entry in `FOLDER_SWIPES`
+  (`{ right: "notSpam" }`) once that action exists; the Trash folder row has a slot for Empty
+  Trash (`FolderRow`, `children`).
+- Open question for the owner: `bun run test:browser` took 47.4, 50.4 and 48.4 s with the phone
+  suite grown by 14 tests (87 in all), over the 42 s limit in `REQUIREMENTS.md`. The host was shared with the
+  worker agent (CPU load 39 to 62%), and no base run was taken under the same load.
+- Unverified: real iOS Safari (scroll against swipe against long press, `touch-action` on table
+  cells, the click Safari may send after a drag, the home-indicator band). The browser suite
+  uses Chromium touch events through the DevTools Protocol.
+- Decided without the owner: swipe is off in search results (the plan lists folders only); a tap
+  on a row in selection mode toggles it instead of opening it.
+
+### Coordinator check after merging A and C (`b50e9a3`, 2026-11-19)
+
+- `bun run check` 3 runs: all passed; 17.4, 20.6, 20.5 s (script's own total); worker suite
+  16.05, 19.01, 19.00 s. `bun run test:browser` 3 runs: 87 pass, 0 fail each; `bun test` part
+  58.1, 53.6, 51.6 s (excluding the build). CPU load 34 to 91% from other programs on the host
+  (PBZ, Steam, HWiNFO64), so none of these is a baseline. Re-measure on an idle host before any
+  limit is raised; the browser tier looks over its 42 s limit by more than load explains.
+- Phase C's stray `x.bak` in the main checkout was not empty as reported (4,314 bytes); it was
+  identical to `useRowGestures.ts` at `9e0bdab` and was deleted after that check.
+- Screenshot review (coordinator): phones still show the table header "Message / Date"; the armed
+  swipe colour in the light theme is the near-black accent. Both go to phase B / the owner.
+
+### Phase B (web, branch `mailbox-ux`, done 2026-11-19, not reviewed)
+
+Agent: claude-opus-5-5. Commits:
+
+- `04d817d` web: teach the mailbox stand-in the M8 routes
+- `490819e` web: add Spam, Delete forever, Empty and select all matching
+- `1e7ca48` web: hide the list header row on phones outside selection mode
+- `02541b4` web: offer Move to Spam as a rule action
+- `62d0012` web: add Settings > Spam senders with Remove
+
+Built (docs/M8-mailbox-ux.md, sections 1, 2 and 4, and the coordinator's header finding):
+
+- Spam below Archive with its unread count, `/spam`, Not spam, Delete forever, star and read
+  state, the 30-day note and Empty Spam; Report spam in the bulk bar (phone: More), and in the
+  reader for received mail outside Trash and Spam; Move to Spam in whole-folder mode; the Spam
+  swipe entry `{ right: "notSpam" }`. The reader in Spam loads no remote images, even ones allowed
+  before a `filed` event, and shows Not spam and Delete forever.
+- Delete forever on the selection (DELETE /api/messages, 100 ids per call) and Empty Trash /
+  Empty Spam (POST /api/messages/purge with the count route's watermark and asOf, unchanged on
+  every call) behind the AlertDialog: count, "This cannot be undone", progress, Stop between
+  calls. The list drops the ids each call returned and the toast counts them. A call with no
+  answer, or a 5xx answer, stops the run, reloads list and counts, and an error toast says the
+  result is unknown.
+- Select all N (folders only): the offer appears when every loaded row is selected and
+  `nextCursor` is set, with the count route's total; whole-folder actions loop the folder-form
+  PATCH with `after`/`next`, with progress and Stop in the banner; whole-folder Delete forever
+  purges with the mode's count. Unchecking a row, a view change or a reload leaves the mode.
+- `useMessageList`: a generation counter; `exclusive` pauses scroll paging, Hub refreshes and
+  reloads during a loop and reloads once at its end; answers of fetches begun before or during
+  the loop are dropped. `filed` moves the generation, re-reads the message
+  (`GET /api/messages/:id`) and drops it from a view it left; a dropped scroll page is fetched
+  again from its cursor (the sentinel asks again). The open reader takes the new flags.
+- Settings > Spam senders (Mail group, after Rules): GET /api/spam-senders, Remove with
+  DELETE /api/spam-senders. Rule editor: Move to Spam beside Move to Trash (`spam`).
+- Phones hide the "Message / Date" row outside selection mode (`visibility: collapse`, which
+  keeps the fixed table's column widths; `display: none` lost them and pushed every row about
+  130 px right, seen in the first screenshots). Swipe colours unchanged (owner decides).
+- Strings in en, zh-CN, ja-JP; zh-CN uses the file's terms (“垃圾邮件”, “已删除”, 永久删除).
+  Search's empty text now says Spam is not searched either.
+
+Frontend–backend mapping: every new call has its route (`worker/src/mail/bulk.ts`, `spam.ts`,
+`routes.ts`). Error levels: refusals (4xx) go through `errorMessage` as error toasts, as before;
+an unknown result is an error toast (Astryx has info and error only, and it must stay until read).
+
+### Phase B proof (browser suites, API stand-in `web/test/stub-mailbox.ts`)
+
+`web/test/folders.test.ts` (new, 17 tests, `bun run test:browser`): Spam list, nav order and
+count, toolbar, note, no offer without more rows; Report spam from the Inbox (ids PATCH, sender
+learned, toast), none in Sent, Not spam (sender forgotten, lands in the Inbox); Report spam from
+the reader; sent mail stays in Starred; a Spam message without remote images and with Spam
+actions; a `filed` event dropping an Inbox row and switching the open reader (allowed images off);
+a dropped scroll page fetched again from the same cursor; Empty Trash with confirmation,
+progress, three calls with identical watermark and asOf; Stop between calls (200 of 250 kept
+deleted, 50 rows shown); an unanswered call (stop, toast, list reloaded); no list fetch during
+the loop, Refresh off, an answer begun before the loop and landing mid-loop discarded; selection
+Delete forever dropping only returned ids; whole-folder Delete forever in Spam with the mode's
+count, later mail kept; select all then Archive over three folder-form calls with `after`, later
+mail not included; Move to Spam label and no sender learned; leaving the mode on uncheck, folder
+change, and an address change mid-loop (no list fetch while the call is held, one reload after).
+`web/test/mobile.test.ts` (+2 tests, +3 checks): Spam swipe right is Not spam, left does nothing;
+header row hidden outside selection mode with column widths kept; Empty Trash in the folder row,
+label whole; Report spam last in the reader's More menu; settings list with Spam senders.
+`web/test/rules.test.ts` (+2 tests, `bun run test:settings`): Move to Spam after Move to Trash,
+saved as `spam: true`, in the summary; Spam senders newest first, Remove, empty state.
+
+### Phase B ablation
+
+`ablate.ts` (scratchpad, not committed) applied each mutation alone, rebuilt `web/dist`, ran the
+named test and restored the file from a scratchpad backup. All 47 went red:
+
+| Hunk removed | Red test |
+| --- | --- |
+| list: generation check on answers; no Hub refresh while paused; exclusive's start bump; no scroll page while paused; Refresh off during a loop | "starts no list fetch during the loop ..." |
+| list: no reload fetch while paused; page: reset leaves whole mode | "leaves whole-folder mode when the address view changes" |
+| list: reload at the end of a loop; runs: stop between calls; dialog: Stop label | "stops between calls when cancelled ..." |
+| list: filed reconcile; reader: filed refresh; reader: allowed images off in Spam | "drops an Inbox row the consumer files into Spam ..." |
+| list: filed bumps generation | "fetches a scroll page again from its cursor ..." |
+| reader: no Show remote images in Spam; Spam note; toolbar: Not spam, Delete forever in Spam | "opens a Spam message without remote images ..." |
+| toolbar: Report spam | "reports spam from the reader" |
+| bulk: no Report spam in Sent; actions: Inbox excludes Spam; page: Report spam toast | "reports spam from the Inbox, never offers it in Sent ..." |
+| bulk: Not spam button | same test (Not spam part) |
+| bulk: Delete forever button | "deletes the selection forever ..." |
+| bulk: Move to Spam label | "labels Report spam Move to Spam in whole-folder mode ..." |
+| actions: sent mail never enters Spam | "keeps sent mail in Starred ..." |
+| actions: Spam swipe | mobile "marks a row in Spam not spam ..." |
+| page: unchecking leaves whole mode | "leaves whole-folder mode when a row is unchecked ..." |
+| page: whole-mode actions use the folder form; runs: folder PATCH continuation; runs: offer count | "offers all N, then archives the whole folder ..." |
+| page: offer only with more rows; Spam 30-day note; shell: Spam in navigation | "lists Spam below Archive ..." |
+| page: Empty button; runs: drop deleted ids per call; api: purge sends the dialog's asOf; dialog: progress | "empties Trash after confirmation ..." |
+| runs: unanswered call toast | "stops and refreshes the list when a call gets no answer" |
+| runs: whole Delete forever uses the mode's count | "purges all of Spam selected with select all ..." |
+| page: phone header hidden; css: collapse keeps column widths | mobile "hides the Message and Date header row ..." |
+| folder row: button keeps its width | mobile "shows the Trash note as a folder row ..." |
+| shell: Spam senders in settings; senders: Remove | rules "lists the remembered senders ..." |
+| rules: spam action; spam in the body | rules "saves a rule that moves mail to Spam ..." |
+
+Not ablated, with the reason: the locale strings, the `filed` member of the event type and the
+Spam swipe icon (no behaviour of their own; a missing string fails `check:i18n` and the tests
+that read the text); `eligible` requiring a folder view (search has no route in the stand-in, and
+the Worker's count route refuses a search); the stand-in itself (test code).
+
+### Phase B numbers (2026-11-19, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
+
+The host was loaded by other programs; CPU load is the mean of 2-second samples during each run.
+Limits are not changed.
+
+| Tier | 3 runs (wall, including the web build) | CPU load | Limit |
+| --- | --- | --- | --- |
+| `bun run test:browser` (106 tests) | 80.5, 78.5, 76.9 s (`bun test` 77.7, 77.0, 74.6 s) | 54%, 47%, 48% | 42 s |
+| base `80ab322`, same host and hour (87 tests) | `bun test` 50.6, 48.9 s (2 runs) | 50%, 59% at start | |
+| `bun run test:settings` (19 tests) | 11.5, 11.2, 11.4 s | 31%, 29%, 17% | 13 s |
+| `bun run test:send` (10 tests, stand-in changed) | 16.6, 16.6, 16.6 s | 18%, 24%, 20% | 18 s |
+| `bun run test:pwa` (11 tests, stand-in changed) | 13.4, 13.4, 13.5 s | 38%, 57%, 61% | 15 s |
+| `bun run check` | 20.6, 18.4, 18.3 s, all passed | 70%, 69%, 73% | 18 s |
+
+Bundle (vite build, gzip -6 by `size.cjs` in the scratchpad, both builds on this host): total JS
+and CSS 745.1 kB at `80ab322`, 750.0 kB now (limit 770 kB); everything `index.html` references
+359.7 kB and 359.8 kB. This script counts more than the "first paint" row of `REQUIREMENTS.md`,
+so only the difference is meaningful.
+
+Files above the p90 (242 lines): `web/src/pages/MailboxPage.tsx` 473 (370 before; the loops,
+dialog and banner moved to `useFolderRuns.ts`, `DeleteDialog.tsx`, `SelectAllBanner.tsx`, and what
+is left is wiring of the page's state); `web/src/reader/Reader.tsx` 280 (245 before);
+`web/src/reader/ReaderToolbar.tsx` 259 (one list of actions); tests `folders.test.ts` 484,
+`mobile.test.ts` 774, `stub-mailbox.ts` 306 (one route set per file, as the other stubs).
+
+### Deviations (phase B)
+
+1. The phone header row shows in selection mode: it holds the select-all checkbox, the only way
+   to reach "select all N" on a phone. Outside selection mode it is hidden.
+2. Report spam is not offered in Trash (Trash keeps Restore and Delete forever) nor on mail you
+   sent. The keyboard shortcuts are unchanged: `e` in Spam archives, which leaves Spam.
+3. A 5xx answer counts as "result unknown" as a network failure does: the Worker's batch may have
+   committed before an error was returned. Only a 4xx answer is a known refusal.
+4. Empty reads the count when the button is pressed; whole-folder Delete forever uses the count
+   read when the mode was entered, so mail filed later is not deleted.
+5. Stop (the dialog's Cancel during a run) closes the dialog at once; the call in flight finishes
+   and the toast counts it. Refresh is disabled while a run lasts.
+6. A failed request also marks the app offline; when the next request succeeds the mailbox
+   remounts (M4b behaviour), so after an unanswered call the list loads twice.
+7. Spam, Delete forever, Empty and select all are one commit: `BulkBar.tsx` and `MailboxPage.tsx`
+   carry all of them and do not split into working steps.
+8. Remove in Spam senders asks no confirmation: it is undone by reporting the sender again.
+9. The stand-in now answers unread counts and pages of 50 like the Worker; the earlier suites
+   pass unchanged except the settings lists (Spam senders added) and the reader's More menu
+   (Report spam added).
+
+### Open questions for the owner (phase B)
+
+1. **Browser tier time**: 74.6–77.7 s of `bun test` against 48.9–50.6 s at the base under the
+   same load; `folders.test.ts` adds most of it. The 42 s limit was already exceeded after phase
+   C. Options: raise the limit, or give `folders.test.ts` its own scheduled tier as
+   `test:send` and `test:pwa` have. Not changed here. The merge gate also ran 18.3–20.6 s at
+   69–73% load against its 18 s limit (phase A's open question 2).
+2. Should Report spam also be offered in Trash (Gmail offers it there)?
+3. Is the "Message / Date" row in phone selection mode acceptable (deviation 1)?
+4. Swipe colours (coordinator finding b) are untouched and wait for your decision.
+
+### Not verified (phase B)
+
+- The Worker behind these screens: the browser suites run against `stub-mailbox.ts`, written
+  from `worker/src/mail` and checked by reading, not against workerd.
+- Real iOS Safari and a real phone; touch gestures are Chromium's.
+- zh-CN and ja-JP wording by a native reader; screenshots are English only.
+- The `filed` event from a real consumer to a real page (tests send it over the stand-in socket).
+- Search exclusion from "select all" (no search route in the stand-in).
+
+Screenshots (402x874 touch and 1440x900, light and dark; 32 PNGs, outside the repository):
+Spam folder, Spam reader, Empty Trash confirm and progress, select-all offer and whole mode,
+Inbox, Settings > Spam senders.
+
+### Code review fixes (four Mediums, branch `mailbox-ux`, 2026-11-19, not reviewed)
+
+Agent: claude-opus-5-5. High risk (permanent delete, restore). Commits:
+
+- `f93d86f` worker: take folder clocks and asOf from the database clock (W1)
+- `8740483` worker: refuse mixed-column exports and duplicate seq on restore (W2)
+- `11b6d21` web: show the list when a filed event lands during its first load (F1)
+- `28e86d0` web: keep a filed row's re-read when a second filed event follows (F2)
+
+What changed:
+
+- W1: `DB_NOW` (`worker/src/mail/folders.ts`, `CAST(unixepoch('subsec') * 1000 AS INTEGER)`)
+  sets `trashed_at` and `spam_at` inside the writing statement: flag changes, the consumer's
+  sender filing, the inbound rule INSERT and the cron's stamp of untimed Trash rows. The count
+  statement reads `asOf` from the same clock, and in Trash and Spam counts only rows whose folder
+  clock is strictly before it, purge's own test. D1 runs SQLite 3.47 with workerd's function
+  allowlist, which the test pool shares; the function ran there. The 30-day expiry still uses the
+  cron's `scheduledTime`.
+- W2: `backup-restore.ts fetch` refuses an export whose parts of one table name different INSERT
+  column lists (a wholly M7 export passes); `verify` fails on a seq held by two messages. The
+  database checks moved into `databaseProblems` so `scripts/backup-restore.test.ts` runs them on
+  bun:sqlite. `docs/RUNBOOK.md`, "Spam after a rollback across M8", marks running exports failed
+  right after the rollback, with the command.
+- F1: an event page that lands on a loading list fills it; an error state is kept.
+- F2: the `filed` re-read checks `view`, which only `reload` and the start of `exclusive` move
+  (no re-read can start during a loop, events wait). `filed` still moves `generation`.
+
+### Review fixes proof
+
+Each regression test failed before its fix (output in the agent report) and passes after:
+
+| Fix | Test | Red before the fix |
+| --- | --- | --- |
+| W1 | `worker/test/bulk.spec.ts`, "folder clocks come from the database clock" (3 tests) | late-flag spam_at 60 s before asOf; Trash count 2, expected 1; asOf 1 h after the database clock |
+| W2a | `scripts/backup-restore.test.ts`, "refuses an export whose parts of one table have different column sets" | no problem reported |
+| W2b | same file, "fails a restore where two messages hold the same seq" | no problem reported |
+| F1 | `web/test/folders.test.ts`, "shows the list when a filed event arrives during the first load" | note1 row never rendered (5 s timeout) |
+| F2 | same file, "drops both rows when two filed events arrive close together" | note1 row stayed (5 s timeout) |
+
+Ablation (scratchpad `ablate.cjs`, not committed: each hunk removed alone, `web/dist` rebuilt for
+web hunks, the named test run, the file restored). All 14 went red:
+
+| Hunk removed | Red test |
+| --- | --- |
+| flags: trashed_at from DB_NOW | "counts in Trash exactly what purge may delete ..." |
+| flags: spam_at from DB_NOW | "keeps rows filed into Spam by writes that land after the count ..." |
+| consumer: spam_at from DB_NOW | same |
+| inbound: trashed_at from DB_NOW | "counts in Trash exactly what purge may delete ..." |
+| inbound: spam_at from DB_NOW | "keeps rows filed into Spam ..." |
+| cron: trashed_at stamp from DB_NOW | "counts in Trash exactly what purge may delete ..." |
+| count: asOf from DB_NOW | "takes asOf from the database clock, not the Worker's" |
+| count: strict clock test in Trash and Spam | "counts in Trash exactly what purge may delete ..." |
+| restore fetch: column-set check | "refuses an export whose parts ..."; "reads the column list of the Worker's own INSERT text" |
+| restore verify: seq uniqueness | "fails a restore where two messages hold the same seq" |
+| list: event page fills a loading list | "shows the list when a filed event arrives during the first load" |
+| list: re-read checks view | "drops both rows when two filed events arrive close together" |
+| list: reload moves view | "ignores a re-read begun before a refresh" |
+| list: exclusive moves view | "ignores a re-read begun before a whole-folder loop" |
+
+Not ablated: the refactor of `verify` into `databaseProblems` (no behaviour change; its count and
+foreign key checks are covered by "passes counts that match ..."); the runbook step (docs).
+
+Existing tests changed: three exact equalities of a folder clock to `received_at` or the test's
+`Date.now()` became "at or after" (`trash.spec.ts` 2, `filing.spec.ts` 1), since the clock is now
+the database's at the write.
+
+### Review fixes numbers (2026-11-19, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
+
+CPU load is the mean of samples about every 3 s during each run. Limits are not changed.
+
+| Tier | 3 runs | CPU load | Limit |
+| --- | --- | --- | --- |
+| `bun run check` (517 worker tests) | 15.0, 15.5, 15.7 s (worker suite 14.0, 14.5, 14.7 s), all passed | 28%, 36%, 30% | 18 s (worker 16 s) |
+| `bun run test:browser` (110 tests) | 78.2, 74.6, 72.2 s including the web build, all passed; over the limit as after phase B (open question 1 of phase B) | 6%, 11%, 9% | 42 s |
+
+### Review fixes: not verified
+
+- `unixepoch('subsec')` on production D1 (ran in workerd's test pool only).
+- The web stand-in's count route (`web/test/stub-mailbox.ts`) still answers `asOf` from
+  `Date.now()` and counts Trash and Spam without the clock test; no browser test depends on it.
+- The runbook rollback step was not run against a Worker (no production step).
+- A count in Trash now leaves out rows without a clock (from before migration 0015) until the
+  cron stamps them; the "select all N" offer in Trash shows that count too, while a folder-form
+  PATCH still acts on those rows.
+
+### Owner rulings 6 (2026-11-19, after the screenshots)
+
+1. `web/test/folders.test.ts` moves to its own scheduled tier, like send and PWA; the main
+   browser tier keeps its 42 s limit (idle run with it: 72.2 to 78.2 s at 6 to 11% load).
+2. Swipe colours: archive green, delete red (the iOS convention), instead of the theme accent.
+3. Report spam stays out of Trash.
+4. Merge gate (18 s) and worker suite (16 s) limits stay: idle runs were 15.0 to 15.7 s and
+   14.0 to 14.7 s; the earlier overruns were on a loaded host.
+
+### Owner rulings 6: work done (2026-11-19, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
+
+Five follow-up changes after the rulings, one commit each (red run first, then every behaviour
+hunk removed once):
+
+| Change | Commit | Red without the fix | Ablated hunk to red test |
+| --- | --- | --- | --- |
+| `restore`: read only a part's first INSERT head | `2843ec2` | `scripts/backup-restore.test.ts` "reads only the first INSERT of a part, not a stored value that looks like one" | first-line anchor: that test; `list !== undefined` guard: "accepts an export written wholly by one version, M7 included" |
+| list: a failed replacement fetch of a discarded first load shows the error | `5455e5e` | "shows the error state when the replacement of a discarded first load fails" | `.catch` swallow: that test; `loading` condition (always fail): "keeps a shown list when an event's refresh is refused" |
+| list: retry the re-read of a filed message | `fdddf53` | "drops a filed row after a failed re-read is retried", "gives up after three retries and leaves the row" | no retry: both; a fourth retry: "gives up ..."; no `view` check after the wait: "starts no retry once a refresh has moved the view" |
+| `test:folders` tier | `0ecef1c` | not a fix; `bun run check:requirements` exits 0 | |
+| swipe colours | `05c7421` | "paints an armed right swipe green and an armed left swipe red, light and dark" (accent before) | `data-tone` in `SwipeBackdrop.tsx`: that test; the `success` rule in `phone.css`: that test |
+
+The folders tier limit is 48 s: the slowest of 3 runs (39.5 s) plus 20%. Swipe icon contrast
+(theme tokens `--color-on-success` on `--color-success`, `--color-on-error` on `--color-error`):
+5.02:1 and 5.29:1 light, 6.99:1 and 6.95:1 dark.
+
+Not verified: the `view` check inside the retry loop is only the early exit (the check after
+the loop also drops a stale answer); real iOS swipe feel.
+
+Numbers after these changes: `bun run check` 17.3 and 17.6 s, passed (CPU load not sampled on
+these two; a first run at 40% load took 20.8 s); `bun run test:browser` (90 tests) 58.9, 58.7
+and 56.6 s including the web build, CPU load 22%, 20%, 20%, still over its 42 s limit (not
+changed here); `bun run test:folders` (26 tests) 38.4, 38.6, 39.5 and 39.5 s, CPU load 16% to 20%.
+
+### Owner ruling 7 (2026-11-19) and its work
+
+Ruling: the M8 phone gesture tests move out of `bun run test:browser` into the scheduled folders
+tier (`bun run test:folders`, `.github/workflows/folders.yml`), so the browser tier is back under
+its 42 s limit. Measured before the move: `web/test/mobile.test.ts` alone took 28 s (28 tests),
+about 4.5 to 7 s before M8.
+
+Done: ten tests moved from `web/test/mobile.test.ts` to the new `web/test/gestures.test.ts`
+(behaviour unchanged): the long press and vertical drag tests (2) and the whole "phone swipe"
+group (8: swipe right and left, spring back, list held mid-swipe, swipe colours, reduced motion,
+Archive and Trash, Spam). The shared viewport, sample mail and touch helpers are in
+`web/test/phone.ts`. The title row, Compose, selection with Select, drawer, folder row, header
+row and page background tests stay in `mobile.test.ts` (18 tests).
+
+Tests before and after: `test:browser` 90, now 80; `test:folders` 26, now 36; 116 in all, 116
+before.
+
+Numbers (2026-11-19, dev workstation, Ryzen 9 9950X3D, CPU load sampled every 2 s):
+`bun run test:browser` 37.4, 36.4 and 37.4 s including the web build, load about 4% (0 to 7%),
+under 42 s; `bun run test:folders` 52.4, 51.4 and 52.6 s, load about 3% (0 to 14%). The folders
+limit is now 64 s: the slowest of 3 runs (52.6 s) plus 20%, rounded up (48 s before).
+
+### Final code review round and fixes (coordinator, 2026-11-19)
+
+Cross-family review of `2b21d3e..` (`cliproxyapi/gpt-6.2-sol`): FIX FIRST, three Mediums, all fixed
+by the coordinator with a test each, red without the fix (ablated by hand):
+
+- A pre-0016 export failed to import in the release drill: `restoreSql` always ended with the
+  counter update, and a database at 0015 has neither `counters` nor `messages.seq`. The update now
+  runs only when the export's messages carry `seq` (`53261e8`); tests apply the real migrations
+  in `bun:sqlite` (`scripts/backup-restore.test.ts`, "restoreSql").
+- A changed event's failed refresh could set the error state during a load whose first page a
+  filed event discarded, and the filed event's page then left it there. Any list that is not
+  ready now takes the page (`3569392`).
+- After three failed re-reads a filed row stayed in the Inbox for good. The view now reloads
+  once the retries are spent (`f715261`; the test "gives up after three retries and leaves the
+  row" became "reloads the view after three failed retries").
+
+Final run at `f715261` (dev workstation, Ryzen 9 9950X3D, Bun 1.4.4): `bun run check` pass,
+13.3 s, 517 worker tests, CPU 2%; `bun run test:browser` 80 pass, 40.9 s, CPU 1%;
+`bun run test:folders` 37 pass, 51.5 s, CPU 4%.
+- Re-review of `f715261`: one Medium. The reload after spent retries cleared an unrelated
+  selection and could end on the error screen. Replaced by applying the filed move locally
+  (`a8e4eed`): the consumer sends `filed` only after its write moved the message into Spam.
+- Re-review of `a8e4eed`: two Mediums. Fixed: a row removed by a filed event stayed selected, so
+  a bulk action reached the hidden Spam message (`web: drop rows that leave the list from the
+  selection`). Accepted, not designed for: a newer Not spam from a second tab lost to the local
+  filed move when all four re-reads fail while the list refresh succeeds; it needs two tabs, a
+  failing detail route and a Not spam within the 7 s retry window, and the next refresh corrects
+  it. Code review stopped here.

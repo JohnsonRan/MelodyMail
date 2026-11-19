@@ -30,6 +30,7 @@ export type RuleInput = {
   star: boolean;
   archive: boolean;
   trash: boolean;
+  spam: boolean;
   stop: boolean;
   targetIds: number[];
 };
@@ -96,12 +97,14 @@ export function parseRule(body: Record<string, unknown>, forTest = false): Parse
     star: flag(body.star, false),
     archive: flag(body.archive, false),
     trash: flag(body.trash, false),
+    spam: flag(body.spam, false),
     stop: flag(body.stop, false),
   };
   if (Object.values(flags).some((v) => v === null)) return err("bad_request");
   const f = flags as Record<keyof typeof flags, boolean>;
   // "Stop processing more rules" alone is an action: it keeps later rules off matching mail.
-  const acts = targetIds.length > 0 || f.markRead || f.star || f.archive || f.trash || f.stop;
+  const acts =
+    targetIds.length > 0 || f.markRead || f.star || f.archive || f.trash || f.spam || f.stop;
   if (!acts && !forTest) return err("no_rule_action");
   return ok({ name, match: body.match, conditions, targetIds, ...f });
 }

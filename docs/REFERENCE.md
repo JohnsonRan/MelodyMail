@@ -82,18 +82,18 @@ The enabled rules can name at most 20 different headers in their header conditio
   `@example.com`: `example.com` alone also matches `notexample.com`. There are no regular
   expressions.
 - **Actions**: forward to up to 5 addresses from Settings > Forwarding, mark as read, star,
-  archive, move to Trash, and stop processing more rules.
+  archive, move to Trash, move to Spam, and stop processing more rules.
 - **Order**: rules run top to bottom; every matching rule adds its actions, and a matching rule
-  with "Stop processing more rules" ends the run. Trash wins over archive. Move up and Move
-  down change the order.
+  with "Stop processing more rules" ends the run. Trash wins over Spam, and Spam over archive.
+  Move up and Move down change the order.
 - **Forwarding**: a message goes to the address's own forwarding addresses first, then to the
   rule targets, each once and at most 10 in all; over 10, the audit log records
   `mail_forward_capped`. A message that already carries `X-MelodyMail-Forwarded` is not
   forwarded by a rule either. A forward-only address forwards to the rule targets as well.
 - **New mail only**: a rule applies to mail that arrives after it is saved. Creating, editing,
   reordering or deleting a rule never changes stored mail.
-- **Notifications**: mail that a rule marks as read, archives or moves to Trash sends no push
-  and no Telegram card; open pages still refresh. Starred mail notifies as usual.
+- **Notifications**: mail that a rule marks as read, archives, or moves to Trash or Spam sends
+  no push and no Telegram card; open pages still refresh. Starred mail notifies as usual.
 - **Test**: in the rule dialog, "Test rule" checks the rule against one of the 20 newest Inbox
   messages and shows which conditions match and what would happen. A test changes nothing.
 
@@ -113,14 +113,32 @@ is chosen for that message, and attachments are always downloaded, never opened 
 the dark theme, "Dark reading" in the reader shows one HTML message inverted; it is off for every
 message you open.
 
-The language and theme buttons in the app bar open menus of their choices. The theme button's
+When every loaded message of a folder is selected and the folder holds more, the list offers
+"Select all N in" the folder. In that mode an action applies to every message that was in the
+folder when the offer appeared; mail that arrives later is shown but left out. Unchecking a row,
+another folder, address or search, or a reload leaves the mode. A change over the whole folder
+shows its progress and can be stopped; what was changed stays changed. Search results have no
+"select all".
+
+While Delete forever, Empty or a whole-folder change runs, the list loads nothing else and
+reloads once at the end. If a request gets no answer, the run stops, the list and counts reload,
+and a message says the result of the last request is unknown.
+
+The language and theme buttons open menus of their choices: in the app bar, and on a phone at the
+end of the navigation drawer. The theme button's
 icon shows the current mode: system, light or dark.
 
 On a phone (narrower than 768 px):
 
-- the reader shows Back, Reply, Archive and Move to Trash as icons, and the other actions,
-  Dark reading included, under "More actions";
-- the list shows Archive and Move to Trash, with star and read state under "More actions";
+- the reader shows Back, Reply, Archive and Move to Trash as icons (in Spam: Not spam), and the
+  other actions, Report spam and Dark reading included, under "More actions";
+- the list title row holds Refresh and Select, and Compose floats at the bottom right; the
+  actions on selected messages (Archive and Move to Trash, with star, read state and Report spam
+  under "More actions") show in selection mode, which Select or a long press on a row starts and
+  Done ends; the "Message / Date" header row shows only in selection mode;
+- with a finger, a row swipes right to Archive (Move to Inbox in Archive, Restore in Trash, Not
+  spam in Spam) and left to Move to Trash; Trash and Spam have no left swipe;
+- Trash and Spam show their 30-day note and Empty above the list;
 - Settings opens a list of its sections; wider screens open Domains.
 
 Compose opened as a page (narrower than 1280 px) keeps Close and Send in its title row, so both
@@ -142,6 +160,40 @@ requires), which the deploy creates.
 - An open Trash list keeps showing an expired message until it refreshes.
 - Time Travel can bring back the rows of deleted mail for 7 days, but not the raw object, so such a
   message cannot be opened (`docs/RUNBOOK.md`, "Backups").
+- Delete forever removes the selected messages that are still in Trash; a message moved out
+  meanwhile is kept. Empty Trash deletes, 100 per request, exactly what was in Trash when the
+  confirmation opened: mail that arrives or is moved to Trash after that stays. Each request
+  writes one audit row (`messages_deleted` or `trash_emptied`, with the count).
+- Both ask for confirmation with the count, show progress while they run, and can be stopped
+  between requests; what was deleted stays deleted. On a desktop, Empty Trash sits at the end of
+  the action bar next to the 30-day note; on a phone, in the row above the list.
+
+### Spam
+
+- Report spam moves a message to Spam and remembers its sender: the address in its `From`
+  header, lowercased. Later mail from a remembered sender is moved to Spam when it is parsed,
+  shortly after it arrives, unless a rule archived it or moved it to Trash. Only received messages
+  that enter Spam add a sender; mail you sent never does.
+- Report spam is in the action bar (on a phone under "More actions") and in the reader of every
+  folder except Sent, Trash and Spam. Spam lists Not spam, Delete forever, star and read state.
+- Not spam moves a message back to the Inbox and forgets its sender. Moving a whole folder to Spam
+  ("select all") remembers no sender, so the action is labelled Move to Spam there.
+- Settings > Spam senders lists the remembered senders with Remove. Removing one stops filing its
+  later mail; mail already in Spam stays there.
+- The reader loads no remote images for a message in Spam, even one you allowed before it was
+  moved there. A message the consumer files into Spam leaves an open list at once, and an open
+  reader switches to the Spam actions.
+- A forged `From` can make Report spam remember a real sender. Their later mail then lands in
+  Spam, not lost: Not spam on it forgets the sender again.
+- Mail in Spam is in no other folder, not in search, not in recipient suggestions, and counts as
+  unread only in Spam. It sends no push and no Telegram card. A message with both Trash and Spam
+  set (written by older code after a rollback) shows in Trash.
+- Moving a message to Trash or Archive takes it out of Spam. Mail you sent never enters Spam.
+- Mail in Spam for 30 days is deleted for good, as in Trash: the 30 days start when it entered
+  Spam, and the cron logs `spam_expired` with a count. Delete forever and Empty Spam work as in
+  Trash (audit `messages_deleted`, `spam_emptied`).
+- There is no content scoring: only reported senders and rules file mail into Spam. The rule
+  editor's "Move to Spam" action sits beside "Move to Trash".
 
 ## Install and offline
 
@@ -230,8 +282,8 @@ set-up is in `docs/RUNBOOK.md`, "Sending through Resend".
 
 While you type in To, Cc or Bcc, compose suggests addresses you sent to or received mail from,
 newest first, matching the address or the display name (`GET /api/contacts`). It reads the newest
-1,000 sent and 1,000 received messages; mail in Trash does not count, and your own addresses are
-left out. Text that is already a complete address gets no suggestions, and Enter adds it as typed.
+1,000 sent and 1,000 received messages; mail in Trash or Spam does not count, and your own
+addresses are left out. Text that is already a complete address gets no suggestions, and Enter adds it as typed.
 
 Each secret switches on one part: without `UPLOAD_URL_KEY` compose sends without attachments, and
 without `RESEND_WEBHOOK_SECRET` sent mail stays at "Sent" instead of showing delivery. Resend
@@ -256,7 +308,7 @@ and one or more scopes:
 | Scope | Allows |
 | --- | --- |
 | `mail:read` | list, search and read messages and threads, download raw messages, list addresses |
-| `mail:write` | set read, starred, archived and trashed on one message or up to 100 |
+| `mail:write` | set read, starred, archived and trashed on one message or up to 100; a message in Spam cannot be changed |
 | `mail:send` | send without attachments, list addresses |
 
 Send the key as a Bearer token. The session cookie is never read on `/api/v1/`, and a key opens
@@ -276,6 +328,9 @@ curl -X POST -H "Authorization: Bearer mmk_xxxxxxxx_<secret>" \
   (403), `rate_limited` (429, over 120 requests a minute from one IP). A send body with a wrong
   field adds `path`, for example `{ "error": "bad_request", "path": "to.1" }`.
 - Lists page with `nextCursor`; pass it back as `cursor` until it is `null`.
+- `folder=spam` lists Spam, and every message has a `spam` field. A key cannot move mail into
+  or out of Spam: `PATCH` with `spam` answers `bad_request`, and a message in Spam answers
+  `not_found`.
 - Sending needs an `Idempotency-Key` header, one per message: a repeat with the same key sends
   nothing new and returns the first result.
 - Revoke a key in Settings > API keys; it stops working at once. A recovery revokes every key.
@@ -299,7 +354,9 @@ Log events of the export:
 | `backup_prune_failed` | warn | `exportId`, `error` (for example a locked object) |
 | `backup_export_failed` | error | `exportId`, `table`, `seq`, `error`; or `exportId` with `error: "timeout"` after 48 hours |
 | `backup_stale` | error | `lastComplete`; no export completed in 48 hours, logged once a day |
+| `backup_export_restarted` | warn | `exportId` of an export started by code with other column lists (once after the M8 deploy); a new export starts |
 | `trash_expired` | info | `count` of messages deleted after 30 days in Trash |
+| `spam_expired` | info | `count` of messages deleted after 30 days in Spam |
 
 With Telegram connected, a failed or stale export also sends one plain message a day at most, in
 the chat's language:
@@ -354,4 +411,6 @@ bun run test:browser
 ```
 
 The compose and Markdown suites run apart with `bun run test:send`, the PWA suite with
-`bun run test:pwa`, the settings suites with `bun run test:settings`.
+`bun run test:pwa`, the settings suites with `bun run test:settings`, the mailbox folder suites and the
+phone gesture suite (`web/test/gestures.test.ts`: long press, vertical drag, swipe actions) with
+`bun run test:folders`.

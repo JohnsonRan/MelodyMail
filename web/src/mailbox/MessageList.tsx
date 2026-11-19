@@ -13,11 +13,22 @@ import {
 } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { PaperClipIcon, StarIcon } from "@heroicons/react/24/solid";
-import { type Dispatch, type MouseEvent, type SetStateAction, useCallback, useMemo } from "react";
+import {
+  type CSSProperties,
+  type Dispatch,
+  type MouseEvent,
+  type SetStateAction,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import { useTranslation } from "react-i18next";
+import type { SwipeAction, SwipeSide } from "./actions";
 import { type MessageItem, senderName } from "./api";
 import { formatListDate } from "./format";
 import { SendStatusLabel } from "./SendStatusLabel";
+import { SwipeBackdrop } from "./SwipeBackdrop";
+import { isRowItself, useRowGestures } from "./useRowGestures";
 
 type Row = MessageItem & Record<string, unknown>;
 
@@ -27,15 +38,19 @@ const DATE_COLUMN = 112;
 
 const NO_SHRINK = { flexShrink: 0 };
 
+// touch-action: pan-y on the cells (it does not apply to a table row) leaves vertical scrolling
+// to the browser and keeps horizontal moves for the row's own gestures. The callout would offer
+// to copy the row's text on a long press.
+const GESTURE_ROW: CSSProperties = { WebkitTouchCallout: "none" };
+const GESTURE_CELL: CSSProperties = { touchAction: "pan-y" };
+
 const OPEN_CELL_STYLE = { backgroundColor: "var(--color-accent-muted)" };
 
-// The row opens the message; its checkbox only selects it. Clicks and keys that start inside
-// another control in the row (the selection checkbox) are not the row's own. Under a coarse
-// pointer the whole selection cell, at least TOUCH_TARGET wide, selects: the 24 px box gets a
-// 44 px target (REQUIREMENTS.md, "Touch target, coarse pointer") and a near miss does not open
-// the message.
-const INTERACTIVE = "input, button, a, label, [role='checkbox'], [data-select-cell]";
+// The row opens the message; its checkbox only selects it. Under a coarse pointer the whole
+// selection cell, at least TOUCH_TARGET wide, selects: the 24 px box gets a 44 px target
+// (REQUIREMENTS.md, "Touch target, coarse pointer") and a near miss does not open the message.
 const COARSE = "(pointer: coarse)";
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
 const TOUCH_TARGET = 44;
 // The selection plugin's column: SELECTION_COLUMN_KEY in Astryx's useTableSelection, which the
 // package does not export. The phone suite fails if it changes (web/test/mobile.test.ts).
@@ -46,12 +61,6 @@ function selectFromCell(event: MouseEvent<HTMLElement>) {
   event.currentTarget.querySelector<HTMLInputElement>("input[type=checkbox]")?.click();
 }
 const selectCell = { "data-select-cell": "", onClick: selectFromCell };
-
-function isRowItself(event: { target: EventTarget | null; currentTarget: EventTarget }) {
-  const target = event.target as Element | null;
-  const control = target?.closest(INTERACTIVE);
-  return !control || control === event.currentTarget;
-}
 
 export function rowElement(id: string): HTMLElement | null {
   return document.querySelector(`[data-message-row="${CSS.escape(id)}"]`);
@@ -68,6 +77,11 @@ export function MessageList({
   selected,
   setSelected,
   onCursor,
+  selectable = true,
+  hasHeader = true,
+  tapSelects = false,
+  onLongPress,
+  swipe,
 }: {
   messages: MessageItem[];
   openId: string | null;
@@ -75,10 +89,35 @@ export function MessageList({
   selected: Set<string>;
   setSelected: Dispatch<SetStateAction<Set<string>>>;
   onCursor: (index: number) => void;
+  /** Whether the selection column shows; a phone shows it only in selection mode. */
+  selectable?: boolean;
+  /** Whether the column header row shows; a phone hides it outside selection mode. */
+  hasHeader?: boolean;
+  /** A tap on a row toggles its selection instead of opening it (phone selection mode). */
+  tapSelects?: boolean;
+  /** A 500 ms press on a row (phone, coarse pointer); without it the row has no gestures. */
+  onLongPress?: (item: MessageItem) => void;
+  /** Swipe actions by side, and what runs one; without them a row does not swipe. */
+  swipe?: {
+    actions: Partial<Record<SwipeSide, SwipeAction>>;
+    run: (item: MessageItem, action: SwipeAction) => Promise<boolean>;
+  };
 }) {
   const { t, i18n } = useTranslation();
   const coarse = useMediaQuery(COARSE);
   const rows = messages as Row[];
+  const reduceMotion = useMediaQuery(REDUCED_MOTION);
+  const host = useRef<HTMLDivElement>(null);
+  const { gestures, view } = useRowGestures<MessageItem>({
+    enabled: onLongPress !== undefined && !tapSelects,
+    onLongPress: (item) => onLongPress?.(item),
+    swipe: swipe && {
+      actionFor: (_, side) => swipe.actions[side] ?? null,
+      run: (item, action) => swipe.run(item, action as SwipeAction),
+      reduceMotion,
+      host,
+    },
+  });
   const { selectionConfig } = useTableSelectionState<Row>({
     data: rows,
     idKey: "id",
@@ -96,6 +135,16 @@ export function MessageList({
       [t],
     ),
   });
+
+  const toggle = useCallback(
+    (id: string) =>
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (!next.delete(id)) next.add(id);
+        return next;
+      }),
+    [setSelected],
+  );
 
   const rowBehaviour = useMemo<TablePlugin<Row>>(
     () => ({
@@ -120,28 +169,36 @@ export function MessageList({
         ...props,
         htmlProps: {
           ...props.htmlProps,
+          ...(onLongPress && {
+            ...gestures.bind(item),
+            style: { ...props.htmlProps.style, ...GESTURE_ROW },
+          }),
           tabIndex: 0,
           "data-message-row": item.id,
           "aria-current": item.id === openId ? true : undefined,
           onFocus: () => onCursor(messages.indexOf(item)),
           onClick: (event) => {
-            if (isRowItself(event)) onOpen(item);
+            if (gestures.swallowClick() || !isRowItself(event)) return;
+            if (tapSelects) toggle(item.id);
+            else onOpen(item);
           },
           onKeyDown: (event) => {
             if (event.key !== "Enter" || !isRowItself(event)) return;
             event.preventDefault();
-            onOpen(item);
+            if (tapSelects) toggle(item.id);
+            else onOpen(item);
           },
         },
       }),
       transformBodyCell: (props, column, item) => {
         const htmlProps = { ...props.htmlProps };
         if (item.id === openId) htmlProps.style = { ...htmlProps.style, ...OPEN_CELL_STYLE };
+        if (onLongPress) htmlProps.style = { ...htmlProps.style, ...GESTURE_CELL };
         if (coarse && column.key === SELECTION_COLUMN) Object.assign(htmlProps, selectCell);
         return { ...props, htmlProps };
       },
     }),
-    [coarse, messages, onCursor, onOpen, openId],
+    [coarse, gestures, messages, onCursor, onLongPress, onOpen, openId, tapSelects, toggle],
   );
 
   const columns = useMemo<TableColumn<Row>[]>(
@@ -205,15 +262,19 @@ export function MessageList({
   );
 
   return (
-    <Table<Row>
-      data={rows}
-      columns={columns}
-      idKey="id"
-      plugins={{ selection, rowStatus, rowBehaviour }}
-      density="balanced"
-      dividers="rows"
-      hasHover
-      verticalAlign="top"
-    />
+    <div ref={host} className="mail-swipe-host" data-headless={!hasHeader}>
+      <Table<Row>
+        data={rows}
+        columns={columns}
+        idKey="id"
+        plugins={selectable ? { selection, rowStatus, rowBehaviour } : { rowStatus, rowBehaviour }}
+        density="balanced"
+        dividers="rows"
+        hasHover
+        verticalAlign="top"
+      />
+      {/* After the table: the table's first-child margin must keep applying to the table. */}
+      {view && <SwipeBackdrop view={view} />}
+    </div>
   );
 }

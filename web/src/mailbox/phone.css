@@ -1,0 +1,64 @@
+/*
+ * The phone list: Compose floats at the bottom end above the safe area, and the list ends with
+ * a gap as tall as the button, so the last row can scroll clear of it.
+ */
+.mail-compose-fab {
+  position: fixed;
+  right: calc(var(--spacing-4) + env(safe-area-inset-right, 0px));
+  bottom: calc(var(--spacing-4) + env(safe-area-inset-bottom, 0px));
+  z-index: 10;
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-high);
+}
+
+.mail-compose-gap {
+  flex-shrink: 0;
+  height: calc(var(--spacing-12) + var(--spacing-6) + env(safe-area-inset-bottom, 0px));
+}
+
+/*
+ * The row of a swipe slides over this backdrop. The host makes its own stacking context so the
+ * backdrop sits behind the table (z-index -1) and only shows where the row has moved away.
+ */
+.mail-swipe-host {
+  position: relative;
+  isolation: isolate;
+}
+
+/*
+ * The column header row a phone list hides outside selection mode (MessageList, hasHeader).
+ * collapse, not display: none: the fixed table layout takes its column widths from this row.
+ */
+.mail-swipe-host[data-headless="true"] thead {
+  visibility: collapse;
+}
+
+.mail-swipe-backdrop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: -1;
+  display: flex;
+  align-items: center;
+  padding-inline: var(--spacing-6);
+  background: var(--color-background-muted);
+  color: var(--color-icon-secondary);
+}
+
+.mail-swipe-backdrop[data-side="right"] {
+  justify-content: flex-start;
+}
+
+.mail-swipe-backdrop[data-side="left"] {
+  justify-content: flex-end;
+}
+
+.mail-swipe-backdrop[data-armed="true"][data-tone="success"] {
+  background: var(--color-success);
+  color: var(--color-on-success);
+}
+
+.mail-swipe-backdrop[data-armed="true"][data-tone="error"] {
+  background: var(--color-error);
+  color: var(--color-on-error);
+}

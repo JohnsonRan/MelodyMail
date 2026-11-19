@@ -2,7 +2,7 @@
 
 export const FIELDS = ["from", "to", "recipient", "tag", "subject", "header"] as const;
 export const OPS = ["contains", "not_contains", "equals", "starts_with", "ends_with"] as const;
-export const ACTIONS = ["markRead", "star", "archive", "trash", "stop"] as const;
+export const ACTIONS = ["markRead", "star", "archive", "trash", "spam", "stop"] as const;
 
 /** Limits the Worker enforces (worker/src/rules/validate.ts); the editor keeps within them. */
 export const CONDITIONS_MAX = 10;
@@ -43,6 +43,7 @@ export function emptyDraft(): RuleDraft {
     star: false,
     archive: false,
     trash: false,
+    spam: false,
     stop: false,
   };
 }
@@ -61,6 +62,7 @@ export function ruleBody(d: RuleDraft) {
     star: d.star,
     archive: d.archive,
     trash: d.trash,
+    spam: d.spam,
     stop: d.stop,
   };
 }

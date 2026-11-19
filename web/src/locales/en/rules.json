@@ -42,6 +42,7 @@
     "star": "Star",
     "archive": "Archive",
     "trash": "Move to Trash",
+    "spam": "Move to Spam",
     "stop": "Stop processing more rules"
   },
   "summary": {

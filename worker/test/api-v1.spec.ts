@@ -68,7 +68,7 @@ describe("REST API v1", () => {
     expect(raw.headers.get("content-type")).toBe("application/octet-stream");
     expect(await raw.text()).toBe("Subject: raw\r\n\r\nbytes\r\n");
     expect((await v1(key, "GET", "/messages/none")).status).toBe(404);
-    expect((await v1(key, "GET", "/messages?folder=spam")).status).toBe(400);
+    expect((await v1(key, "GET", "/messages?folder=junk")).status).toBe(400);
   });
 
   it("pages with the keyset cursor until nextCursor is null", async () => {

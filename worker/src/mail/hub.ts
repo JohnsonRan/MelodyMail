@@ -24,9 +24,11 @@ const SESSION_HEADER = "x-melodymail-session";
 export const SESSION_ENDED = 4001;
 
 /** "message": new inbound mail (pushed to devices without a page). "changed": a sent message,
- * its delivery status, or new mail a rule marked read, archived or trashed; pages refetch, nothing
- * is pushed. */
-export type HubEvent = { type: "message" | "changed"; id: string };
+ * its delivery status, or new mail a rule marked read, archived, trashed or moved to Spam; pages
+ * refetch, nothing is pushed. "filed": the consumer moved this new message into Spam because its
+ * sender is listed; an open page re-reads that message and drops it from a view it left, nothing
+ * is pushed (docs/M8-mailbox-ux.md, "Filing"). */
+export type HubEvent = { type: "message" | "changed" | "filed"; id: string };
 
 /**
  * A page in the foreground repeats "fg" every 30 s (web/src/mailbox/MailboxContext.tsx). A report

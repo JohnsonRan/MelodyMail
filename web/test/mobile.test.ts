@@ -1,25 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { openSession, type Session, shutdown } from "./browser";
+import { LONG_MAIL, PHONE, rect, rowPoint, SENDER } from "./phone";
 import { message, StubApp } from "./stub-app";
 
 // The app on a phone (iPhone 16 Pro: 402 x 874 CSS px) with a coarse pointer, through the built
 // app in Chromium: touch targets (REQUIREMENTS.md, "Touch target, coarse pointer"), long values
 // on narrow rows, the compact reader and list actions, the drawer, and the browser bar colour.
 
-const PHONE = { width: 402, height: 874 };
 const LONG = "very.long.local.part.for.testing@subdomain.extremely-long-domain-name-example.org";
-// Longer than LONG: a phone cut this one at the right edge of the reader.
-const SENDER =
-  "very.long.local.part.for.testing.wrapping.behaviour@subdomain.extremely-long-domain-name-example.org";
-const LONG_MAIL = [
-  `From: Newsletter <${SENDER}>`,
-  "To: shop@example.com",
-  "Subject: Long sender",
-  "Message-ID: <long@example.org>",
-  "",
-  "Hello.",
-  "",
-].join("\r\n");
 // A newsletter laid out for 640 px: a fixed table, a 600 px picture, two fixed columns and a
 // preformatted line, the shapes that ran off a phone's frame.
 const NEWSLETTER = [
@@ -169,17 +157,15 @@ const go = async (path: string, ready: string) => {
   await s.page.locator(ready).first().waitFor();
 };
 
-const rect = (selector: ReturnType<Session["page"]["locator"]>) =>
-  selector.evaluate((el) => {
-    const r = el.getBoundingClientRect();
-    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
-  });
-
 describe("phone end to end", () => {
   test("gives every target at least 44 x 44 px under a coarse pointer", async () => {
     expect(await s.page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
     expect(await smallTargets()).toEqual([]);
-    // A tap beside the 24 px checkbox selects the row and does not open the message.
+    // The checkboxes show in selection mode. A tap beside the 24 px checkbox selects the row and
+    // does not open the message.
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
+    await s.page.locator("[data-select-cell]").first().waitFor();
+    expect(await smallTargets()).toEqual([]);
     const cell = s.page.locator(`[data-message-row="note1"] [data-select-cell]`);
     expect(await cell.count()).toBe(1);
     const box = await rect(cell);
@@ -201,7 +187,7 @@ describe("phone end to end", () => {
     }
   });
 
-  test("keeps the app name whole beside the language and theme buttons", async () => {
+  test("keeps the app name whole and moves the language and theme buttons to the drawer", async () => {
     await go("/", `[data-message-row="note3"]`);
     const bar = s.page.getByRole("navigation", { name: "Main navigation" });
     expect(await bar.getByRole("combobox").count()).toBe(0);
@@ -214,11 +200,13 @@ describe("phone end to end", () => {
       ]);
     }
     await s.page.setViewportSize(PHONE);
-    await bar.getByRole("button", { name: "Language: English" }).waitFor();
-    await bar.getByRole("button", { name: "Theme: System" }).waitFor();
+    // The two menus left the app bar for the end of the drawer.
+    expect(await bar.getByRole("button", { name: /^(Language|Theme):/ }).count()).toBe(0);
     await s.page.getByRole("button", { name: "Open navigation" }).click();
     const drawer = s.page.getByRole("dialog");
     await drawer.getByRole("link", { name: "Settings" }).waitFor();
+    await drawer.getByRole("button", { name: "Language: English" }).waitFor();
+    await drawer.getByRole("button", { name: "Theme: System" }).waitFor();
     expect(await drawer.getByRole("combobox").count()).toBe(0);
     // The drawer panel pads by the safe area on the top, the bottom and its screen edge. A
     // browser here reports every inset as 0, so this reads the rules that apply to the panel.
@@ -241,10 +229,11 @@ describe("phone end to end", () => {
     await s.page.keyboard.press("Escape");
   });
 
-  test("switches theme and language from their menus, the current choice checked", async () => {
+  test("switches theme and language from their menus in the drawer, the current choice checked", async () => {
     await go("/", `[data-message-row="note3"]`);
-    // The app bar by its place, not its name: the name changes with the language.
-    const bar = s.page.getByRole("navigation").first();
+    await s.page.getByRole("button", { name: "Open navigation" }).click();
+    const bar = s.page.getByRole("dialog");
+    await bar.getByRole("link", { name: "Settings" }).waitFor();
     const choices = async (button: string) => {
       await bar.getByRole("button", { name: button }).click();
       const items = s.page.getByRole("menuitemradio");
@@ -307,7 +296,7 @@ describe("phone end to end", () => {
   test("lists the settings sections at /settings", async () => {
     await go("/settings", "text=API keys");
     expect(s.page.url()).toBe(`${app.origin}/settings`);
-    expect(await s.page.locator(".astryx-list-item").count()).toBe(7);
+    expect(await s.page.locator(".astryx-list-item").count()).toBe(8);
     const main = s.page.getByRole("main");
     expect(await main.getByRole("heading", { level: 1 }).textContent()).toBe("Settings");
     expect(await main.getByRole("link").allTextContents()).toEqual([
@@ -315,6 +304,7 @@ describe("phone end to end", () => {
       "Addresses",
       "Forwarding",
       "Rules",
+      "Spam senders",
       "Notifications",
       "Security",
       "API keys",
@@ -370,6 +360,7 @@ describe("phone end to end", () => {
       "Forward",
       "Star",
       "Mark as unread",
+      "Report spam",
     ]);
     await menu.getByRole("menuitem", { name: "Star" }).click();
     await menu.waitFor({ state: "hidden" });
@@ -399,6 +390,8 @@ describe("phone end to end", () => {
   test("puts star and read state in the list's More menu", async () => {
     await go("/", `[data-message-row="note3"]`);
     const bar = s.page.getByRole("toolbar", { name: "Actions on selected messages" });
+    expect(await bar.count()).toBe(0);
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
     expect(await bar.getByRole("button").evaluateAll((b) => b.map((e) => e.ariaLabel))).toEqual([
       "Archive",
       "Move to Trash",
@@ -432,5 +425,130 @@ describe("phone end to end", () => {
       viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
       statusBar: "black-translucent",
     });
+  });
+
+  test("paints html and body in the theme body colour, light and dark", async () => {
+    const colours = () =>
+      s.page.evaluate(() => {
+        const probe = document.createElement("div");
+        probe.style.backgroundColor = "var(--color-background-body)";
+        document.body.append(probe);
+        const theme = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return {
+          theme,
+          html: getComputedStyle(document.documentElement).backgroundColor,
+          body: getComputedStyle(document.body).backgroundColor,
+        };
+      });
+    for (const mode of ["light", "dark"]) {
+      await s.page.evaluate((m) => localStorage.setItem("melodymail.mode", m), mode);
+      await go("/", `[data-message-row="note3"]`);
+      const found = await colours();
+      expect([mode, found.html, found.body]).toEqual([mode, found.theme, found.theme]);
+    }
+    await s.page.evaluate(() => localStorage.removeItem("melodymail.mode"));
+  });
+});
+
+describe("phone list", () => {
+  const checkboxes = () => s.page.locator("[data-select-cell]");
+  const bulkBar = () => s.page.getByRole("toolbar", { name: "Actions on selected messages" });
+
+  test("puts Refresh and Select in the title row and floats Compose", async () => {
+    await go("/", `[data-message-row="note3"]`);
+    const title = await rect(s.page.getByRole("heading", { level: 1, name: "Inbox" }));
+    for (const name of ["Refresh", "Select"]) {
+      const box = await rect(s.page.getByRole("button", { name, exact: true }));
+      expect([name, box.top >= title.top - 20 && box.bottom <= title.bottom + 20]).toEqual([
+        name,
+        true,
+      ]);
+    }
+    const compose = s.page.getByRole("button", { name: "Compose", exact: true });
+    expect(await compose.count()).toBe(1);
+    expect(
+      await compose.evaluate((el) => getComputedStyle(el.parentElement as Element).position),
+    ).toBe("fixed");
+    const box = await rect(compose);
+    const view = await s.page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+    expect(view.w - box.right).toBeLessThan(40);
+    expect(view.h - box.bottom).toBeLessThan(40);
+    await compose.tap();
+    await s.page.locator("[data-compose]").waitFor();
+  });
+
+  test("lets the list scroll clear of the floating Compose", async () => {
+    for (let i = 0; i < 14; i++)
+      app.store.set(
+        `fill${i}`,
+        message(`fill${i}`, LONG_MAIL, `Filler ${i}`, Date.now() - 100000 - i),
+      );
+    await s.page.goto(`${app.origin}/`);
+    await s.page.locator(`[data-message-row="fill13"]`).waitFor();
+    await s.page.locator(`[data-message-row="fill13"]`).evaluate((row) => {
+      for (let p = row.parentElement; p; p = p.parentElement) p.scrollTop = p.scrollHeight;
+    });
+    const last = await rect(s.page.locator(`[data-message-row="fill13"]`));
+    const fab = await rect(s.page.getByRole("button", { name: "Compose", exact: true }));
+    expect(last.bottom).toBeLessThanOrEqual(fab.top);
+    for (let i = 0; i < 14; i++) app.store.delete(`fill${i}`);
+  });
+
+  test("enters selection mode with Select and leaves it with Done", async () => {
+    await go("/", `[data-message-row="note3"]`);
+    expect(await checkboxes().count()).toBe(0);
+    expect(await bulkBar().count()).toBe(0);
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
+    await bulkBar().waitFor();
+    expect(await checkboxes().count()).toBeGreaterThan(0);
+    expect(await s.page.getByRole("button", { name: "Compose", exact: true }).count()).toBe(0);
+    // A tap on a row selects it and does not open it; clearing the last one leaves the mode.
+    const point = await rowPoint(s.page, "note1");
+    await s.page.touchscreen.tap(point.x, point.y);
+    await s.page.getByText("Selected: 1").waitFor();
+    expect(s.page.url()).toBe(`${app.origin}/`);
+    await s.page.touchscreen.tap(point.x, point.y);
+    await bulkBar().waitFor({ state: "detached" });
+    expect(await checkboxes().count()).toBe(0);
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
+    await s.page.getByRole("button", { name: "Done", exact: true }).tap();
+    await bulkBar().waitFor({ state: "detached" });
+  });
+
+  test("shows the Trash note as a folder row outside selection mode", async () => {
+    app.store.set("gone", message("gone", LONG_MAIL, "Gone", Date.now(), { trashed: true }));
+    await go("/trash", `[data-message-row="gone"]`);
+    const note = s.page.getByText("Mail in Trash for 30 days is deleted forever.");
+    await note.waitFor();
+    expect(await bulkBar().count()).toBe(0);
+    // Empty Trash sits in the folder row, so it is reachable outside selection mode.
+    const empty = s.page.getByRole("button", { name: "Empty Trash" });
+    // Its label is whole: the note wraps instead of squeezing the button.
+    expect(
+      await empty.evaluate((el) =>
+        [el, ...el.querySelectorAll("*")].every((e) => e.scrollWidth <= e.clientWidth + 1),
+      ),
+    ).toBe(true);
+    await s.page.getByRole("button", { name: "Empty Trash" }).tap();
+    await s.page.getByRole("alertdialog").getByText("Empty Trash?").waitFor();
+    await s.page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).tap();
+    await s.page.getByRole("alertdialog").waitFor({ state: "detached" });
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
+    await bulkBar().waitFor();
+    app.store.delete("gone");
+  });
+
+  test("hides the Message and Date header row outside selection mode", async () => {
+    await go("/", `[data-message-row="note3"]`);
+    const header = s.page.getByRole("columnheader", { name: "Message" });
+    expect(await header.count()).toBe(0);
+    // The columns keep their widths: the sender starts near the left edge, not behind a gap.
+    const sender = await rect(s.page.locator(`[data-message-row="note3"]`).getByText("Sender"));
+    expect(sender.left).toBeLessThan(60);
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
+    await header.waitFor();
+    await s.page.getByRole("button", { name: "Done", exact: true }).tap();
+    await header.waitFor({ state: "detached" });
   });
 });

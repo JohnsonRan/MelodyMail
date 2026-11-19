@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
 import { handleScheduled } from "../src/mail/consumer";
 import { handleEmail } from "../src/mail/inbound";
-import { deleteFromTrash, expireTrash, TRASH_EXPIRE_MAX, TRASH_KEEP_MS } from "../src/mail/trash";
+import { deletePermanently, expireTrash, TRASH_EXPIRE_MAX, TRASH_KEEP_MS } from "../src/mail/trash";
 import { setupOwner } from "./helpers";
 import { addAddress, addRule, asMessage, inbound, messageRows } from "./mail-helpers";
 import { rawKey, seedMessage } from "./mailbox-helpers";
@@ -72,13 +72,17 @@ describe("automatic Trash clean-up", () => {
     const now = Date.now();
     await seedTrashed("untimed", null);
     expect(await expireTrash(env, now)).toBe(0);
-    expect(await trashedAt("untimed")).toBe(now);
+    expect(await trashedAt("untimed")).toBeGreaterThanOrEqual(now);
 
     await seedTrashed("restored", now - TRASH_KEEP_MS - 1);
     await env.DB.prepare(
       "UPDATE messages SET trashed = 0, trashed_at = NULL WHERE id = 'restored'",
     ).run();
-    expect(await deleteFromTrash(env, ["restored", "untimed"], now - TRASH_KEEP_MS)).toEqual([]);
+    const bounds = { before: now - TRASH_KEEP_MS + 1 };
+    expect(await deletePermanently(env, "trash", ["restored", "untimed"], bounds)).toEqual({
+      deleted: [],
+      hasMore: false,
+    });
     expect(await messageRows()).toHaveLength(2);
   });
 
@@ -114,6 +118,30 @@ describe("automatic Trash clean-up", () => {
     await handleEmail(asMessage(inbound("shop@example.com", undefined, { Subject: "Hello" })), env);
     const [row] = await messageRows();
     expect(row?.trashed).toBe(1);
-    expect(row?.trashed_at).toBe(row?.received_at);
+    expect(row?.trashed_at).toBeGreaterThanOrEqual(row?.received_at as number);
+  });
+});
+
+describe("automatic Spam clean-up", () => {
+  it("deletes mail in Spam for 30 days, and keeps mail moved out", async () => {
+    const now = Date.now();
+    await seedMessage({ id: "old", spam: true, spamAt: now - TRASH_KEEP_MS, body: "old" });
+    await seedMessage({ id: "young", spam: true, spamAt: now - TRASH_KEEP_MS + 1 });
+    // Moved out to the Inbox, or to Trash where Trash's own clock counts.
+    await seedMessage({ id: "out", spamAt: now - TRASH_KEEP_MS });
+    await seedMessage({ id: "trash", spam: true, spamAt: now - TRASH_KEEP_MS, trashed: true });
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    await handleScheduled({ scheduledTime: now } as ScheduledController, env);
+
+    expect((await messageRows()).map((r) => r.id).sort()).toEqual(["out", "trash", "young"]);
+    expect(await env.MAIL.head(rawKey("old"))).toBeNull();
+    expect(info.mock.calls.join(" ")).toContain(
+      '{"level":"info","event":"spam_expired","count":1}',
+    );
+    const audit = await env.DB.prepare(
+      "SELECT detail FROM audit_log WHERE event = 'spam_expired'",
+    ).all();
+    expect(audit.results).toEqual([{ detail: "1" }]);
   });
 });

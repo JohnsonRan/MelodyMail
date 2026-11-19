@@ -236,6 +236,7 @@ describe("mailbox end to end", () => {
       "Addresses",
       "Forwarding",
       "Rules",
+      "Spam senders",
       "Notifications",
       "Security",
       "API keys",
@@ -256,6 +257,18 @@ describe("mailbox end to end", () => {
     await s.page.getByRole("button", { name: "Open navigation" }).click();
     await s.page.getByRole("link", { name: "Back to mailbox" }).waitFor();
     expect(await s.page.getByRole("link", { name: "Inbox" }).count()).toBe(0);
+  });
+
+  test("keeps language and theme in the app bar on desktop, in the drawer on a phone", async () => {
+    const menus = /^(Language|Theme):/;
+    const s = await open();
+    const bar = s.page.getByRole("navigation", { name: "Main navigation" });
+    expect(await bar.getByRole("button", { name: menus }).count()).toBe(2);
+    expect(await s.page.getByRole("dialog").count()).toBe(0);
+    await s.page.setViewportSize({ width: 390, height: 900 });
+    await bar.getByRole("button", { name: menus }).first().waitFor({ state: "detached" });
+    await s.page.getByRole("button", { name: "Open navigation" }).click();
+    expect(await s.page.getByRole("dialog").getByRole("button", { name: menus }).count()).toBe(2);
   });
 
   test("puts new mail on top when the hub sends an event", async () => {

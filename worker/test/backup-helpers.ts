@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { runExport } from "../src/backup/export";
-import { type Manifest, manifestKey } from "../src/backup/sql";
+import { type Manifest, manifestKey, RESTORE_COUNTER } from "../src/backup/sql";
 import { EXPORTED } from "../src/backup/tables";
 import { seedMessage } from "./mailbox-helpers";
 
@@ -144,6 +144,16 @@ export async function seedAll(): Promise<void> {
         "INSERT INTO telegram_cards (message_id, chat_id, tg_message_id, created_at) VALUES ('m02', -1001234567890, NULL, ?)",
       )
       .bind(t),
+    // M8: a message in Spam with its sender key, a listed sender, a Move to Spam rule.
+    db
+      .prepare(
+        "UPDATE messages SET spam = 1, spam_at = ?, from_key = 's3@example.org' WHERE id = 'm03'",
+      )
+      .bind(t),
+    db
+      .prepare("INSERT INTO spam_senders (address, created_at) VALUES ('s3@example.org', ?)")
+      .bind(t),
+    db.prepare("UPDATE rules SET spam = 1 WHERE id = 3"),
   ]);
 }
 
@@ -193,10 +203,15 @@ export async function partTexts(manifest: Manifest): Promise<string[]> {
   return texts;
 }
 
-/** Loads an export into `db` (migrated), as `wrangler d1 execute --file` would. */
+/**
+ * Loads an export into `db` (migrated), as `wrangler d1 execute --file` would with the file
+ * worker/scripts/backup-restore.ts writes (its clean-up lines aside).
+ */
 export async function loadExport(db: D1Database, manifest: Manifest): Promise<void> {
   const sql = (await partTexts(manifest)).flatMap(statements);
-  await db.batch(["PRAGMA defer_foreign_keys = on", ...sql].map((s) => db.prepare(s)));
+  await db.batch(
+    ["PRAGMA defer_foreign_keys = on", ...sql, RESTORE_COUNTER].map((s) => db.prepare(s)),
+  );
 }
 
 /** Every exported table's rows, ordered by key, from `db`. */

@@ -128,6 +128,7 @@ function ruleRows(hit: boolean): RuleRow[] {
       star: 0,
       archive: r % 2,
       trash: 0,
+      spam: 0,
       stop: 0,
       targets: JSON.stringify(r % 10 === 0 ? [`t${r}@out.example`] : []),
     };

@@ -1,14 +1,15 @@
 import type { Context, Hono } from "hono";
-import { audit } from "../auth/store";
-import { parseFlag } from "../domains/validate";
-import type { AppEnv, Env } from "../env";
-import { fail, readJson } from "../http";
+import type { AppEnv } from "../env";
+import { clientInfo, fail, readJson } from "../http";
+import { registerBulkRoutes } from "./bulk";
+import { parseFlags, SESSION_FLAGS, updateMessageFlags } from "./flags";
+import { FOLDERS, type Folder, isFolder } from "./folders";
 import { searchFilter } from "./search";
-import { deleteFromTrash } from "./trash";
+import { deletePermanently } from "./trash";
 
-// The mailbox API (docs/M4-mailbox.md). The Worker runs indexed queries and streams raw mail; it
-// never parses or renders a message. The session routes and the /api/v1/ routes
-// (worker/src/api/v1.ts) share these handlers.
+// The mailbox API (docs/M4-mailbox.md, docs/M8-mailbox-ux.md). The Worker runs indexed queries
+// and streams raw mail; it never parses or renders a message. The session routes and the /api/v1/
+// routes (worker/src/api/v1.ts) share the read handlers; each side has its own PATCH handlers.
 
 type Ctx = Context<AppEnv>;
 type IdCtx = Context<AppEnv, "/:id">;
@@ -19,17 +20,9 @@ const THREAD_MAX = 100;
 const QUERY_MAX = 200;
 const ID_MAX = 64;
 
-const FOLDERS = {
-  inbox: "direction = 'in' AND trashed = 0 AND archived = 0",
-  sent: "direction = 'out' AND trashed = 0",
-  starred: "starred = 1 AND trashed = 0",
-  archive: "archived = 1 AND trashed = 0",
-  trash: "trashed = 1",
-} as const;
-
 const LIST_COLUMNS = `id, address_id AS addressId, subaddress_tag AS tag,
   COALESCE(from_hdr, envelope_from) AS "from", subject, snippet, received_at AS receivedAt,
-  date_hdr AS date, raw_size AS size, read, starred, archived, trashed,
+  date_hdr AS date, raw_size AS size, read, starred, archived, trashed, spam,
   has_attachments AS hasAttachments, status, thread_key AS threadKey, direction,
   to_hdr AS "to", error`;
 
@@ -45,6 +38,7 @@ type ListRow = {
   starred: number;
   archived: number;
   trashed: number;
+  spam: number;
   hasAttachments: number;
 } & Record<string, unknown>;
 
@@ -54,6 +48,7 @@ const toItem = (r: ListRow) => ({
   starred: r.starred === 1,
   archived: r.archived === 1,
   trashed: r.trashed === 1,
+  spam: r.spam === 1,
   hasAttachments: r.hasAttachments === 1,
 });
 
@@ -74,6 +69,13 @@ function parseLimit(value: string | undefined): number | null {
   if (value === undefined) return PAGE_MAX;
   const n = Number(value);
   return Number.isInteger(n) && n >= 1 && n <= PAGE_MAX ? n : null;
+}
+
+/** An address id from the query string: undefined when absent, null when malformed. */
+export function parseAddress(value: string | undefined): number | null | undefined {
+  if (value === undefined) return undefined;
+  const n = Number(value);
+  return Number.isSafeInteger(n) ? n : null;
 }
 
 /** Reads `limit + 1` rows after the cursor, so the page knows whether another follows. */
@@ -104,83 +106,24 @@ async function page(
   });
 }
 
-export type Flags = { read?: boolean; starred?: boolean; archived?: boolean; trashed?: boolean };
-
-function parseFlags(body: Record<string, unknown>): Flags | null {
-  const flags: Flags = {};
-  for (const key of ["read", "starred", "archived", "trashed"] as const) {
-    const parsed = parseFlag(body[key]);
-    if (!parsed.ok) return null;
-    if (parsed.value !== undefined) flags[key] = parsed.value;
-  }
-  return Object.keys(flags).length > 0 ? flags : null;
-}
-
-const flag = (value: boolean | undefined) => (value === undefined ? null : Number(value));
-
-/**
- * One UPDATE for any number of ids; a flag left out keeps its value. The panel and the Telegram
- * card buttons both change flags through this function.
- */
-export function updateMessageFlags(env: Env, ids: string[], flags: Flags) {
-  // trashed_at starts the 30-day clock when a message enters Trash, keeps it while the message
-  // stays there, and clears it when the message leaves (worker/src/mail/trash.ts). SET reads the
-  // old row, so `trashed = 1` below means "already in Trash".
-  return env.DB.prepare(
-    `UPDATE messages SET read = COALESCE(?1, read), starred = COALESCE(?2, starred),
-       archived = COALESCE(?3, archived), trashed = COALESCE(?4, trashed),
-       trashed_at = CASE WHEN ?4 IS NULL THEN trashed_at WHEN ?4 = 0 THEN NULL
-         WHEN trashed = 1 THEN trashed_at ELSE ?6 END
-     WHERE id IN (SELECT value FROM json_each(?5))`,
-  )
-    .bind(
-      flag(flags.read),
-      flag(flags.starred),
-      flag(flags.archived),
-      flag(flags.trashed),
-      JSON.stringify(ids),
-      Date.now(),
-    )
-    .run();
-}
-
-const validId = (value: unknown): value is string =>
+export const validId = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0 && value.length <= ID_MAX;
 
 export async function listMessages(c: Ctx) {
   const folder = c.req.query("folder") ?? "inbox";
   const cursor = parseCursor(c.req.query("cursor"));
   const limit = parseLimit(c.req.query("limit"));
-  const address = c.req.query("address");
-  const addressId = address === undefined ? undefined : Number(address);
-  if (
-    !Object.hasOwn(FOLDERS, folder) ||
-    cursor === null ||
-    limit === null ||
-    (addressId !== undefined && !Number.isSafeInteger(addressId))
-  ) {
+  const addressId = parseAddress(c.req.query("address"));
+  if (!isFolder(folder) || cursor === null || limit === null || addressId === null) {
     return fail(c, 400, "bad_request");
   }
-  const where: string[] = [FOLDERS[folder as keyof typeof FOLDERS]];
+  const where: string[] = [FOLDERS[folder]];
   const params: number[] = [];
   if (addressId !== undefined) {
     where.push("address_id = ?");
     params.push(addressId);
   }
   return page(c, where, params, cursor, limit);
-}
-
-export async function patchMessages(c: Ctx) {
-  const body = await readJson(c);
-  const flags = body && parseFlags(body);
-  const ids = body?.ids;
-  if (!flags || !Array.isArray(ids) || ids.length === 0 || !ids.every(validId)) {
-    return fail(c, 400, "bad_request");
-  }
-  if (ids.length > BULK_MAX) return fail(c, 400, "too_many_ids");
-  // A repeated id matches its row once: IN (json_each) is a set test.
-  const result = await updateMessageFlags(c.env, ids, flags);
-  return c.json({ updated: result.meta.changes });
 }
 
 export async function getMessage(c: IdCtx) {
@@ -190,22 +133,28 @@ export async function getMessage(c: IdCtx) {
   return row ? c.json({ message: toItem(row) }) : fail(c, 404, "not_found");
 }
 
-// Oldest first. Outside Trash the thread leaves trashed messages out; in Trash it shows them.
+/** The folder a message is shown in for its thread: Trash, then Spam, else the others. */
+const THREAD_FOLDER = `CASE WHEN trashed = 1 THEN 'trash' WHEN spam = 1 THEN 'spam' ELSE '' END`;
+
+// Oldest first. A thread shows the messages of the same kind of folder as the one opened: Trash
+// with Trash, Spam with Spam, and outside both neither.
 export async function getThread(c: IdCtx) {
   const id = c.req.param("id");
   const db = c.env.DB;
   const self = await db
-    .prepare("SELECT thread_key AS threadKey, trashed FROM messages WHERE id = ?")
+    .prepare(
+      `SELECT thread_key AS threadKey, ${THREAD_FOLDER} AS folder FROM messages WHERE id = ?`,
+    )
     .bind(id)
-    .first<{ threadKey: string | null; trashed: number }>();
+    .first<{ threadKey: string | null; folder: string }>();
   if (!self) return fail(c, 404, "not_found");
   const { results } = await db
     .prepare(
       `SELECT ${DETAIL_COLUMNS} FROM messages
-       WHERE id = ? OR (thread_key = ? AND trashed = ?)
+       WHERE id = ? OR (thread_key = ? AND ${THREAD_FOLDER} = ?)
        ORDER BY received_at, id LIMIT ?`,
     )
-    .bind(id, self.threadKey, self.trashed, THREAD_MAX)
+    .bind(id, self.threadKey, self.folder, THREAD_MAX)
     .all<ListRow>();
   return c.json({ messages: results.map(toItem) });
 }
@@ -230,29 +179,35 @@ export async function getRaw(c: IdCtx) {
   });
 }
 
-export async function patchMessage(c: IdCtx) {
+/**
+ * The reader's flag change. `spam: true` is Report spam and `spam: false` is Not spam: the
+ * sender is learned or forgotten in the same batch (docs/M8-mailbox-ux.md, "Filing").
+ */
+async function patchMessage(c: IdCtx) {
   const body = await readJson(c);
-  const flags = body && parseFlags(body);
+  const flags = body && parseFlags(body, SESSION_FLAGS);
   if (!flags) return fail(c, 400, "bad_request");
-  const result = await updateMessageFlags(c.env, [c.req.param("id")], flags);
+  const result = await updateMessageFlags(c.env, [c.req.param("id")], flags, { learn: true });
   return result.meta.changes > 0 ? c.json({ ok: true }) : fail(c, 404, "not_found");
 }
 
-// Permanent delete, only from Trash (worker/src/mail/trash.ts).
+// Permanent delete of one message, from Trash or Spam only.
 async function deleteMessage(c: IdCtx) {
   const id = c.req.param("id");
-  const [deleted] = await deleteFromTrash(c.env, [id]);
-  if (deleted === undefined) {
-    const exists = await c.env.DB.prepare("SELECT 1 AS one FROM messages WHERE id = ?")
-      .bind(id)
-      .first();
-    return exists ? fail(c, 409, "not_in_trash") : fail(c, 404, "not_found");
-  }
-  await audit(c, "message_deleted", Date.now(), id).run();
+  const row = await c.env.DB.prepare(`SELECT ${THREAD_FOLDER} AS folder FROM messages WHERE id = ?`)
+    .bind(id)
+    .first<{ folder: string }>();
+  if (!row) return fail(c, 404, "not_found");
+  if (row.folder !== "trash" && row.folder !== "spam") return fail(c, 409, "not_in_trash");
+  const { deleted } = await deletePermanently(c.env, row.folder, [id], {
+    audit: { event: "message_deleted", now: Date.now(), client: clientInfo(c), detail: id },
+  });
+  // Moved out of the folder between the read and the delete.
+  if (deleted.length === 0) return fail(c, 409, "not_in_trash");
   return c.json({ ok: true });
 }
 
-// Search leaves Trash out, like the folder lists outside Trash, and pages newest first.
+// Search leaves Trash and Spam out, like the folder lists outside them, and pages newest first.
 export async function searchMessages(c: Ctx) {
   const q = c.req.query("q") ?? "";
   const cursor = parseCursor(c.req.query("cursor"));
@@ -260,29 +215,34 @@ export async function searchMessages(c: Ctx) {
   if (!filter || cursor === null) return fail(c, 400, "bad_request");
   return page(
     c,
-    ["trashed = 0", `id IN (SELECT message_id FROM messages_fts WHERE ${filter.where})`],
+    [
+      "trashed = 0 AND spam = 0",
+      `id IN (SELECT message_id FROM messages_fts WHERE ${filter.where})`,
+    ],
     filter.params,
     cursor,
     PAGE_MAX,
   );
 }
 
+/** Unread counts per folder, and per address for the inbox; both read messages_unread only. */
+export function unreadStatements(db: D1Database) {
+  const sum = (folder: Folder) => `COALESCE(SUM(${FOLDERS[folder]}), 0) AS ${folder}`;
+  return [
+    db.prepare(
+      `SELECT ${sum("inbox")}, ${sum("starred")}, ${sum("archive")}, ${sum("spam")}, ${sum("trash")}
+       FROM messages INDEXED BY messages_unread WHERE read = 0`,
+    ),
+    db.prepare(
+      `SELECT address_id AS addressId, COUNT(*) AS unread FROM messages INDEXED BY messages_unread
+       WHERE read = 0 AND trashed = 0 AND archived = 0 AND spam = 0 GROUP BY address_id`,
+    ),
+  ];
+}
+
 // Unread counts per folder, and per address for the inbox.
 async function counts(c: Ctx) {
-  const db = c.env.DB;
-  const [folders, addresses] = await db.batch([
-    db.prepare(
-      `SELECT COALESCE(SUM(direction = 'in' AND trashed = 0 AND archived = 0), 0) AS inbox,
-         COALESCE(SUM(starred = 1 AND trashed = 0), 0) AS starred,
-         COALESCE(SUM(archived = 1 AND trashed = 0), 0) AS archive,
-         COALESCE(SUM(trashed = 1), 0) AS trash
-       FROM messages WHERE read = 0`,
-    ),
-    db.prepare(
-      `SELECT address_id AS addressId, COUNT(*) AS unread FROM messages
-       WHERE read = 0 AND trashed = 0 AND archived = 0 GROUP BY address_id`,
-    ),
-  ]);
+  const [folders, addresses] = await c.env.DB.batch(unreadStatements(c.env.DB));
   const perAddress: Record<string, number> = {};
   for (const r of (addresses?.results ?? []) as { addressId: number; unread: number }[]) {
     perAddress[r.addressId] = r.unread;
@@ -292,7 +252,8 @@ async function counts(c: Ctx) {
 
 export function registerMessageRoutes(messages: Hono<AppEnv>): void {
   messages.get("/", listMessages);
-  messages.patch("/", patchMessages);
+  // Before "/:id", so "count" and "purge" are not read as ids.
+  registerBulkRoutes(messages);
   messages.get("/:id", getMessage);
   messages.get("/:id/thread", getThread);
   messages.get("/:id/raw", getRaw);

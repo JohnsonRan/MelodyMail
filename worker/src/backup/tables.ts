@@ -54,6 +54,7 @@ export const EXPORTED: ExportTable[] = [
       "stop",
       "created_at",
       "updated_at",
+      "spam",
     ],
     key: ["id"],
   },
@@ -96,6 +97,10 @@ export const EXPORTED: ExportTable[] = [
       "error",
       "first_attempt_at",
       "maybe_accepted",
+      "seq",
+      "spam",
+      "spam_at",
+      "from_key",
     ],
     key: ["id"],
   },
@@ -150,7 +155,17 @@ export const EXPORTED: ExportTable[] = [
     columns: ["id", "event", "created_at", "ip", "user_agent", "detail"],
     key: ["id"],
   },
+  // M8. Appended, so the table index of an export running across the deploy names the same
+  // tables (docs/M8-mailbox-ux.md, "Data").
+  { name: "spam_senders", columns: ["address", "created_at"], key: ["address"] },
 ];
+
+/**
+ * The column lists an export starts with, stored on its row. A run of code with other lists (an
+ * export running across a deploy that changed them) discards that export and starts a new one,
+ * so one export never mixes rows with and without a column (docs/M8-mailbox-ux.md, "Data").
+ */
+export const EXPORT_COLUMNS = JSON.stringify(EXPORTED.map((t) => [t.name, t.columns]));
 
 /** Left out, with the reason. A restore from an export therefore resets every credential. */
 export const EXCLUDED: Record<string, string> = {
@@ -164,6 +179,7 @@ export const EXCLUDED: Record<string, string> = {
   telegram: "Connect renews the binding on the restored origin",
   webhook_events: "a 7-day replay guard",
   backup_exports: "the export's own state",
+  counters: "derived from messages.seq; the migration seeds it and a restore recomputes it",
   d1_migrations: "written by the migrations on the target",
   messages_fts_data: "FTS5 shadow table",
   messages_fts_idx: "FTS5 shadow table",

@@ -1,0 +1,39 @@
+name: folders
+
+# The mailbox folder suites and the phone gesture suite (Playwright driven by bun test): Spam,
+# Report spam and Not spam, Delete forever and Empty with their loops, select all matching, the
+# `filed` event, and the phone long press, vertical drag and swipe actions. The folder suites were
+# split from the browser suite by owner ruling 1 of the M8 rulings (2026-11-19) and the gesture
+# suite by ruling 7, once that tier went over its 42 s limit. It runs every night on main, by hand,
+# and on pull requests that touch web/, as the browser suite does.
+on:
+  pull_request:
+    paths:
+      - "web/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/folders.yml"
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: folders-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  folders:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bunx --bun playwright install --with-deps chromium-headless-shell
+        working-directory: web
+      - run: bun run test:folders

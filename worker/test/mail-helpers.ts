@@ -94,6 +94,7 @@ type RuleSeed = {
   star?: boolean;
   archive?: boolean;
   trash?: boolean;
+  spam?: boolean;
   stop?: boolean;
   /** Target emails; each is added to forward_targets when missing. */
   targets?: string[];
@@ -105,8 +106,8 @@ export async function addRule(seed: RuleSeed): Promise<number> {
   const bit = (v: boolean | undefined) => (v ? 1 : 0);
   const row = await env.DB.prepare(
     `INSERT INTO rules (name, enabled, position, match, conditions, mark_read, star, archive,
-       trash, stop, created_at, updated_at)
-     VALUES ('rule', ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM rules), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       trash, spam, stop, created_at, updated_at)
+     VALUES ('rule', ?, (SELECT COALESCE(MAX(position), 0) + 1 FROM rules), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      RETURNING id`,
   )
     .bind(
@@ -117,6 +118,7 @@ export async function addRule(seed: RuleSeed): Promise<number> {
       bit(seed.star),
       bit(seed.archive),
       bit(seed.trash),
+      bit(seed.spam),
       bit(seed.stop),
       now,
       now,

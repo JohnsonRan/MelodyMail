@@ -1,8 +1,11 @@
 import { api } from "../api";
 
-// Shapes and calls of the mailbox API (docs/M4-mailbox.md, "API").
+// Shapes and calls of the mailbox API (docs/M4-mailbox.md, "API"; docs/M8-mailbox-ux.md).
 
-export type Folder = "inbox" | "starred" | "sent" | "archive" | "trash";
+export type Folder = "inbox" | "starred" | "sent" | "archive" | "spam" | "trash";
+
+/** The folders whose mail can be deleted forever. */
+export type DeletableFolder = Extract<Folder, "trash" | "spam">;
 
 /** Delivery statuses of a sent message (docs/M5-sending.md, "Webhook"). */
 export type SendStatus =
@@ -30,6 +33,7 @@ export type MessageItem = {
   starred: boolean;
   archived: boolean;
   trashed: boolean;
+  spam: boolean;
   hasAttachments: boolean;
   status: "stored" | "parsed" | "parse_failed" | SendStatus;
   threadKey: string | null;
@@ -60,7 +64,9 @@ export type Counts = {
   addresses: Record<string, number>;
 };
 
-export type Flags = Partial<Pick<MessageItem, "read" | "starred" | "archived" | "trashed">>;
+export type Flags = Partial<
+  Pick<MessageItem, "read" | "starred" | "archived" | "trashed" | "spam">
+>;
 
 /** Which messages a list shows: a folder (optionally one address), or a search. */
 export type ListQuery = { folder: Folder; address?: number } | { search: string };
@@ -86,8 +92,8 @@ export function getThread(id: string): Promise<{ messages: MessageDetail[] }> {
   return api("GET", `/messages/${encodeURIComponent(id)}/thread`);
 }
 
-/** The API's limit on one bulk change. */
-const BULK_MAX = 100;
+/** The API's limit on one bulk change or delete. */
+export const BULK_MAX = 100;
 
 export async function setFlags(ids: string[], flags: Flags): Promise<void> {
   if (ids.length === 1 && ids[0] !== undefined) {
@@ -101,6 +107,57 @@ export async function setFlags(ids: string[], flags: Flags): Promise<void> {
 
 export function deleteForever(id: string): Promise<unknown> {
   return api("DELETE", `/messages/${encodeURIComponent(id)}`);
+}
+
+/** A folder view, the unit of "select all", Empty and the count route. */
+export type FolderView = { folder: Folder; address?: number };
+
+/**
+ * What a whole-folder action may touch: the rows at or below `watermark` (the insertion
+ * sequence when the count was read), and for a permanent delete only those whose folder clock is
+ * before `asOf`. Every call of one loop sends the same pair.
+ */
+export type FolderCount = { total: number; watermark: number; asOf: number };
+
+export function countMessages(view: FolderView): Promise<FolderCount> {
+  const params = new URLSearchParams({ folder: view.folder });
+  if (view.address !== undefined) params.set("address", String(view.address));
+  return api<FolderCount>("GET", `/messages/count?${params}`);
+}
+
+/** One call of a whole-folder flag change; `next` goes back as `after` until it is null. */
+export function setFolderFlags(
+  view: FolderView,
+  watermark: number,
+  after: number | null,
+  flags: Flags,
+): Promise<{ updated: number; next: number | null }> {
+  return api("PATCH", "/messages", {
+    ...view,
+    watermark,
+    ...(after === null ? {} : { after }),
+    ...flags,
+  });
+}
+
+/** Deletes up to BULK_MAX listed messages that are in `folder` now; returns the ones deleted. */
+export function deleteMessages(
+  folder: DeletableFolder,
+  ids: string[],
+): Promise<{ deleted: string[] }> {
+  return api("DELETE", "/messages", { folder, ids });
+}
+
+/** One call of Empty or a whole-folder Delete forever. */
+export function purgeFolder(
+  view: FolderView & { folder: DeletableFolder },
+  count: FolderCount,
+): Promise<{ deleted: string[]; hasMore: boolean }> {
+  return api("POST", "/messages/purge", {
+    ...view,
+    watermark: count.watermark,
+    asOf: count.asOf,
+  });
 }
 
 export function getCounts(): Promise<Counts> {

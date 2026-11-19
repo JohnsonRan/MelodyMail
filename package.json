@@ -27,6 +27,7 @@
     "deploy": "bun run --filter @melodymail/worker deploy",
     "test:browser": "bun run --cwd web test:browser",
     "test:pwa": "bun run --cwd web test:pwa",
+    "test:folders": "bun run --cwd web test:folders",
     "test:send": "bun run --cwd web test:send",
     "test:settings": "bun run --cwd web test:settings",
     "vapid": "bun run --cwd worker vapid",

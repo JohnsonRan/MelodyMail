@@ -26,7 +26,7 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "enum": ["inbox", "sent", "starred", "archive", "trash"],
+              "enum": ["inbox", "sent", "starred", "archive", "spam", "trash"],
               "default": "inbox"
             }
           },
@@ -146,7 +146,8 @@
           "429": {
             "$ref": "#/components/responses/RateLimited"
           }
-        }
+        },
+        "description": "Listed ids only. A message in Spam is left unchanged and not counted; `spam`, `folder`, `address`, `watermark` and `after` answer `bad_request`."
       }
     },
     "/messages/{id}": {
@@ -252,7 +253,8 @@
           "429": {
             "$ref": "#/components/responses/RateLimited"
           }
-        }
+        },
+        "description": "A message in Spam answers `not_found`; `spam`, `folder`, `address`, `watermark` and `after` answer `bad_request`."
       }
     },
     "/messages/{id}/thread": {
@@ -649,6 +651,7 @@
           "starred",
           "archived",
           "trashed",
+          "spam",
           "hasAttachments",
           "status",
           "threadKey",
@@ -700,6 +703,10 @@
           },
           "trashed": {
             "type": "boolean"
+          },
+          "spam": {
+            "type": "boolean",
+            "description": "In Spam. A key can read a Spam message but not change it."
           },
           "hasAttachments": {
             "type": "boolean"
@@ -754,6 +761,7 @@
           "starred",
           "archived",
           "trashed",
+          "spam",
           "hasAttachments",
           "status",
           "threadKey",
@@ -813,6 +821,10 @@
           },
           "trashed": {
             "type": "boolean"
+          },
+          "spam": {
+            "type": "boolean",
+            "description": "In Spam. A key can read a Spam message but not change it."
           },
           "hasAttachments": {
             "type": "boolean"

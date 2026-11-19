@@ -4,9 +4,9 @@ import { fail } from "../http";
 import { contains } from "../mail/search";
 
 // GET /api/contacts?q=&limit=: recipient suggestions for compose. A contact is an address the
-// owner sent to (To, Cc, Bcc) or received mail from (From), newest use first. Mail in Trash and
-// permanently deleted mail do not count, so trashing a sender's mail drops the suggestion. The
-// owner's own addresses are left out.
+// owner sent to (To, Cc, Bcc) or received mail from (From), newest use first. Mail in Trash or
+// Spam and permanently deleted mail do not count, so trashing a sender's mail drops the suggestion.
+// The owner's own addresses are left out.
 
 const QUERY_MAX = 100;
 const LIMIT_DEFAULT = 8;
@@ -17,6 +17,22 @@ export const SCAN_ROWS = 1000;
 export const MATCH_ROWS = 30;
 
 export type Contact = { address: string; name: string };
+
+/**
+ * Received messages whose From contains the pattern. The inner query walks
+ * messages_direction_received newest first and stops at SCAN_ROWS; Spam rows are dropped from that
+ * window afterwards, so the rows read stay bounded however much Spam there is (M8).
+ */
+export function receivedContacts(db: D1Database, pattern: string) {
+  return db
+    .prepare(
+      `SELECT received_at AS at, from_hdr AS h FROM (
+         SELECT received_at, from_hdr, spam FROM messages WHERE direction = 'in' AND trashed = 0
+         ORDER BY received_at DESC LIMIT ?2)
+       WHERE spam = 0 AND from_hdr LIKE ?1 ESCAPE '\\' ORDER BY received_at DESC LIMIT ?3`,
+    )
+    .bind(pattern, SCAN_ROWS, MATCH_ROWS);
+}
 /** One message: when it was used, and its stored address headers. */
 export type ContactRow = { at: number; headers: (string | null)[] };
 
@@ -85,16 +101,10 @@ export function registerContactRoutes(contacts: Hono<AppEnv>): void {
     }
     const db = c.env.DB;
     const pattern = contains(q);
-    // The inner query walks messages_direction_received newest first and stops at SCAN_ROWS.
+    // Each inner query walks messages_direction_received newest first and stops at SCAN_ROWS.
+    // Outbound rows never enter Spam.
     const [received, sent, addresses] = await db.batch([
-      db
-        .prepare(
-          `SELECT received_at AS at, from_hdr AS h FROM (
-             SELECT received_at, from_hdr FROM messages WHERE direction = 'in' AND trashed = 0
-             ORDER BY received_at DESC LIMIT ?2)
-           WHERE from_hdr LIKE ?1 ESCAPE '\\' ORDER BY received_at DESC LIMIT ?3`,
-        )
-        .bind(pattern, SCAN_ROWS, MATCH_ROWS),
+      receivedContacts(db, pattern),
       db
         .prepare(
           `SELECT received_at AS at, to_hdr AS h, cc_hdr AS h2, bcc_hdr AS h3 FROM (
