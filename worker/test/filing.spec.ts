@@ -148,7 +148,7 @@ describe("filing inbound mail", () => {
       .bind(spam.id)
       .first<{ spam: number; spam_at: number; received_at: number }>();
     expect(row?.spam).toBe(1);
-    expect(row?.spam_at).toBe(row?.received_at);
+    expect(row?.spam_at).toBeGreaterThanOrEqual(row?.received_at as number);
     expect(spam.events).toEqual([{ type: "changed", id: spam.id }]);
     const both = await deliver("x@ok.example", "both");
     expect(await flags(both.id)).toMatchObject({ spam: 0, trashed: 1 });

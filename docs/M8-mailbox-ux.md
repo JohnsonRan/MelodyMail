@@ -45,6 +45,7 @@ This plan is reviewed before coding (`AGENTS.md`, "Change risk"). The first cros
      rules set several, Trash beats Spam and Spam beats Archive;
    - Not spam sets `spam = 0` and `archived = 0`, so the message lands in the Inbox;
    - a clock (`trashed_at`, `spam_at`) is set only on entry and kept while the message stays;
+     it is the database clock read inside the writing statement, never the Worker's time;
    - outbound rows never enter Spam.
 
 ## 1. Bulk permanent delete and Empty Trash
@@ -73,15 +74,17 @@ This plan is reviewed before coding (`AGENTS.md`, "Change risk"). The first cros
 - When a call fails without an answer (network error, timeout), the client cannot know whether
   the batch committed. It stops the loop, reloads the list and the counts, and the toast says
   the result is unknown and the list was refreshed.
-- The watermark and a server time `asOf` come from the count route (section 2) when the confirm
-  dialog opens. Purge deletes only rows with `seq <= watermark` whose folder clock
+- The watermark and `asOf`, the database clock, come from the count route (section 2) when the
+  confirm dialog opens. Purge deletes only rows with `seq <= watermark` whose folder clock
   (`trashed_at` or `spam_at`) is strictly before `asOf`. A message that arrived later, or an older
   message moved or filed into the folder after the dialog opened (for example by the consumer),
   is kept. Empty and a whole-folder Delete forever therefore delete exactly what was in the
   folder when the owner confirmed (review 5, finding 1). Rows in Trash without a clock (before
-  migration 0015) were stamped by the cron, so every Trash row has one. A message entering the
-  folder in the same millisecond as `asOf` is not designed for (review 6, finding 1, accepted:
-  the owner's dialog and the consumer would have to meet within one millisecond).
+  migration 0015) are stamped by the cron. Every folder clock is the database clock of the
+  statement that set it, and D1 runs statements one at a time, so a write that lands after the
+  count has a clock at or after `asOf`, even when the Worker began it earlier. In Trash and Spam
+  the count applies the same strict clock test, so the dialog's number is what purge may delete; a
+  message entering the folder in the same millisecond as `asOf` is neither counted nor deleted.
 - Session routes only (decision 5).
 
 ### UI
@@ -109,7 +112,8 @@ Today the header checkbox selects the loaded rows only (50 per page, more after 
 ### API
 
 - `GET /api/messages/count?folder=&address=` returns `{ total, watermark, asOf }`: the counter
-  value, the server time, and the rows of that view with `seq <= watermark`, in one D1 batch.
+  value, the database clock, and the rows of that view with `seq <= watermark` (in Trash and
+  Spam also with the folder clock before `asOf`), in one statement.
 - `PATCH /api/messages` accepts, instead of `ids`, `{ folder, address?, watermark, after?,
   ...flags }`. It updates at most `FOLDER_PATCH_MAX` (500) rows of the view with
   `seq <= watermark` and `seq < after`, highest `seq` first, and returns

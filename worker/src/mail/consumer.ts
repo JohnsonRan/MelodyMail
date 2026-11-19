@@ -2,6 +2,7 @@ import { runExport } from "../backup/export";
 import type { Env } from "../env";
 import { errorText, log } from "../http";
 import { removeOldWebhookEvents, removeStaleUploads } from "../send/cleanup";
+import { DB_NOW } from "./folders";
 import { notifyHub } from "./hub";
 import { type ParsedHeaders, parseSlice, SLICE_BYTES, threadKey } from "./parse";
 import { expireSpam, expireTrash } from "./trash";
@@ -40,7 +41,8 @@ async function saveParsed(env: Env, id: string, row: Row, p: ParsedHeaders) {
   // The FTS row is written only while the message is still "stored", and before the UPDATE
   // that ends that, so a duplicate delivery adds no second FTS row. A message still in the Inbox
   // whose sender is listed in spam_senders is filed into Spam by the same UPDATE (decision 6:
-  // entering Spam sets spam_at; it is already neither archived nor trashed).
+  // entering Spam sets spam_at, from the database clock; it is already neither archived nor
+  // trashed).
   const listed = `?13 IS NOT NULL AND archived = 0 AND trashed = 0 AND spam = 0
     AND EXISTS (SELECT 1 FROM spam_senders WHERE address = ?13)`;
   const [, saved] = await env.DB.batch<Flags>([
@@ -53,7 +55,7 @@ async function saveParsed(env: Env, id: string, row: Row, p: ParsedHeaders) {
          references_hdr = ?3, thread_key = ?4, subject = ?5, from_hdr = ?6, to_hdr = ?7,
          cc_hdr = ?8, date_hdr = ?9, snippet = ?10, has_attachments = ?11, from_key = ?13,
          spam = CASE WHEN ${listed} THEN 1 ELSE spam END,
-         spam_at = CASE WHEN ${listed} THEN ?14 ELSE spam_at END
+         spam_at = CASE WHEN ${listed} THEN ${DB_NOW} ELSE spam_at END
        WHERE id = ?12 AND status = 'stored' ${FLAGS}`,
     ).bind(
       p.messageId,
@@ -69,7 +71,6 @@ async function saveParsed(env: Env, id: string, row: Row, p: ParsedHeaders) {
       p.hasAttachments ? 1 : 0,
       id,
       p.fromKey,
-      Date.now(),
     ),
   ]);
   return saved?.results[0] ?? null;

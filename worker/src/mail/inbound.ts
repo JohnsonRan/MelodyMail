@@ -2,6 +2,7 @@ import { auditRow } from "../auth/store";
 import type { Env } from "../env";
 import { errorText, log } from "../http";
 import { type Decision, evaluateRules, loadRules, type Rule } from "../rules/evaluate";
+import { DB_NOW } from "./folders";
 
 // The email() handler (docs/M3-inbound.md). It never reads message content in JS: the raw
 // message is piped natively into R2 and parsed later by the queue consumer.
@@ -278,7 +279,8 @@ export async function handleEmail(message: ForwardableEmailMessage, env: Env): P
         `INSERT INTO messages (id, address_id, direction, status, envelope_from, envelope_to,
            subaddress_tag, raw_size, r2_key, forward_failed, read, starred, archived, trashed,
            trashed_at, spam, spam_at, received_at)
-         VALUES (?, ?, 'in', 'stored', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, 'in', 'stored', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+           CASE WHEN ? = 1 THEN ${DB_NOW} END, ?, CASE WHEN ? = 1 THEN ${DB_NOW} END, ?)`,
       ).bind(
         id,
         address.id,
@@ -292,9 +294,9 @@ export async function handleEmail(message: ForwardableEmailMessage, env: Env): P
         Number(rules.starred),
         Number(rules.archived),
         Number(rules.trashed),
-        rules.trashed ? now : null,
+        Number(rules.trashed),
         Number(rules.spam),
-        rules.spam ? now : null,
+        Number(rules.spam),
         now,
       ),
       env.DB.prepare("UPDATE addresses SET last_received_at = ? WHERE id = ?").bind(

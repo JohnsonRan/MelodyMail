@@ -276,7 +276,6 @@ const folderPatch = (folder: Folder, addressId?: number) => async (e: Env) =>
     e.DB,
     folderTarget(folder, addressId, await watermark(), undefined),
     { read: true },
-    NOW,
     "seq",
   ).all();
 

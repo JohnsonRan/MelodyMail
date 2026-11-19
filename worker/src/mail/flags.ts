@@ -1,5 +1,6 @@
 import { parseFlag } from "../domains/validate";
 import type { Env } from "../env";
+import { DB_NOW } from "./folders";
 
 // Flag changes and the one transition policy of docs/M8-mailbox-ux.md, decision 6. The session
 // routes, the REST API v1, the Telegram card buttons and (through the same rules) the inbound
@@ -7,7 +8,8 @@ import type { Env } from "../env";
 // - entering Spam clears archived and trashed and starts spam_at;
 // - entering Trash or Archive leaves Spam; Trash beats Spam and Spam beats Archive;
 // - Not spam clears spam and archived, so the message lands in the Inbox;
-// - a clock (trashed_at, spam_at) is set only on entry and kept while the message stays;
+// - a clock (trashed_at, spam_at) is set only on entry, from the database clock (DB_NOW), and
+//   kept while the message stays;
 // - outbound rows never enter Spam.
 
 export type Flags = {
@@ -55,15 +57,9 @@ function resolve(flags: Flags): Flags {
 /**
  * One UPDATE of the target rows; a flag left out keeps its value. SET reads the old row, so
  * `trashed = 1` and `spam = 1` below mean "already there". ?5 = 1 on an inbound row is entering
- * Spam; an outbound row ignores it. Unnumbered parameters in the target follow ?6.
+ * Spam; an outbound row ignores it. Unnumbered parameters in the target follow ?5.
  */
-export function flagStatement(
-  db: D1Database,
-  target: Target,
-  flags: Flags,
-  now: number,
-  returning = "",
-) {
+export function flagStatement(db: D1Database, target: Target, flags: Flags, returning = "") {
   const f = resolve(flags);
   const enter = "(?5 = 1 AND direction = 'in')";
   return db
@@ -73,10 +69,10 @@ export function flagStatement(
            WHEN ?5 = 0 AND spam = 1 THEN 0 ELSE archived END,
          trashed = CASE WHEN ${enter} THEN 0 ELSE COALESCE(?4, trashed) END,
          trashed_at = CASE WHEN ${enter} THEN NULL WHEN ?4 IS NULL THEN trashed_at
-           WHEN ?4 = 0 THEN NULL WHEN trashed = 1 THEN trashed_at ELSE ?6 END,
+           WHEN ?4 = 0 THEN NULL WHEN trashed = 1 THEN trashed_at ELSE ${DB_NOW} END,
          spam = CASE WHEN ${enter} THEN 1 WHEN ?5 = 0 THEN 0 ELSE spam END,
          spam_at = CASE WHEN ${enter} THEN
-             CASE WHEN spam = 1 AND trashed = 0 THEN COALESCE(spam_at, ?6) ELSE ?6 END
+             CASE WHEN spam = 1 AND trashed = 0 THEN COALESCE(spam_at, ${DB_NOW}) ELSE ${DB_NOW} END
            WHEN ?5 = 0 THEN NULL ELSE spam_at END
        WHERE ${target.sql}${returning && ` RETURNING ${returning}`}`,
     )
@@ -86,7 +82,6 @@ export function flagStatement(
       bit(f.archived),
       bit(f.trashed),
       bit(f.spam),
-      now,
       ...target.params,
     );
 }
@@ -140,7 +135,7 @@ export async function updateMessageFlags(
   const now = Date.now();
   const target = idsTarget(ids);
   if (options.only) target.sql += ` AND ${options.only}`;
-  const update = flagStatement(db, target, flags, now);
+  const update = flagStatement(db, target, flags);
   const senders = options.learn ? senderStatement(db, ids, flags, now) : null;
   if (!senders) return update.run();
   const [, result] = await db.batch([senders, update]);

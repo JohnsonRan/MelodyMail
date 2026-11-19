@@ -1,9 +1,11 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
+import { handleQueue } from "../src/mail/consumer";
+import { updateMessageFlags } from "../src/mail/flags";
 import { handleEmail } from "../src/mail/inbound";
-import { deletePermanently } from "../src/mail/trash";
+import { deletePermanently, expireTrash } from "../src/mail/trash";
 import type { Client } from "./helpers";
-import { addAddress, asMessage, inbound } from "./mail-helpers";
+import { addAddress, addRule, asMessage, inbound } from "./mail-helpers";
 import { rawKey, seedMany, seedMessage } from "./mailbox-helpers";
 import { resendOk, sendBody, sender, signedIn, stubResend } from "./send-helpers";
 
@@ -324,5 +326,130 @@ describe("purge (Empty Trash and Empty Spam)", () => {
     ]) {
       expect((await client.request("POST", "/api/messages/purge", body)).status).toBe(400);
     }
+  });
+});
+
+describe("folder clocks come from the database clock", () => {
+  const OLD = 1_000;
+  const dbNow = async () =>
+    (
+      await env.DB.prepare("SELECT CAST(unixepoch('subsec') * 1000 AS INTEGER) AS t").first<{
+        t: number;
+      }>()
+    )?.t ?? 0;
+  const clocks = async (id: string) =>
+    env.DB.prepare("SELECT trashed_at, spam_at FROM messages WHERE id = ?")
+      .bind(id)
+      .first<{ trashed_at: number | null; spam_at: number | null }>();
+  const quietHub = { ...env, HUB: { getByName: () => ({ notify: async () => {} }) } } as never;
+  const job = (id: string) =>
+    ({
+      messages: [{ body: { id }, ack: vi.fn(), retry: vi.fn() }],
+    }) as unknown as MessageBatch<InboundJob>;
+
+  // A writer may read its clock before the count and land after it: the clock must be the
+  // database's at the write, so it is at or after asOf and purge keeps the row.
+  it("keeps rows filed into Spam by writes that land after the count with an older clock", async () => {
+    const client = await signedIn();
+    await addAddress("shop");
+    await addRule({ conditions: [{ field: "subject", op: "equals", value: "junk" }], spam: true });
+    vi.spyOn(env.INBOUND, "send").mockResolvedValue(undefined as never);
+    await env.DB.prepare("INSERT INTO spam_senders (address, created_at) VALUES (?, 1)")
+      .bind("bad@junk.example")
+      .run();
+    await seedMany([
+      { id: "old", spam: true, spamAt: OLD },
+      { id: "late-flag" },
+      {
+        id: "late-parse",
+        status: "stored",
+        raw: "From: bad@junk.example\r\nTo: shop@example.com\r\nSubject: x\r\n\r\nBody.\r\n",
+      },
+    ]);
+    const { total, watermark, asOf } = await count(client, "folder=spam");
+    expect(total).toBe(1);
+
+    vi.spyOn(Date, "now").mockReturnValue(asOf - 60_000);
+    await updateMessageFlags(env, ["late-flag"], { spam: true });
+    await handleQueue(job("late-parse"), quietHub);
+    await handleEmail(
+      asMessage(inbound("shop@example.com", undefined, { Subject: "junk" })),
+      quietHub,
+    );
+    vi.mocked(Date.now).mockRestore();
+    const arrived = (await remaining()).filter(
+      (id) => !["old", "late-flag", "late-parse"].includes(id),
+    );
+    expect(arrived).toHaveLength(1);
+
+    for (const id of ["late-flag", "late-parse", ...arrived]) {
+      expect((await clocks(id))?.spam_at, id).toBeGreaterThanOrEqual(asOf);
+    }
+    const res = await client.json("POST", "/api/messages/purge", {
+      folder: "spam",
+      watermark,
+      asOf,
+    });
+    expect(res).toEqual({ deleted: ["old"], hasMore: false });
+  });
+
+  it("counts in Trash exactly what purge may delete, and keeps Trash entries after the count", async () => {
+    const client = await signedIn();
+    await addAddress("shop");
+    await addRule({ conditions: [{ field: "subject", op: "equals", value: "bin" }], trash: true });
+    vi.spyOn(env.INBOUND, "send").mockResolvedValue(undefined as never);
+    await seedMany([
+      // In Trash for a day: the cron below keeps it, the purge deletes it.
+      { id: "old", trashed: true, trashedAt: Date.now() - 86_400_000 },
+      { id: "untimed", trashed: true },
+      { id: "late-flag" },
+    ]);
+    // Trashed before migration 0015: no clock until the cron stamps one.
+    await env.DB.prepare("UPDATE messages SET trashed_at = NULL WHERE id = 'untimed'").run();
+    const { total, watermark, asOf } = await count(client, "folder=trash");
+    expect(total).toBe(1);
+
+    const stale = asOf - 60_000;
+    vi.spyOn(Date, "now").mockReturnValue(stale);
+    await updateMessageFlags(env, ["late-flag"], { trashed: true });
+    await expireTrash(env, stale);
+    await handleEmail(
+      asMessage(inbound("shop@example.com", undefined, { Subject: "bin" })),
+      quietHub,
+    );
+    vi.mocked(Date.now).mockRestore();
+    const arrived = (await remaining()).filter(
+      (id) => !["old", "untimed", "late-flag"].includes(id),
+    );
+    expect(arrived).toHaveLength(1);
+
+    for (const id of ["late-flag", "untimed", ...arrived]) {
+      expect((await clocks(id))?.trashed_at, id).toBeGreaterThanOrEqual(asOf);
+    }
+    const res = await client.json("POST", "/api/messages/purge", {
+      folder: "trash",
+      watermark,
+      asOf,
+    });
+    expect(res).toEqual({ deleted: ["old"], hasMore: false });
+  });
+
+  it("takes asOf from the database clock, not the Worker's", async () => {
+    const client = await signedIn();
+    await seedMessage({ id: "old", trashed: true, trashedAt: OLD });
+    const real = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(real + 3_600_000);
+    const { watermark, asOf } = await count(client, "folder=trash");
+    vi.mocked(Date.now).mockRestore();
+    expect(asOf).toBeLessThanOrEqual(await dbNow());
+    await seedMessage({ id: "later" });
+    await updateMessageFlags(env, ["later"], { trashed: true });
+    await env.DB.prepare("UPDATE messages SET seq = 1 WHERE id = 'later'").run();
+    const res = await client.json("POST", "/api/messages/purge", {
+      folder: "trash",
+      watermark,
+      asOf,
+    });
+    expect(res).toEqual({ deleted: ["old"], hasMore: false });
   });
 });

@@ -1,6 +1,7 @@
 import type { Env } from "../env";
 import { errorText, log } from "../http";
 import {
+  DB_NOW,
   type DeletableFolder,
   type DeleteBounds,
   deleteCandidates,
@@ -106,9 +107,9 @@ async function expireFolder(env: Env, folder: DeletableFolder, now: number): Pro
   const statements =
     folder === "trash"
       ? [
-          db
-            .prepare("UPDATE messages SET trashed_at = ? WHERE trashed = 1 AND trashed_at IS NULL")
-            .bind(now),
+          db.prepare(
+            `UPDATE messages SET trashed_at = ${DB_NOW} WHERE trashed = 1 AND trashed_at IS NULL`,
+          ),
           select,
         ]
       : [select];

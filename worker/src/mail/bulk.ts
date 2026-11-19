@@ -49,7 +49,7 @@ async function patchMessages(c: Ctx) {
     return fail(c, 400, "bad_request");
   }
   const target = folderTarget(folder, address as number | undefined, watermark, after);
-  const { results } = await flagStatement(c.env.DB, target, flags, Date.now(), "seq").all<{
+  const { results } = await flagStatement(c.env.DB, target, flags, "seq").all<{
     seq: number;
   }>();
   const lowest = results.reduce((min, r) => Math.min(min, r.seq), Number.POSITIVE_INFINITY);
@@ -102,18 +102,17 @@ async function purge(c: Ctx) {
   return c.json(result);
 }
 
-/** GET /api/messages/count: the view's rows at or below the watermark, and the server time. */
+/** GET /api/messages/count: the view's rows at or below the watermark, and the database time. */
 async function count(c: Ctx) {
   const folder = c.req.query("folder") ?? "inbox";
   const addressId = parseAddress(c.req.query("address"));
   if (!isFolder(folder) || addressId === null) return fail(c, 400, "bad_request");
-  // Taken before the read: a message entering the folder after it has a later clock and is kept.
-  const asOf = Date.now();
   const row = await countStatement(c.env.DB, folder, addressId).first<{
+    asOf: number;
     watermark: number;
     total: number;
   }>();
-  return c.json({ total: row?.total ?? 0, watermark: row?.watermark ?? 0, asOf });
+  return c.json({ total: row?.total ?? 0, watermark: row?.watermark ?? 0, asOf: row?.asOf ?? 0 });
 }
 
 export function registerBulkRoutes(messages: Hono<AppEnv>): void {

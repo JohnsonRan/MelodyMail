@@ -72,7 +72,7 @@ describe("automatic Trash clean-up", () => {
     const now = Date.now();
     await seedTrashed("untimed", null);
     expect(await expireTrash(env, now)).toBe(0);
-    expect(await trashedAt("untimed")).toBe(now);
+    expect(await trashedAt("untimed")).toBeGreaterThanOrEqual(now);
 
     await seedTrashed("restored", now - TRASH_KEEP_MS - 1);
     await env.DB.prepare(
@@ -118,7 +118,7 @@ describe("automatic Trash clean-up", () => {
     await handleEmail(asMessage(inbound("shop@example.com", undefined, { Subject: "Hello" })), env);
     const [row] = await messageRows();
     expect(row?.trashed).toBe(1);
-    expect(row?.trashed_at).toBe(row?.received_at);
+    expect(row?.trashed_at).toBeGreaterThanOrEqual(row?.received_at as number);
   });
 });
 

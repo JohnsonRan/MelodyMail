@@ -48,6 +48,14 @@ export type DeletableFolder = keyof typeof DELETABLE;
 export const isDeletable = (value: unknown): value is DeletableFolder =>
   typeof value === "string" && Object.hasOwn(DELETABLE, value);
 
+/**
+ * The database's clock in milliseconds. Every folder clock (trashed_at, spam_at) and the count
+ * route's asOf come from it, inside the statement that writes or reads them: D1 runs statements
+ * one at a time, so a write that lands after the count carries a clock at or after its asOf,
+ * however late the Worker's own write reached the database. SQLite fixes 'now' per statement.
+ */
+export const DB_NOW = "CAST(unixepoch('subsec') * 1000 AS INTEGER)";
+
 /** The last seq handed out: the watermark a confirm dialog holds. */
 export const COUNTER_SQL = "(SELECT value FROM counters WHERE name = 'messages_seq')";
 
@@ -66,15 +74,19 @@ export function folderWhere(folder: Folder, addressId?: number): Where {
 }
 
 /**
- * The count route's statement: the counter and the rows of the view at or below it, read in one
- * statement so the two agree.
+ * The count route's statement: the database clock (asOf), the counter and the rows of the view at
+ * or below it, read in one statement so the three agree. In Trash and Spam a row counts only with
+ * its folder clock strictly before asOf, the purge's own test, so the count is what purge may
+ * delete.
  */
 export function countStatement(db: D1Database, folder: Folder, addressId?: number) {
   const where = folderWhere(folder, addressId);
+  const clock = isDeletable(folder) ? ` AND ${DELETABLE[folder].clock} < ${DB_NOW}` : "";
   return db
     .prepare(
-      `SELECT ${COUNTER_SQL} AS watermark,
-         (SELECT COUNT(*) FROM messages WHERE ${where.sql} AND seq <= ${COUNTER_SQL}) AS total`,
+      `SELECT ${DB_NOW} AS asOf, ${COUNTER_SQL} AS watermark,
+         (SELECT COUNT(*) FROM messages
+           WHERE ${where.sql} AND seq <= ${COUNTER_SQL}${clock}) AS total`,
     )
     .bind(...where.params);
 }
