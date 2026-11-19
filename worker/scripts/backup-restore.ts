@@ -120,15 +120,23 @@ export function partProblems(manifest: Manifest, dir: string): string[] {
 }
 
 export function restoreSql(manifest: Manifest, dir: string): string {
-  const parts = manifest.tables.flatMap((t) =>
-    t.parts.map((p) => readFileSync(join(dir, basename(p.key)), "utf8")),
+  const texts = new Map(
+    manifest.tables.map((t) => [
+      t.name,
+      t.parts.map((p) => readFileSync(join(dir, basename(p.key)), "utf8")),
+    ]),
   );
+  // An export from before migration 0016 restores into a database at its own migration, which has
+  // no seq column and no counters table; 0016 runs afterwards and numbers the rows itself.
+  const first = texts.get("messages")?.[0];
+  const hasSeq =
+    first !== undefined && /(^|,)"seq"(,|$)/.test(insertColumns("messages", first) ?? "");
   return [
     `-- Export ${manifest.exportId}, migration ${manifest.migration}.`,
     "PRAGMA defer_foreign_keys = on;",
-    parts.join(""),
+    [...texts.values()].flat().join(""),
     ...DANGLING,
-    RESTORE_COUNTER,
+    ...(hasSeq ? [RESTORE_COUNTER] : []),
     "",
   ].join("\n");
 }

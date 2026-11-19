@@ -1,15 +1,16 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { databaseProblems, partProblems } from "../worker/scripts/backup-restore";
+import { databaseProblems, partProblems, restoreSql } from "../worker/scripts/backup-restore";
 import {
   type Manifest,
   PAGE_BYTES,
   PAGE_ROWS,
   pageQuery,
+  RESTORE_COUNTER,
   SPLIT_BYTES,
 } from "../worker/src/backup/sql";
 
@@ -122,5 +123,38 @@ describe("databaseProblems", () => {
     ]);
     expect(databaseProblems(manifest(2), run)).toEqual({ problems: [], notes: [] });
     expect(databaseProblems(manifest(3), run).problems).toEqual(["messages: 2 rows, manifest 3"]);
+  });
+});
+
+describe("restoreSql", () => {
+  const migrations = join(import.meta.dir, "..", "worker", "migrations");
+  const migrate = (db: Database, upTo: (name: string) => boolean) => {
+    for (const file of readdirSync(migrations)
+      .filter((f) => f.endsWith(".sql") && upTo(f))
+      .sort()) {
+      db.exec(
+        readFileSync(join(migrations, file), "utf8").replaceAll("--> statement-breakpoint", ""),
+      );
+    }
+  };
+  const M7_ROW = `INSERT INTO "messages" ("id","address_id","direction","status","envelope_from","envelope_to","raw_size","r2_key","received_at") VALUES ('m7','1','in','stored','a@example.com','b@example.com',1,'k',1);\n`;
+
+  test("imports an export from before 0016 into a database at its migration, then 0016 numbers it", () => {
+    const db = new Database(":memory:");
+    migrate(db, (f) => f < "0016");
+    const { manifest, dir } = exportOf({ messages: [M7_ROW] });
+    db.exec(restoreSql({ ...manifest, migration: "0015_backups.sql" }, dir));
+    migrate(db, (f) => f.startsWith("0016"));
+    expect(db.query("SELECT seq FROM messages WHERE id = 'm7'").get()).toEqual({ seq: 1 });
+    expect(db.query("SELECT value FROM counters WHERE name = 'messages_seq'").get()).toEqual({
+      value: 1,
+    });
+  });
+
+  test("moves the counter past the restored seq values of an export from 0016 on", () => {
+    const { manifest, dir } = exportOf({ messages: [M8] });
+    expect(restoreSql(manifest, dir)).toContain(RESTORE_COUNTER);
+    const old = exportOf({ messages: [M7] });
+    expect(restoreSql(old.manifest, old.dir)).not.toContain(RESTORE_COUNTER);
   });
 });
