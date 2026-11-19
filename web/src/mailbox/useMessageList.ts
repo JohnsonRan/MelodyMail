@@ -29,7 +29,9 @@ const LOADING: ListState = { items: [], next: null, status: "loading", loadingMo
  * has moved since. `exclusive` runs a delete or folder loop: it moves the generation at its start
  * and its end, starts no fetch in between (scroll paging and Hub refreshes wait), and reloads the
  * first page once at the end, so no page read before or during the loop brings deleted or moved
- * rows back (docs/M8-mailbox-ux.md, section 1).
+ * rows back (docs/M8-mailbox-ux.md, section 1). A `filed` event also moves the generation, to drop
+ * pages that may still hold the filed message; the re-read of that message checks `view` instead,
+ * which only `reload` and `exclusive` move, so a second event does not cancel the first one's.
  */
 export function useMessageList(
   query: ListQuery,
@@ -47,6 +49,7 @@ export function useMessageList(
   const failedRef = useRef(failed);
   failedRef.current = failed;
   const generation = useRef(0);
+  const view = useRef(0);
   const paused = useRef(false);
 
   /** A page of the current view, or null when the generation moved while it loaded. */
@@ -81,6 +84,7 @@ export function useMessageList(
 
   const reload = useCallback(async () => {
     generation.current++;
+    view.current++;
     setList(LOADING);
     resetRef.current();
     // A loop's last step reloads; nothing is fetched while it runs.
@@ -96,6 +100,7 @@ export function useMessageList(
     async <T>(work: () => Promise<T>): Promise<T> => {
       paused.current = true;
       generation.current++;
+      view.current++;
       try {
         return await work();
       } finally {
@@ -145,7 +150,7 @@ export function useMessageList(
 
   /** Drops a message that no longer belongs to the view, or takes its new flags. */
   const reconcile = useCallback(async (id: string) => {
-    const started = generation.current;
+    const started = view.current;
     let fresh: MessageItem | null;
     try {
       fresh = (await getMessage(id)).message;
@@ -153,7 +158,7 @@ export function useMessageList(
       if (!(err instanceof ApiError && err.code === "not_found")) return;
       fresh = null;
     }
-    if (started !== generation.current) return;
+    if (started !== view.current) return;
     setList((prev) => ({
       ...prev,
       items: prev.items.flatMap((m) => {

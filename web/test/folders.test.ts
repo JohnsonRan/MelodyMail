@@ -48,11 +48,12 @@ function fill(prefix: string, n: number, flags: Record<string, unknown> = {}) {
   }
 }
 
-type Gate = { release: () => void; seen: string[] };
+type Gate = { release: () => void; seen: string[]; answered: string[] };
 
 /**
  * Holds the matching requests until `release`. With `snapshot`, the stand-in answers at once and
- * only the answer is held, so it reflects the store as it was when the request began.
+ * only the answer is held, so it reflects the store as it was when the request began; `answered`
+ * lists the requests whose answer is taken.
  */
 async function hold(
   page: Page,
@@ -64,6 +65,7 @@ async function hold(
     release = resolve;
   });
   const seen: string[] = [];
+  const answered: string[] = [];
   await page.route(
     () => true,
     async (route: Route) => {
@@ -72,6 +74,7 @@ async function hold(
       seen.push(req.url());
       if (snapshot) {
         const response = await route.fetch();
+        answered.push(req.url());
         await gate;
         return route.fulfill({ response });
       }
@@ -79,7 +82,7 @@ async function hold(
       return route.continue();
     },
   );
-  return { release, seen };
+  return { release, seen, answered };
 }
 
 const isPurge = (url: URL, method: string) =>
@@ -244,6 +247,78 @@ describe("Spam", () => {
     first?.release();
     await row(page, "note1").waitFor({ timeout: 5000 });
     expect(await row(page, "hostile").count()).toBe(0);
+  });
+
+  test("drops both rows when two filed events arrive close together", async () => {
+    const page = await open("/", `[data-message-row="note1"]`);
+    const detail = await hold(
+      page,
+      (url, method) => method === "GET" && url.pathname === "/api/messages/note1",
+    );
+    for (const id of ["note1", "hostile"]) {
+      (app.store.get(id)?.item as Record<string, unknown>).spam = true;
+    }
+    for (const ws of app.sockets) ws.send(JSON.stringify({ type: "filed", id: "note1" }));
+    await until(() => detail.seen.length === 1);
+    for (const ws of app.sockets) ws.send(JSON.stringify({ type: "filed", id: "hostile" }));
+    await row(page, "hostile").waitFor({ state: "detached" });
+    detail.release();
+    await row(page, "note1").waitFor({ state: "detached", timeout: 5000 });
+    expect(await row(page, "note2").count()).toBe(1);
+  });
+
+  /**
+   * Files note1, holds the re-read the event starts with its answer taken while note1 was in
+   * Spam, then brings note1 back to the Inbox as Not spam from another device would.
+   */
+  async function staleReread(page: Page) {
+    const detail = await hold(
+      page,
+      (url, method) => method === "GET" && url.pathname === "/api/messages/note1",
+      true,
+    );
+    const note1 = app.store.get("note1")?.item as Record<string, unknown>;
+    note1.spam = true;
+    for (const ws of app.sockets) ws.send(JSON.stringify({ type: "filed", id: "note1" }));
+    await until(() => detail.answered.length === 1);
+    note1.spam = false;
+    return async () => {
+      const answer = page.waitForResponse(
+        (r) => new URL(r.url()).pathname === "/api/messages/note1",
+      );
+      detail.release();
+      await answer;
+      await page.evaluate(
+        () => new Promise((done) => requestAnimationFrame(() => setTimeout(done, 100))),
+      );
+    };
+  }
+  const listAnswer = (page: Page) =>
+    page.waitForResponse((r) => isList(new URL(r.url()), r.request().method()));
+
+  test("ignores a re-read begun before a refresh", async () => {
+    const page = await open("/", `[data-message-row="note1"]`);
+    const release = await staleReread(page);
+    const reloaded = listAnswer(page);
+    await page.getByRole("button", { name: "Refresh" }).first().click();
+    await reloaded;
+    await row(page, "note1").waitFor();
+    await release();
+    expect(await row(page, "note1").count()).toBe(1);
+  });
+
+  test("ignores a re-read begun before a whole-folder loop", async () => {
+    fill("bulk", 60);
+    const page = await open("/", `[data-message-row="note1"]`);
+    const release = await staleReread(page);
+    await page.getByRole("checkbox", { name: "Select all rows" }).first().check();
+    await page.getByRole("button", { name: "Select all 65 in Inbox" }).click();
+    const reloaded = listAnswer(page);
+    await bar(page).getByRole("button", { name: "Mark as read" }).click();
+    await reloaded;
+    await row(page, "note1").waitFor();
+    await release();
+    expect(await row(page, "note1").count()).toBe(1);
   });
 });
 
