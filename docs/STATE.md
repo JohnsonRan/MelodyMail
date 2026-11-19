@@ -4824,3 +4824,23 @@ Numbers (2026-11-19, dev workstation, Ryzen 9 9950X3D, CPU load sampled every 2 
 `bun run test:browser` 37.4, 36.4 and 37.4 s including the web build, load about 4% (0 to 7%),
 under 42 s; `bun run test:folders` 52.4, 51.4 and 52.6 s, load about 3% (0 to 14%). The folders
 limit is now 64 s: the slowest of 3 runs (52.6 s) plus 20%, rounded up (48 s before).
+
+### Final code review round and fixes (coordinator, 2026-11-19)
+
+Cross-family review of `2b21d3e..` (`cliproxyapi/gpt-6.2-sol`): FIX FIRST, three Mediums, all fixed
+by the coordinator with a test each, red without the fix (ablated by hand):
+
+- A pre-0016 export failed to import in the release drill: `restoreSql` always ended with the
+  counter update, and a database at 0015 has neither `counters` nor `messages.seq`. The update now
+  runs only when the export's messages carry `seq` (`53261e8`); tests apply the real migrations
+  in `bun:sqlite` (`scripts/backup-restore.test.ts`, "restoreSql").
+- A changed event's failed refresh could set the error state during a load whose first page a
+  filed event discarded, and the filed event's page then left it there. Any list that is not
+  ready now takes the page (`3569392`).
+- After three failed re-reads a filed row stayed in the Inbox for good. The view now reloads
+  once the retries are spent (`f715261`; the test "gives up after three retries and leaves the
+  row" became "reloads the view after three failed retries").
+
+Final run at `f715261` (dev workstation, Ryzen 9 9950X3D, Bun 1.4.4): `bun run check` pass,
+13.3 s, 517 worker tests, CPU 2%; `bun run test:browser` 80 pass, 40.9 s, CPU 1%;
+`bun run test:folders` 37 pass, 51.5 s, CPU 4%.
