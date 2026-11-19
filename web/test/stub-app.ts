@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Server, ServerWebSocket } from "bun";
 import { KeysStub } from "./stub-keys";
+import { MailboxStub, type Stored } from "./stub-mailbox";
 import { RulesStub } from "./stub-rules";
 import { SendStub } from "./stub-send";
 import { TelegramStub } from "./stub-telegram";
@@ -59,7 +60,7 @@ export const PLAIN = (n: number) =>
     "",
   ].join("\r\n");
 
-export type Stored = { item: Record<string, unknown>; raw: string };
+export type { Stored };
 
 export function message(id: string, raw: string, subject: string, receivedAt: number, extra = {}) {
   return {
@@ -77,6 +78,7 @@ export function message(id: string, raw: string, subject: string, receivedAt: nu
       starred: false,
       archived: false,
       trashed: false,
+      spam: false,
       hasAttachments: false,
       status: "parsed",
       threadKey: null,
@@ -106,14 +108,6 @@ function seed(): Map<string, Stored> {
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 
-function inFolder(item: Record<string, unknown>, folder: string) {
-  if (folder === "trash") return item.trashed;
-  if (folder === "sent") return item.direction === "out" && !item.trashed;
-  if (folder === "archive") return item.archived && !item.trashed;
-  if (folder === "starred") return item.starred && !item.trashed;
-  return item.direction === "in" && !item.archived && !item.trashed;
-}
-
 export type PushCall = { method: string; path: string; body: unknown };
 
 /** One running stand-in: its origin, what the app sent it, and the open live-update sockets. */
@@ -124,6 +118,7 @@ export class StubApp {
   rules = new RulesStub();
   keys = new KeysStub(() => this.telegram.reauthed);
   patches: { path: string; body: Record<string, unknown> }[] = [];
+  mailbox = new MailboxStub(() => this.store, this.patches);
   push: PushCall[] = [];
   /** null answers GET /api/push/key with 404, as a Worker without VAPID keys does. */
   pushKey: string | null = null;
@@ -175,6 +170,7 @@ export class StubApp {
     this.rules = new RulesStub();
     this.keys = new KeysStub(() => this.telegram.reauthed);
     this.patches = [];
+    this.mailbox = new MailboxStub(() => this.store, this.patches);
     this.push = [];
     this.reports = [];
     this.quiet = false;
@@ -211,9 +207,6 @@ export class StubApp {
         send: [],
       });
     }
-    if (path === "/api/counts") {
-      return json({ folders: { inbox: 0, starred: 0, archive: 0, trash: 0 }, addresses: {} });
-    }
     if (path.startsWith("/api/push/")) {
       const body = req.method === "GET" || req.method === "DELETE" ? null : await req.json();
       this.push.push({ method: req.method, path, body });
@@ -237,22 +230,8 @@ export class StubApp {
     if (keys) return keys;
     const sending = await this.send.handle(req, url, this.store);
     if (sending) return sending;
-    if (path === "/api/messages" && req.method === "GET") {
-      const folder = url.searchParams.get("folder") ?? "inbox";
-      const items = [...this.store.values()].map((m) => m.item).filter((i) => inFolder(i, folder));
-      items.sort((a, b) => (b.receivedAt as number) - (a.receivedAt as number));
-      return json({ messages: items, nextCursor: null });
-    }
-    if (req.method === "PATCH") {
-      const body = (await req.json()) as Record<string, unknown>;
-      this.patches.push({ path, body });
-      const ids = path === "/api/messages" ? (body.ids as string[]) : [path.split("/").pop() ?? ""];
-      for (const id of ids) {
-        const m = this.store.get(id);
-        if (m) Object.assign(m.item, { ...body, ids: undefined });
-      }
-      return json({ ok: true });
-    }
+    const mailbox = await this.mailbox.handle(req, url);
+    if (mailbox) return mailbox;
     const match = /^\/api\/messages\/([^/]+)(\/thread|\/raw)?$/.exec(path);
     const m = match ? this.store.get(match[1] ?? "") : undefined;
     if (!m) return json({ error: "not_found" }, 404);
