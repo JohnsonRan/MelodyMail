@@ -20,11 +20,14 @@ import {
   type SetStateAction,
   useCallback,
   useMemo,
+  useRef,
 } from "react";
 import { useTranslation } from "react-i18next";
+import type { SwipeAction, SwipeSide } from "./actions";
 import { type MessageItem, senderName } from "./api";
 import { formatListDate } from "./format";
 import { SendStatusLabel } from "./SendStatusLabel";
+import { SwipeBackdrop } from "./SwipeBackdrop";
 import { isRowItself, useRowGestures } from "./useRowGestures";
 
 type Row = MessageItem & Record<string, unknown>;
@@ -35,9 +38,11 @@ const DATE_COLUMN = 112;
 
 const NO_SHRINK = { flexShrink: 0 };
 
-// touch-action: pan-y leaves vertical scrolling to the browser and keeps horizontal moves for the
-// row's own gestures; the callout would offer to copy the row's text on a long press.
-const GESTURE_ROW: CSSProperties = { touchAction: "pan-y", WebkitTouchCallout: "none" };
+// touch-action: pan-y on the cells (it does not apply to a table row) leaves vertical scrolling
+// to the browser and keeps horizontal moves for the row's own gestures. The callout would offer
+// to copy the row's text on a long press.
+const GESTURE_ROW: CSSProperties = { WebkitTouchCallout: "none" };
+const GESTURE_CELL: CSSProperties = { touchAction: "pan-y" };
 
 const OPEN_CELL_STYLE = { backgroundColor: "var(--color-accent-muted)" };
 
@@ -45,6 +50,7 @@ const OPEN_CELL_STYLE = { backgroundColor: "var(--color-accent-muted)" };
 // selection cell, at least TOUCH_TARGET wide, selects: the 24 px box gets a 44 px target
 // (REQUIREMENTS.md, "Touch target, coarse pointer") and a near miss does not open the message.
 const COARSE = "(pointer: coarse)";
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
 const TOUCH_TARGET = 44;
 // The selection plugin's column: SELECTION_COLUMN_KEY in Astryx's useTableSelection, which the
 // package does not export. The phone suite fails if it changes (web/test/mobile.test.ts).
@@ -74,6 +80,7 @@ export function MessageList({
   selectable = true,
   tapSelects = false,
   onLongPress,
+  swipe,
 }: {
   messages: MessageItem[];
   openId: string | null;
@@ -87,13 +94,26 @@ export function MessageList({
   tapSelects?: boolean;
   /** A 500 ms press on a row (phone, coarse pointer); without it the row has no gestures. */
   onLongPress?: (item: MessageItem) => void;
+  /** Swipe actions by side, and what runs one; without them a row does not swipe. */
+  swipe?: {
+    actions: Partial<Record<SwipeSide, SwipeAction>>;
+    run: (item: MessageItem, action: SwipeAction) => Promise<boolean>;
+  };
 }) {
   const { t, i18n } = useTranslation();
   const coarse = useMediaQuery(COARSE);
   const rows = messages as Row[];
-  const gestures = useRowGestures<MessageItem>({
+  const reduceMotion = useMediaQuery(REDUCED_MOTION);
+  const host = useRef<HTMLDivElement>(null);
+  const { gestures, view } = useRowGestures<MessageItem>({
     enabled: onLongPress !== undefined && !tapSelects,
     onLongPress: (item) => onLongPress?.(item),
+    swipe: swipe && {
+      actionFor: (_, side) => swipe.actions[side] ?? null,
+      run: (item, action) => swipe.run(item, action as SwipeAction),
+      reduceMotion,
+      host,
+    },
   });
   const { selectionConfig } = useTableSelectionState<Row>({
     data: rows,
@@ -170,6 +190,7 @@ export function MessageList({
       transformBodyCell: (props, column, item) => {
         const htmlProps = { ...props.htmlProps };
         if (item.id === openId) htmlProps.style = { ...htmlProps.style, ...OPEN_CELL_STYLE };
+        if (onLongPress) htmlProps.style = { ...htmlProps.style, ...GESTURE_CELL };
         if (coarse && column.key === SELECTION_COLUMN) Object.assign(htmlProps, selectCell);
         return { ...props, htmlProps };
       },
@@ -238,15 +259,18 @@ export function MessageList({
   );
 
   return (
-    <Table<Row>
-      data={rows}
-      columns={columns}
-      idKey="id"
-      plugins={selectable ? { selection, rowStatus, rowBehaviour } : { rowStatus, rowBehaviour }}
-      density="balanced"
-      dividers="rows"
-      hasHover
-      verticalAlign="top"
-    />
+    <div ref={host} className="mail-swipe-host">
+      {view && <SwipeBackdrop view={view} />}
+      <Table<Row>
+        data={rows}
+        columns={columns}
+        idKey="id"
+        plugins={selectable ? { selection, rowStatus, rowBehaviour } : { rowStatus, rowBehaviour }}
+        density="balanced"
+        dividers="rows"
+        hasHover
+        verticalAlign="top"
+      />
+    </div>
   );
 }

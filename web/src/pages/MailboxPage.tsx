@@ -15,7 +15,7 @@ import { NARROW } from "../breakpoints";
 import { PageFrame } from "../components/PageFrame";
 import { ComposeSlot, useComposeRoute } from "../compose/route";
 import { errorMessage } from "../errors";
-import { ACTION_FLAGS, type BulkAction, belongs } from "../mailbox/actions";
+import { ACTION_FLAGS, type BulkAction, belongs, swipeActions } from "../mailbox/actions";
 import {
   deleteForever,
   type Flags,
@@ -114,6 +114,9 @@ export function MailboxPage({ query, title }: { query: ListQuery; title: string 
   };
 
   const phoneSelecting = compact && selecting;
+  // Swipe actions are a phone convenience: each duplicates a toolbar action (M8 decision 4).
+  const swipes = swipeActions(query);
+  const swipeOn = compact && coarse && !phoneSelecting && Object.keys(swipes).length > 0;
 
   /** Runs one action at a time on `ids`; resolves true when it succeeded. */
   const act = useCallback(
@@ -340,6 +343,12 @@ export function MailboxPage({ query, title }: { query: ListQuery; title: string 
                   setSelected(new Set([item.id]));
                 }
               : undefined,
+          swipe: swipeOn
+            ? {
+                actions: swipes,
+                run: (item, action) => act(action, [item.id], ACTION_FLAGS[action]),
+              }
+            : undefined,
         }}
       />
       {compact && !phoneSelecting && (

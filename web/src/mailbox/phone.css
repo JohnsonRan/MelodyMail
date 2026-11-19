@@ -15,3 +15,42 @@
   flex-shrink: 0;
   height: calc(var(--spacing-12) + var(--spacing-6) + env(safe-area-inset-bottom, 0px));
 }
+
+/*
+ * The row of a swipe slides over this backdrop. The host makes its own stacking context so the
+ * backdrop sits behind the table (z-index -1) and only shows where the row has moved away.
+ */
+.mail-swipe-host {
+  position: relative;
+  isolation: isolate;
+}
+
+.mail-swipe-backdrop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: -1;
+  display: flex;
+  align-items: center;
+  padding-inline: var(--spacing-6);
+  background: var(--color-background-muted);
+  color: var(--color-icon-secondary);
+}
+
+.mail-swipe-backdrop[data-side="right"] {
+  justify-content: flex-start;
+}
+
+.mail-swipe-backdrop[data-side="left"] {
+  justify-content: flex-end;
+}
+
+.mail-swipe-backdrop[data-armed="true"][data-tone="accent"] {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.mail-swipe-backdrop[data-armed="true"][data-tone="error"] {
+  background: var(--color-error);
+  color: var(--color-on-error);
+}
