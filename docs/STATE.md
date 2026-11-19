@@ -4309,3 +4309,9 @@ and chose four items: bulk delete and Empty Trash, select all matching, phone sw
   before the dialog's `asOf`; Trash's folder test has no Spam filter; `counters` is not exported
   and restore recomputes it; the sender INSERT names both columns; a `changed` event discards
   in-flight list pages and refreshes the open reader.
+- Plan review 6: FIX FIRST, four Mediums. Fixed: purge body carries `asOf` with a strict
+  cutoff; whole-folder spam action labelled Move to Spam; consumer filing gets its own Hub event
+  `filed`, `changed` keeps its refresh. Accepted: a same-millisecond `asOf` tie; whole-folder
+  flag changes act on live membership below the watermark (reversible, as in Gmail).
+- Plan review stopped after six rounds; residual items accepted with reasons. Waiting for the
+  owner's approval of `docs/M8-mailbox-ux.md` before coding.

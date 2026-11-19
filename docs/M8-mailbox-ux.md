@@ -54,7 +54,7 @@ This plan is reviewed before coding (`AGENTS.md`, "Change risk"). The first cros
 | Route | Body | Result |
 | --- | --- | --- |
 | `DELETE /api/messages` | `{ folder: "trash" \| "spam", ids }`, 1 to 100 ids (`BULK_MAX`) | Deletes the listed messages that are in that folder now. Returns `{ deleted: [ids] }`. Ids elsewhere are skipped, not an error. More than 100 ids: 400 `too_many_ids`. |
-| `POST /api/messages/purge` | `{ folder: "trash" \| "spam", address?, watermark }` | Deletes up to `PURGE_MAX` (100) messages of that folder and address with `seq <= watermark`, oldest first. Returns `{ deleted: [ids], hasMore }`. The client calls again while `hasMore`. |
+| `POST /api/messages/purge` | `{ folder: "trash" \| "spam", address?, watermark, asOf }` | Deletes up to `PURGE_MAX` (100) messages of that folder and address with `seq <= watermark` and a folder clock before `asOf`, oldest first. Every call of one loop sends the same pair. Returns `{ deleted: [ids], hasMore }`. The client calls again while `hasMore`. |
 
 - Both go through `deleteFromTrash`, renamed `deletePermanently(env, folder, ids, opts)`. Both
   DELETE statements of its batch repeat the exact condition: the folder's own test (`trashed = 1`,
@@ -75,11 +75,13 @@ This plan is reviewed before coding (`AGENTS.md`, "Change risk"). The first cros
   the result is unknown and the list was refreshed.
 - The watermark and a server time `asOf` come from the count route (section 2) when the confirm
   dialog opens. Purge deletes only rows with `seq <= watermark` whose folder clock
-  (`trashed_at` or `spam_at`) is at or before `asOf`. A message that arrived later, or an older
+  (`trashed_at` or `spam_at`) is strictly before `asOf`. A message that arrived later, or an older
   message moved or filed into the folder after the dialog opened (for example by the consumer),
   is kept. Empty and a whole-folder Delete forever therefore delete exactly what was in the
   folder when the owner confirmed (review 5, finding 1). Rows in Trash without a clock (before
-  migration 0015) were stamped by the cron, so every Trash row has one.
+  migration 0015) were stamped by the cron, so every Trash row has one. A message entering the
+  folder in the same millisecond as `asOf` is not designed for (review 6, finding 1, accepted:
+  the owner's dialog and the consumer would have to meet within one millisecond).
 - Session routes only (decision 5).
 
 ### UI
@@ -126,6 +128,10 @@ Today the header checkbox selects the loaded rows only (50 per page, more after 
   Spam, Delete forever runs the purge loop. A loop shows progress and can be cancelled.
 - A change of folder, address or search, a reload, or unchecking a row leaves the mode.
 - New mail arriving while the mode is on is shown but not included (the watermark).
+- A flag change in this mode applies to the folder's live membership below the watermark: an
+  older message restored into the Inbox from another device before the action runs is included.
+  Accepted, as in Gmail: the change is reversible, and the bar names the folder, not a frozen set
+  (review 6, finding 2). Permanent delete is the exception and is frozen by `asOf` (section 1).
 
 ## 3. Swipe actions on phones
 
@@ -226,15 +232,18 @@ database that holds rows; it also adds `seq`, `counters` and the trigger (decisi
   the same rows. The INSERT reads the rows before they change, so only rows that actually enter
   Spam in this transaction add a key: a repeated report of a message already in Spam adds
   nothing, and a sent message never adds the owner's address (review 3, finding 2; review 4,
-  finding 4). In "whole folder" mode it sets the flag and adds no senders.
+  finding 4). In "whole folder" mode the action is labelled **Move to Spam**, not Report spam:
+  it sets the flag and adds no senders, and the label says so (review 6, finding 4).
 - **Not spam** mirrors it: first a DELETE of the keys of the listed rows with `spam = 1`, then the
   UPDATE, so only rows that actually leave Spam forget their sender.
 - **Inbound**: `email()` does not look senders up; it has no parsed `From`. The consumer computes
   the `From` key; when it is listed and the message is in the Inbox, the UPDATE that saves the
   parse also sets `spam = 1` and `spam_at`. A message waits in the Inbox, unnotified, until the
   consumer runs, as it does today.
-- A `changed` event for an id makes the open page reconcile that id (review 4, finding 5;
-  review 5, finding 5):
+- The consumer sends a new Hub event `filed` with the id when its UPDATE moved the message into
+  Spam. The existing `changed` event and its page refresh stay as they are, because a v1 bulk
+  PATCH sends `changed` with its first id only (review 6, finding 3). A `filed` event makes the
+  open page reconcile that id (review 4, finding 5; review 5, finding 5):
   - `useMessageList` bumps its generation, so a page fetch in flight is discarded, then reads the
     message (`GET /api/messages/:id`) and drops it if it no longer `belongs` to the view; a
     discarded scroll page is fetched again from its cursor;
