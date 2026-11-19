@@ -4683,3 +4683,88 @@ is left is wiring of the page's state); `web/src/reader/Reader.tsx` 280 (245 bef
 Screenshots (402x874 touch and 1440x900, light and dark; 32 PNGs, outside the repository):
 Spam folder, Spam reader, Empty Trash confirm and progress, select-all offer and whole mode,
 Inbox, Settings > Spam senders.
+
+### Code review fixes (four Mediums, branch `mailbox-ux`, 2026-11-19, not reviewed)
+
+Agent: claude-opus-5-5. High risk (permanent delete, restore). Commits:
+
+- `f93d86f` worker: take folder clocks and asOf from the database clock (W1)
+- `8740483` worker: refuse mixed-column exports and duplicate seq on restore (W2)
+- `11b6d21` web: show the list when a filed event lands during its first load (F1)
+- `28e86d0` web: keep a filed row's re-read when a second filed event follows (F2)
+
+What changed:
+
+- W1: `DB_NOW` (`worker/src/mail/folders.ts`, `CAST(unixepoch('subsec') * 1000 AS INTEGER)`)
+  sets `trashed_at` and `spam_at` inside the writing statement: flag changes, the consumer's
+  sender filing, the inbound rule INSERT and the cron's stamp of untimed Trash rows. The count
+  statement reads `asOf` from the same clock, and in Trash and Spam counts only rows whose folder
+  clock is strictly before it, purge's own test. D1 runs SQLite 3.47 with workerd's function
+  allowlist, which the test pool shares; the function ran there. The 30-day expiry still uses the
+  cron's `scheduledTime`.
+- W2: `backup-restore.ts fetch` refuses an export whose parts of one table name different INSERT
+  column lists (a wholly M7 export passes); `verify` fails on a seq held by two messages. The
+  database checks moved into `databaseProblems` so `scripts/backup-restore.test.ts` runs them on
+  bun:sqlite. `docs/RUNBOOK.md`, "Spam after a rollback across M8", marks running exports failed
+  right after the rollback, with the command.
+- F1: an event page that lands on a loading list fills it; an error state is kept.
+- F2: the `filed` re-read checks `view`, which only `reload` and the start of `exclusive` move
+  (no re-read can start during a loop, events wait). `filed` still moves `generation`.
+
+### Review fixes proof
+
+Each regression test failed before its fix (output in the agent report) and passes after:
+
+| Fix | Test | Red before the fix |
+| --- | --- | --- |
+| W1 | `worker/test/bulk.spec.ts`, "folder clocks come from the database clock" (3 tests) | late-flag spam_at 60 s before asOf; Trash count 2, expected 1; asOf 1 h after the database clock |
+| W2a | `scripts/backup-restore.test.ts`, "refuses an export whose parts of one table have different column sets" | no problem reported |
+| W2b | same file, "fails a restore where two messages hold the same seq" | no problem reported |
+| F1 | `web/test/folders.test.ts`, "shows the list when a filed event arrives during the first load" | note1 row never rendered (5 s timeout) |
+| F2 | same file, "drops both rows when two filed events arrive close together" | note1 row stayed (5 s timeout) |
+
+Ablation (scratchpad `ablate.cjs`, not committed: each hunk removed alone, `web/dist` rebuilt for
+web hunks, the named test run, the file restored). All 14 went red:
+
+| Hunk removed | Red test |
+| --- | --- |
+| flags: trashed_at from DB_NOW | "counts in Trash exactly what purge may delete ..." |
+| flags: spam_at from DB_NOW | "keeps rows filed into Spam by writes that land after the count ..." |
+| consumer: spam_at from DB_NOW | same |
+| inbound: trashed_at from DB_NOW | "counts in Trash exactly what purge may delete ..." |
+| inbound: spam_at from DB_NOW | "keeps rows filed into Spam ..." |
+| cron: trashed_at stamp from DB_NOW | "counts in Trash exactly what purge may delete ..." |
+| count: asOf from DB_NOW | "takes asOf from the database clock, not the Worker's" |
+| count: strict clock test in Trash and Spam | "counts in Trash exactly what purge may delete ..." |
+| restore fetch: column-set check | "refuses an export whose parts ..."; "reads the column list of the Worker's own INSERT text" |
+| restore verify: seq uniqueness | "fails a restore where two messages hold the same seq" |
+| list: event page fills a loading list | "shows the list when a filed event arrives during the first load" |
+| list: re-read checks view | "drops both rows when two filed events arrive close together" |
+| list: reload moves view | "ignores a re-read begun before a refresh" |
+| list: exclusive moves view | "ignores a re-read begun before a whole-folder loop" |
+
+Not ablated: the refactor of `verify` into `databaseProblems` (no behaviour change; its count and
+foreign key checks are covered by "passes counts that match ..."); the runbook step (docs).
+
+Existing tests changed: three exact equalities of a folder clock to `received_at` or the test's
+`Date.now()` became "at or after" (`trash.spec.ts` 2, `filing.spec.ts` 1), since the clock is now
+the database's at the write.
+
+### Review fixes numbers (2026-11-19, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
+
+CPU load is the mean of samples about every 3 s during each run. Limits are not changed.
+
+| Tier | 3 runs | CPU load | Limit |
+| --- | --- | --- | --- |
+| `bun run check` (517 worker tests) | 15.0, 15.5, 15.7 s (worker suite 14.0, 14.5, 14.7 s), all passed | 28%, 36%, 30% | 18 s (worker 16 s) |
+| `bun run test:browser` (110 tests) | 78.2, 74.6, 72.2 s including the web build, all passed; over the limit as after phase B (open question 1 of phase B) | 6%, 11%, 9% | 42 s |
+
+### Review fixes: not verified
+
+- `unixepoch('subsec')` on production D1 (ran in workerd's test pool only).
+- The web stand-in's count route (`web/test/stub-mailbox.ts`) still answers `asOf` from
+  `Date.now()` and counts Trash and Spam without the clock test; no browser test depends on it.
+- The runbook rollback step was not run against a Worker (no production step).
+- A count in Trash now leaves out rows without a clock (from before migration 0015) until the
+  cron stamps them; the "select all N" offer in Trash shows that count too, while a folder-form
+  PATCH still acts on those rows.
