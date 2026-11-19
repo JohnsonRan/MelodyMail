@@ -4315,3 +4315,12 @@ and chose four items: bulk delete and Empty Trash, select all matching, phone sw
   flag changes act on live membership below the watermark (reversible, as in Gmail).
 - Plan review stopped after six rounds; residual items accepted with reasons. Waiting for the
   owner's approval of `docs/M8-mailbox-ux.md` before coding.
+
+### Build (owner approved the plan 2026-11-19)
+
+| Phase | Scope | Agent | Status |
+| --- | --- | --- | --- |
+| A | worker: migration 0016, seq, transitions, routes, v1, consumer, cron, contacts, backup, measurements | claude-opus-5-5 | running |
+| C | web: phone layout (section 5) and swipe (section 3), worktree | claude-sonnet-5-5 | running |
+| B | web: Spam, Delete forever, Empty, select all, filed event, reader refresh, i18n | after A | waiting |
+| R | cross-family code review, ablation check, owner screenshots | after B and C | waiting |
