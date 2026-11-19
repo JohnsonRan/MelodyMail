@@ -54,6 +54,7 @@ export const EXPORTED: ExportTable[] = [
       "stop",
       "created_at",
       "updated_at",
+      "spam",
     ],
     key: ["id"],
   },
@@ -96,6 +97,10 @@ export const EXPORTED: ExportTable[] = [
       "error",
       "first_attempt_at",
       "maybe_accepted",
+      "seq",
+      "spam",
+      "spam_at",
+      "from_key",
     ],
     key: ["id"],
   },
@@ -150,6 +155,9 @@ export const EXPORTED: ExportTable[] = [
     columns: ["id", "event", "created_at", "ip", "user_agent", "detail"],
     key: ["id"],
   },
+  // M8. Appended, so the table index of an export running across the deploy names the same
+  // tables (docs/M8-mailbox-ux.md, "Data").
+  { name: "spam_senders", columns: ["address", "created_at"], key: ["address"] },
 ];
 
 /** Left out, with the reason. A restore from an export therefore resets every credential. */
@@ -164,6 +172,7 @@ export const EXCLUDED: Record<string, string> = {
   telegram: "Connect renews the binding on the restored origin",
   webhook_events: "a 7-day replay guard",
   backup_exports: "the export's own state",
+  counters: "derived from messages.seq; the migration seeds it and a restore recomputes it",
   d1_migrations: "written by the migrations on the target",
   messages_fts_data: "FTS5 shadow table",
   messages_fts_idx: "FTS5 shadow table",

@@ -221,6 +221,16 @@ export const messages = sqliteTable(
     // Outbound only: 1 once any attempt's outcome is unknown (a network error, a timeout, a 5xx,
     // or an attempt that never answered), so Resend may have accepted it. A 429 leaves it alone.
     maybeAccepted: integer("maybe_accepted").notNull().default(0),
+    // M8 (docs/M8-mailbox-ux.md, decision 3): an insertion sequence that never repeats, written by
+    // the messages_seq_insert trigger from counters.messages_seq when an INSERT leaves it NULL. A
+    // folder-wide change or delete touches only rows at or below the watermark it was given.
+    seq: integer("seq"),
+    // M8: the Spam folder. spam_at is when the message entered Spam; NULL outside Spam.
+    spam: integer("spam").notNull().default(0),
+    spamAt: integer("spam_at"),
+    // M8: the lowercased addr-spec of the parsed From, the key spam_senders is matched on. NULL
+    // until the consumer parses the message, and for mail parsed before M8.
+    fromKey: text("from_key"),
   },
   (t) => [
     uniqueIndex("messages_resend_id").on(t.resendId),
@@ -255,8 +265,26 @@ export const messages = sqliteTable(
       .where(sql`${t.read} = 0`),
     // M7: the cron finds messages that have been in Trash for 30 days.
     index("messages_trashed_at").on(t.trashedAt).where(sql`${t.trashed} = 1`),
+    // M8: the Spam list, the Spam clean-up, and the folder-wide continuation by seq.
+    index("messages_spam_received").on(t.spam, sql`${t.receivedAt} DESC`, sql`${t.id} DESC`),
+    index("messages_spam_at").on(t.spamAt).where(sql`${t.spam} = 1`),
+    index("messages_seq").on(t.seq),
   ],
 );
+
+// M8: derived counters. messages_seq is the last seq handed out; the migration seeds it and a
+// restore recomputes it, so it is not exported.
+export const counters = sqliteTable("counters", {
+  name: text("name").primaryKey(),
+  value: integer("value").notNull(),
+});
+
+// M8: senders the owner reported as spam (docs/M8-mailbox-ux.md, "Filing"). The consumer files
+// later mail whose from_key is listed here into Spam.
+export const spamSenders = sqliteTable("spam_senders", {
+  address: text("address").primaryKey(),
+  createdAt: integer("created_at").notNull(),
+});
 
 // M4b: Web Push subscriptions, one per signed-in device. The cascade ends a device's push with
 // its session (sign-out, revoke, recovery, expiry). p256dh and auth are the browser's public
@@ -421,6 +449,8 @@ export const rules = sqliteTable(
     star: integer("star").notNull().default(0),
     archive: integer("archive").notNull().default(0),
     trash: integer("trash").notNull().default(0),
+    // M8: "Move to Spam".
+    spam: integer("spam").notNull().default(0),
     stop: integer("stop").notNull().default(0),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
@@ -498,6 +528,9 @@ export const backupExports = sqliteTable(
     alertedAt: integer("alerted_at"),
     // Set once pruning has run after this export completed.
     prunedAt: integer("pruned_at"),
+    // M8: the exported column lists when the export started. A part written by code with other
+    // lists (an export running across a deploy) discards the export, so it never mixes them.
+    columns: text("columns"),
   },
   (t) => [index("backup_exports_status_started").on(t.status, t.startedAt)],
 );

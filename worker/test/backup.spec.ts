@@ -78,7 +78,7 @@ describe("daily export", () => {
     const state = await latestState();
     expect(state).toMatchObject({ id: "2026-11-18T0300Z", status: "complete" });
     const manifest = await readManifest(state?.id as string);
-    expect(manifest?.migration).toMatch(/^0015_/);
+    expect(manifest?.migration).toMatch(/^0016_/);
     expect(manifest?.tables.map((t) => t.name)).toEqual(EXPORTED.map((t) => t.name));
 
     // Counts, sizes and R2 MD5s match the stored parts.
