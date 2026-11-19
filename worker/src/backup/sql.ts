@@ -78,6 +78,14 @@ SELECT o, k, 'UPDATE ${ident(table.name)} SET "' || name || '" = "' || name || '
   || quote(substr(v, k * ?3 + 1, ?3)) || (SELECT ${where} FROM one) || ';' FROM pieces
 ORDER BY o, k`;
 }
+/**
+ * The last statement of a restore. Restored rows keep their seq, which the trigger leaves alone,
+ * so the counter the migration seeded is moved past every restored value; the first message
+ * stored afterwards gets a higher seq (docs/M8-mailbox-ux.md, "Data").
+ */
+export const RESTORE_COUNTER =
+  "UPDATE counters SET value = MAX(value, (SELECT COALESCE(MAX(seq), 0) FROM messages)) WHERE name = 'messages_seq';";
+
 /** A part's text: one statement per line, each ending in a newline. */
 export function partText(lines: string[]): string {
   return lines.length === 0 ? "" : `${lines.join("\n")}\n`;

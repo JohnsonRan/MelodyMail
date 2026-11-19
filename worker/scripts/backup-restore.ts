@@ -6,7 +6,7 @@
  *   Downloads the manifest and every part with `wrangler r2 object get`, checks each part's size,
  *   MD5 and sequence against the manifest, and writes <dir>/restore.sql: the parts in order with
  *   foreign keys deferred, then the removal of rows whose parent the export lacks (an export is
- *   not one snapshot). Apply it with `wrangler d1 execute <db> --file <dir>/restore.sql`.
+ *   not one snapshot), then the seq counter moved past the restored rows. Apply it with `wrangler d1 execute <db> --file <dir>/restore.sql`.
  * verify <dir> <database> <where> [--r2 <where>]
  *   Compares each table's row count with the manifest, requires PRAGMA foreign_key_check to be
  *   empty and, with --r2, finds 20 sampled r2_key objects in the bucket.
@@ -20,7 +20,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import type { Manifest } from "../src/backup/sql";
+import { type Manifest, RESTORE_COUNTER } from "../src/backup/sql";
 
 const WORKER = join(import.meta.dir, "..");
 const BUCKET = "melodymail-mail";
@@ -99,6 +99,7 @@ export function restoreSql(manifest: Manifest, dir: string): string {
     "PRAGMA defer_foreign_keys = on;",
     parts.join(""),
     ...DANGLING,
+    RESTORE_COUNTER,
     "",
   ].join("\n");
 }

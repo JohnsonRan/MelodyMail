@@ -160,6 +160,13 @@ export const EXPORTED: ExportTable[] = [
   { name: "spam_senders", columns: ["address", "created_at"], key: ["address"] },
 ];
 
+/**
+ * The column lists an export starts with, stored on its row. A run of code with other lists (an
+ * export running across a deploy that changed them) discards that export and starts a new one,
+ * so one export never mixes rows with and without a column (docs/M8-mailbox-ux.md, "Data").
+ */
+export const EXPORT_COLUMNS = JSON.stringify(EXPORTED.map((t) => [t.name, t.columns]));
+
 /** Left out, with the reason. A restore from an export therefore resets every credential. */
 export const EXCLUDED: Record<string, string> = {
   owner: "holds the TOTP secret",

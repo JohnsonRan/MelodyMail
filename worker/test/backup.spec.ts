@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
 import { dayStart, RUN_BYTES, runExport } from "../src/backup/export";
 import { PAGE_BYTES, partKey, SPLIT_BYTES } from "../src/backup/sql";
-import { EXCLUDED, EXPORTED, INTERNAL_PREFIXES } from "../src/backup/tables";
+import { EXCLUDED, EXPORT_COLUMNS, EXPORTED, INTERNAL_PREFIXES } from "../src/backup/tables";
 import {
   DAY,
   exportedRows,
@@ -131,6 +131,56 @@ describe("daily export", () => {
     expect(hit?.n).toBe(30);
     const fk = await env.RESTORE_DB.prepare("PRAGMA foreign_key_check").all();
     expect(fk.results).toEqual([]);
+    // seq is kept as stored, and the first message stored after the restore is numbered above
+    // every restored one.
+    const top = await env.DB.prepare("SELECT MAX(seq) AS s FROM messages").first<{ s: number }>();
+    await env.RESTORE_DB.prepare(
+      `INSERT INTO messages (id, address_id, direction, status, envelope_from, envelope_to,
+         raw_size, r2_key, received_at) VALUES ('after', 1, 'in', 'stored', 'a', 'b', 1, 'k', 1)`,
+    ).run();
+    const after = await env.RESTORE_DB.prepare(
+      "SELECT seq FROM messages WHERE id = 'after'",
+    ).first<{
+      seq: number;
+    }>();
+    expect(after?.seq).toBe((top?.s ?? 0) + 1);
+  });
+
+  it("starts again when the exported columns changed since the export started", async () => {
+    await seedMessage({ id: "m" });
+    // A running export started by code from before migration 0016, with one part written.
+    await env.DB.prepare(
+      "INSERT INTO backup_exports (id, status, started_at, table_index, part_seq) VALUES ('2026-11-18T0300Z', 'running', ?, 7, 1)",
+    )
+      .bind(START)
+      .run();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    // Discarded in the minute it started; the next run starts the new export.
+    await runExport(env, START);
+    expect((await latestState())?.status).toBe("failed");
+    expect((await env.MAIL.list({ prefix: "backups/d1/2026-11-18T0300Z/" })).objects).toEqual([]);
+    await runExport(env, START + 15 * MINUTE);
+    const rows = await env.DB.prepare(
+      "SELECT id, status, error, columns FROM backup_exports ORDER BY started_at",
+    ).all<{ id: string; status: string; error: string | null; columns: string | null }>();
+    expect(rows.results.map((r) => [r.id, r.status, r.error])).toEqual([
+      ["2026-11-18T0300Z", "failed", "columns_changed"],
+      ["2026-11-18T0315Z", "complete", null],
+    ]);
+    expect(rows.results[1]?.columns).toBe(EXPORT_COLUMNS);
+    // A running export started with the same lists continues.
+    await env.DB.prepare(
+      "UPDATE backup_exports SET status = 'running', table_index = 0, last_rowid = 0, part_seq = 0 WHERE id = '2026-11-18T0315Z'",
+    ).run();
+    await runExport(env, START + 30 * MINUTE);
+    const after = await env.DB.prepare(
+      "SELECT id, status FROM backup_exports ORDER BY started_at",
+    ).all();
+    expect(after.results).toEqual([
+      { id: "2026-11-18T0300Z", status: "failed" },
+      { id: "2026-11-18T0315Z", status: "complete" },
+    ]);
   });
 
   it("repeats a page whose cursor update was lost, without duplicate rows", async () => {
