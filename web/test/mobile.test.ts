@@ -377,6 +377,7 @@ describe("phone end to end", () => {
       "Forward",
       "Star",
       "Mark as unread",
+      "Report spam",
     ]);
     await menu.getByRole("menuitem", { name: "Star" }).click();
     await menu.waitFor({ state: "hidden" });
@@ -598,6 +599,18 @@ describe("phone list", () => {
     const note = s.page.getByText("Mail in Trash for 30 days is deleted forever.");
     await note.waitFor();
     expect(await bulkBar().count()).toBe(0);
+    // Empty Trash sits in the folder row, so it is reachable outside selection mode.
+    const empty = s.page.getByRole("button", { name: "Empty Trash" });
+    // Its label is whole: the note wraps instead of squeezing the button.
+    expect(
+      await empty.evaluate((el) =>
+        [el, ...el.querySelectorAll("*")].every((e) => e.scrollWidth <= e.clientWidth + 1),
+      ),
+    ).toBe(true);
+    await s.page.getByRole("button", { name: "Empty Trash" }).tap();
+    await s.page.getByRole("alertdialog").getByText("Empty Trash?").waitFor();
+    await s.page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).tap();
+    await s.page.getByRole("alertdialog").waitFor({ state: "detached" });
     await s.page.getByRole("button", { name: "Select", exact: true }).tap();
     await bulkBar().waitFor();
     app.store.delete("gone");
@@ -731,5 +744,17 @@ describe("phone swipe", () => {
     const restored = await swipe("sw7", 280);
     await restored.waitFor({ state: "detached" });
     expect(patched()).toEqual({ path: "/api/messages/sw7", body: { trashed: false } });
+  });
+
+  test("marks a row in Spam not spam on a swipe right, and does nothing on a swipe left", async () => {
+    await withRow("sw9", "/spam", { spam: true });
+    const before = app.patches.length;
+    const left = await swipe("sw9", -280);
+    await s.page.waitForTimeout(500);
+    expect(await left.count()).toBe(1);
+    expect(app.patches.length).toBe(before);
+    const right = await swipe("sw9", 280);
+    await right.waitFor({ state: "detached" });
+    expect(patched()).toEqual({ path: "/api/messages/sw9", body: { spam: false } });
   });
 });

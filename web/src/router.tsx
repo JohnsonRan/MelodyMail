@@ -50,6 +50,7 @@ export function buildRouter(initialLocale: Locale, initialMessages: AstryxMessag
     mailbox("/sent", "SentPage"),
     mailbox("/drafts", "DraftsPage"),
     mailbox("/archive", "ArchivePage"),
+    mailbox("/spam", "SpamPage"),
     mailbox("/trash", "TrashPage"),
     mailbox("/address/$id", "AddressPage"),
     mailbox("/search", "SearchPage"),

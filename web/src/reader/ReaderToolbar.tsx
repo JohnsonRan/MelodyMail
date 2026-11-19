@@ -19,6 +19,7 @@ import {
   MoonIcon,
   PhotoIcon,
   ArrowUturnLeftIcon as ReplyIcon,
+  ShieldExclamationIcon,
   StarIcon as StarOutline,
   TrashIcon,
   UsersIcon,
@@ -37,6 +38,8 @@ export type ReaderAction =
   | "star"
   | "unstar"
   | "unread"
+  | "reportSpam"
+  | "notSpam"
   | "delete";
 
 type Action = {
@@ -51,11 +54,13 @@ type Action = {
 
 /**
  * The reader's action row for the open message. On a phone only the common actions are icons
- * and the rest sit in a More menu with text labels, as in the Gmail and Outlook apps.
+ * and the rest sit in a More menu with text labels, as in the Gmail and Outlook apps. In Spam,
+ * Not spam takes the place of Archive and Move to Trash; elsewhere received mail can be reported.
  */
 export function ReaderToolbar({
   current,
   inTrash,
+  inSpam,
   showBack,
   onBack,
   busy,
@@ -69,6 +74,7 @@ export function ReaderToolbar({
 }: {
   current: MessageDetail | undefined;
   inTrash: boolean;
+  inSpam: boolean;
   showBack: boolean;
   onBack: () => void;
   busy: string | null;
@@ -96,7 +102,19 @@ export function ReaderToolbar({
         compose("reply", ReplyIcon, true),
         compose("replyAll", UsersIcon),
         compose("forward", ArrowUturnRightIcon),
-        ...(inTrash
+        ...(inSpam
+          ? [
+              {
+                key: "notSpam",
+                label: t("mail.notSpam"),
+                icon: InboxArrowDownIcon,
+                onClick: () => run("notSpam"),
+                isLoading: busy === "notSpam",
+                isCommon: true,
+              },
+            ]
+          : []),
+        ...(inTrash || inSpam
           ? []
           : [
               {
@@ -108,14 +126,18 @@ export function ReaderToolbar({
                 isCommon: true,
               },
             ]),
-        {
-          key: "trash",
-          label: inTrash ? t("mail.restore") : t("mail.trash"),
-          icon: inTrash ? ArrowUturnLeftIcon : TrashIcon,
-          onClick: () => run(inTrash ? "restore" : "trash"),
-          isLoading: busy === "trash" || busy === "restore",
-          isCommon: true,
-        },
+        ...(inSpam
+          ? []
+          : [
+              {
+                key: "trash",
+                label: inTrash ? t("mail.restore") : t("mail.trash"),
+                icon: inTrash ? ArrowUturnLeftIcon : TrashIcon,
+                onClick: () => run(inTrash ? "restore" : "trash"),
+                isLoading: busy === "trash" || busy === "restore",
+                isCommon: true,
+              },
+            ]),
         {
           key: "star",
           label: current.starred ? t("mail.unstar") : t("mail.star"),
@@ -130,6 +152,19 @@ export function ReaderToolbar({
           onClick: () => run("unread"),
           isLoading: busy === "unread",
         },
+        // Never for mail you sent (it cannot enter Spam) nor in Trash, whose actions are Restore
+        // and Delete forever.
+        ...(inTrash || inSpam || current.direction !== "in"
+          ? []
+          : [
+              {
+                key: "reportSpam",
+                label: t("mail.reportSpam"),
+                icon: ShieldExclamationIcon,
+                onClick: () => run("reportSpam"),
+                isLoading: busy === "reportSpam",
+              },
+            ]),
         ...(canShowRemote
           ? [
               {
@@ -209,7 +244,7 @@ export function ReaderToolbar({
       }
       endContent={
         current &&
-        inTrash && (
+        (inTrash || inSpam) && (
           <IconButton
             label={t("mail.deleteForever")}
             tooltip={t("mail.deleteForever")}

@@ -10,12 +10,14 @@ import { useTranslation } from "react-i18next";
 import type { ComposeKind } from "../compose/api";
 import {
   type Folder,
+  getMessage,
   getThread,
   type MessageDetail,
   senderAddress,
   senderName,
 } from "../mailbox/api";
 import { formatListDate } from "../mailbox/format";
+import { useMailbox } from "../mailbox/MailboxContext";
 import { SELECTABLE } from "../selection";
 import { MessageView } from "./MessageView";
 import { type ReaderAction, ReaderToolbar } from "./ReaderToolbar";
@@ -49,6 +51,9 @@ function withMember(set: Set<string>, id: string, has: boolean): Set<string> {
   return next;
 }
 
+/** A message in Spam loads no remote images, whatever the owner chose for it. */
+const inSpam = (m: MessageDetail) => m.spam && !m.trashed;
+
 type Thread =
   | { state: "loading" }
   | { state: "failed" }
@@ -76,6 +81,7 @@ export default function Reader({
   const [dark, setDark] = useState<Set<string>>(new Set());
   const { mode } = useTheme();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const { onMail } = useMailbox();
 
   useEffect(() => {
     let live = true;
@@ -93,6 +99,28 @@ export default function Reader({
       live = false;
     };
   }, [id]);
+
+  // The consumer filed a message of this thread into Spam: take its new flags, so it stops
+  // loading remote images and shows the Spam actions (docs/M8-mailbox-ux.md, "Filing").
+  useEffect(
+    () =>
+      onMail((event) => {
+        if (event.type !== "filed") return;
+        getMessage(event.id)
+          .then(({ message }) =>
+            setThread((prev) =>
+              prev.state === "ready"
+                ? {
+                    state: "ready",
+                    messages: prev.messages.map((m) => (m.id === message.id ? message : m)),
+                  }
+                : prev,
+            ),
+          )
+          .catch(() => {});
+      }),
+    [onMail],
+  );
 
   const current = thread.state === "ready" ? thread.messages.find((m) => m.id === id) : undefined;
   // Mark read once per opened message, not again when its flags change.
@@ -138,12 +166,14 @@ export default function Reader({
   };
 
   const inTrash = current?.trashed ?? folder === "trash";
+  const spam = current ? inSpam(current) : folder === "spam";
   const canShowRemote =
-    current !== undefined && remote.has(current.id) && !allowRemote.has(current.id);
+    current !== undefined && !spam && remote.has(current.id) && !allowRemote.has(current.id);
   const toolbar = (
     <ReaderToolbar
       current={current}
       inTrash={inTrash}
+      inSpam={spam}
       showBack={showBack}
       onBack={onBack}
       busy={busy}
@@ -185,6 +215,11 @@ export default function Reader({
               {t("mail.remoteBlocked")}
             </Text>
           )}
+          {spam && current && remote.has(current.id) && (
+            <Text type="supporting" color="secondary">
+              {t("mail.spamRemoteBlocked")}
+            </Text>
+          )}
           {thread.messages.map((m) => (
             <Collapsible
               key={m.id}
@@ -218,7 +253,7 @@ export default function Reader({
               {expanded.has(m.id) && (
                 <MessageView
                   message={m}
-                  remoteImages={allowRemote.has(m.id)}
+                  remoteImages={allowRemote.has(m.id) && !inSpam(m)}
                   darkReading={mode === "dark" && dark.has(m.id)}
                   onContent={reportContent}
                 />

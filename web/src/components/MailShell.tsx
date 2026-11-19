@@ -21,6 +21,7 @@ import {
   MagnifyingGlassIcon,
   PaperAirplaneIcon,
   ShieldCheckIcon,
+  ShieldExclamationIcon,
   StarIcon,
   TrashIcon,
 } from "@heroicons/react/24/outline";
@@ -41,6 +42,7 @@ const FOLDER_NAV: { folder: Folder | "drafts"; path: string; icon: typeof InboxI
   { folder: "sent", path: "/sent", icon: PaperAirplaneIcon },
   { folder: "drafts", path: "/drafts", icon: DocumentTextIcon },
   { folder: "archive", path: "/archive", icon: ArchiveBoxIcon },
+  { folder: "spam", path: "/spam", icon: ShieldExclamationIcon },
   { folder: "trash", path: "/trash", icon: TrashIcon },
 ];
 

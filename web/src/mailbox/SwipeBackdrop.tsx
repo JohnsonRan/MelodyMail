@@ -13,6 +13,7 @@ const ICONS: Record<SwipeAction, typeof ArchiveBoxIcon> = {
   unarchive: InboxArrowDownIcon,
   trash: TrashIcon,
   restore: ArrowUturnLeftIcon,
+  notSpam: InboxArrowDownIcon,
 };
 
 /**

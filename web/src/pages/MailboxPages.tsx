@@ -16,6 +16,7 @@ export const StarredPage = () => <FolderPage folder="starred" />;
 export const SentPage = () => <FolderPage folder="sent" />;
 export { DraftsPage } from "./DraftsPage";
 export const ArchivePage = () => <FolderPage folder="archive" />;
+export const SpamPage = () => <FolderPage folder="spam" />;
 export const TrashPage = () => <FolderPage folder="trash" />;
 
 export function AddressPage() {
