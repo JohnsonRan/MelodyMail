@@ -4,7 +4,7 @@ import { StubApp } from "./stub-app";
 
 // Settings > Rules against the API stand-in (docs/M6-rules-api.md, "Screens"): create through the
 // dialog with a test against a stored message, reorder, switch off and delete with the keyboard,
-// the phone layout and the copy in another locale.
+// the phone layout and the copy in another locale; the Move to Spam action.
 
 let app: StubApp;
 let session: Session | null = null;
@@ -133,5 +133,27 @@ describe("Settings > Rules", () => {
       .getByText("发件人结尾是“@github.com” → 转发到 me@out.test、you@out.test、归档")
       .evaluate((el) => getComputedStyle(el).userSelect);
     expect(select).toBe("none");
+  });
+});
+
+describe("Move to Spam", () => {
+  test("saves a rule that moves mail to Spam, beside Move to Trash", async () => {
+    const page = await open();
+    await page.getByRole("button", { name: "Create rule" }).first().click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Name").fill("Junk");
+    await dialog.getByLabel("Condition 1: value").fill("@junk.test");
+    const top = async (name: string) =>
+      (await dialog.getByRole("checkbox", { name, exact: true }).boundingBox())?.y ?? 0;
+    const [trash, spam, stop] = [
+      await top("Move to Trash"),
+      await top("Move to Spam"),
+      await top("Stop processing more rules"),
+    ];
+    expect(trash < spam && spam < stop).toBe(true);
+    await dialog.getByRole("checkbox", { name: "Move to Spam" }).check();
+    await dialog.getByRole("button", { name: "Create rule" }).click();
+    await page.getByText('From contains "@junk.test" → Move to Spam').first().waitFor();
+    expect(app.rules.rules[0]).toMatchObject({ name: "Junk", spam: true, trash: false });
   });
 });
