@@ -53,9 +53,9 @@
   justify-content: flex-end;
 }
 
-.mail-swipe-backdrop[data-armed="true"][data-tone="accent"] {
-  background: var(--color-accent);
-  color: var(--color-on-accent);
+.mail-swipe-backdrop[data-armed="true"][data-tone="success"] {
+  background: var(--color-success);
+  color: var(--color-on-success);
 }
 
 .mail-swipe-backdrop[data-armed="true"][data-tone="error"] {

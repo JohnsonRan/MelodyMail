@@ -726,6 +726,77 @@ describe("phone swipe", () => {
     );
   });
 
+  /**
+   * Holds a swipe of `dx` px past the arm point and returns what the backdrop shows, next to the
+   * theme's own colours, then lets the swipe go.
+   */
+  async function armedColours(id: string, path: string, dx: number, flags = {}) {
+    await withRow(id, path, flags);
+    const from = await rowPoint(id);
+    const x0 = dx > 0 ? 40 : 360;
+    const cdp = await s.page.context().newCDPSession(s.page);
+    const send = (type: "touchStart" | "touchMove" | "touchEnd", points: Point[]) =>
+      cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points });
+    await send("touchStart", [{ x: x0, y: from.y }]);
+    for (const step of [0.25, 0.5, 0.75, 1]) {
+      await send("touchMove", [{ x: x0 + dx * step, y: from.y }]);
+    }
+    await s.page.locator(`.mail-swipe-backdrop[data-armed="true"]`).waitFor();
+    const found = await s.page.evaluate(() => {
+      const paint = (name: string, property: "backgroundColor" | "color") => {
+        const probe = document.createElement("div");
+        probe.style[property] = `var(${name})`;
+        document.body.append(probe);
+        const value = getComputedStyle(probe)[property];
+        probe.remove();
+        return value;
+      };
+      const backdrop = getComputedStyle(document.querySelector(".mail-swipe-backdrop") as Element);
+      return {
+        background: backdrop.backgroundColor,
+        color: backdrop.color,
+        success: {
+          background: paint("--color-success", "backgroundColor"),
+          color: paint("--color-on-success", "color"),
+        },
+        error: {
+          background: paint("--color-error", "backgroundColor"),
+          color: paint("--color-on-error", "color"),
+        },
+      };
+    });
+    await send("touchEnd", []);
+    await cdp.detach();
+    await s.page.waitForFunction(
+      (rowId) => document.querySelector(`[data-message-row="${rowId}"]`) === null,
+      id,
+    );
+    return found;
+  }
+
+  test("paints an armed right swipe green and an armed left swipe red, light and dark", async () => {
+    for (const mode of ["light", "dark"]) {
+      await s.page.evaluate((m) => localStorage.setItem("melodymail.mode", m), mode);
+      const archive = await armedColours(`${mode}-a`, "/", 240);
+      expect([mode, archive.background, archive.color]).toEqual([
+        mode,
+        archive.success.background,
+        archive.success.color,
+      ]);
+      const trash = await armedColours(`${mode}-t`, "/", -240);
+      expect([mode, trash.background, trash.color]).toEqual([
+        mode,
+        trash.error.background,
+        trash.error.color,
+      ]);
+      const restore = await armedColours(`${mode}-r`, "/trash", 240, { trashed: true });
+      expect([mode, restore.background]).toEqual([mode, restore.success.background]);
+      const notSpam = await armedColours(`${mode}-n`, "/spam", 240, { spam: true });
+      expect([mode, notSpam.background]).toEqual([mode, notSpam.success.background]);
+    }
+    await s.page.evaluate(() => localStorage.removeItem("melodymail.mode"));
+  });
+
   test("slides the row with motion and not at all under reduced motion", async () => {
     await withRow("sw4", "/");
     const row = await swipe("sw4", 280);
