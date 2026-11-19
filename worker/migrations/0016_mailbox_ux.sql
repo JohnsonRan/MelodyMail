@@ -8,14 +8,22 @@ CREATE TABLE IF NOT EXISTS `spam_senders` (
 	`created_at` integer NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE `backup_exports` ADD `columns` text;--> statement-breakpoint
+DROP INDEX IF EXISTS `messages_folder_received`;--> statement-breakpoint
+DROP INDEX IF EXISTS `messages_starred_received`;--> statement-breakpoint
+DROP INDEX IF EXISTS `messages_unread`;--> statement-breakpoint
 ALTER TABLE `messages` ADD `seq` integer;--> statement-breakpoint
 ALTER TABLE `messages` ADD `spam` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
 ALTER TABLE `messages` ADD `spam_at` integer;--> statement-breakpoint
 ALTER TABLE `messages` ADD `from_key` text;--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS `messages_spam_received` ON `messages` (`spam`,"received_at" DESC,"id" DESC);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS `messages_spam_at` ON `messages` (`spam_at`) WHERE `spam` = 1;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `messages_address_trashed_at` ON `messages` (`address_id`,`trashed_at`) WHERE `trashed` = 1;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `messages_address_spam_at` ON `messages` (`address_id`,`spam_at`) WHERE `spam` = 1;--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS `messages_seq` ON `messages` (`seq`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `messages_folder_received` ON `messages` (`trashed`,`archived`,`spam`,"received_at" DESC,"id" DESC);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `messages_starred_received` ON `messages` (`starred`,`trashed`,`spam`,"received_at" DESC,"id" DESC);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `messages_unread` ON `messages` (`trashed`,`archived`,`spam`,`starred`,`address_id`) WHERE `read` = 0;--> statement-breakpoint
+ALTER TABLE `backup_exports` ADD `columns` text;--> statement-breakpoint
 ALTER TABLE `rules` ADD `spam` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
 -- Written by hand from here: drizzle-kit describes neither data nor triggers.
 -- Existing rows get seq in (received_at, id) order, and the counter starts at the highest one

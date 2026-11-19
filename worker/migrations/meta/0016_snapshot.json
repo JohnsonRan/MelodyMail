@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4689ff76-a207-4a31-a85a-45f57afa58ba",
+  "id": "cdd68270-cd13-4e9a-b6fa-75a0258331fc",
   "prevId": "2ed6ba12-5d1d-4a3f-ad8c-897569fac7dd",
   "tables": {
     "address_forwards": {
@@ -25,9 +25,7 @@
       "indexes": {
         "address_forwards_target_id": {
           "name": "address_forwards_target_id",
-          "columns": [
-            "target_id"
-          ],
+          "columns": ["target_id"],
           "isUnique": false
         }
       },
@@ -36,12 +34,8 @@
           "name": "address_forwards_address_id_addresses_id_fk",
           "tableFrom": "address_forwards",
           "tableTo": "addresses",
-          "columnsFrom": [
-            "address_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["address_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -49,22 +43,15 @@
           "name": "address_forwards_target_id_forward_targets_id_fk",
           "tableFrom": "address_forwards",
           "tableTo": "forward_targets",
-          "columnsFrom": [
-            "target_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["target_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "address_forwards_address_id_target_id_pk": {
-          "columns": [
-            "address_id",
-            "target_id"
-          ],
+          "columns": ["address_id", "target_id"],
           "name": "address_forwards_address_id_target_id_pk"
         }
       },
@@ -145,10 +132,7 @@
       "indexes": {
         "addresses_domain_local_part": {
           "name": "addresses_domain_local_part",
-          "columns": [
-            "domain",
-            "local_part"
-          ],
+          "columns": ["domain", "local_part"],
           "isUnique": true
         }
       },
@@ -157,12 +141,8 @@
           "name": "addresses_domain_domains_name_fk",
           "tableFrom": "addresses",
           "tableTo": "domains",
-          "columnsFrom": [
-            "domain"
-          ],
-          "columnsTo": [
-            "name"
-          ],
+          "columnsFrom": ["domain"],
+          "columnsTo": ["name"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -241,16 +221,12 @@
       "indexes": {
         "api_keys_public_id": {
           "name": "api_keys_public_id",
-          "columns": [
-            "public_id"
-          ],
+          "columns": ["public_id"],
           "isUnique": true
         },
         "api_keys_token_hash": {
           "name": "api_keys_token_hash",
-          "columns": [
-            "token_hash"
-          ],
+          "columns": ["token_hash"],
           "isUnique": true
         }
       },
@@ -469,10 +445,7 @@
       "indexes": {
         "backup_exports_status_started": {
           "name": "backup_exports_status_started",
-          "columns": [
-            "status",
-            "started_at"
-          ],
+          "columns": ["status", "started_at"],
           "isUnique": false
         }
       },
@@ -641,16 +614,12 @@
       "indexes": {
         "drafts_idempotency_key": {
           "name": "drafts_idempotency_key",
-          "columns": [
-            "idempotency_key"
-          ],
+          "columns": ["idempotency_key"],
           "isUnique": true
         },
         "drafts_updated": {
           "name": "drafts_updated",
-          "columns": [
-            "updated_at"
-          ],
+          "columns": ["updated_at"],
           "isUnique": false
         }
       },
@@ -695,9 +664,7 @@
       "indexes": {
         "forward_targets_email_unique": {
           "name": "forward_targets_email_unique",
-          "columns": [
-            "email"
-          ],
+          "columns": ["email"],
           "isUnique": true
         }
       },
@@ -734,10 +701,7 @@
       "indexes": {
         "login_attempts_scope_created_at": {
           "name": "login_attempts_scope_created_at",
-          "columns": [
-            "scope",
-            "created_at"
-          ],
+          "columns": ["scope", "created_at"],
           "isUnique": false
         }
       },
@@ -1028,112 +992,82 @@
       "indexes": {
         "messages_resend_id": {
           "name": "messages_resend_id",
-          "columns": [
-            "resend_id"
-          ],
+          "columns": ["resend_id"],
           "isUnique": true
         },
         "messages_idempotency_key": {
           "name": "messages_idempotency_key",
-          "columns": [
-            "idempotency_key"
-          ],
+          "columns": ["idempotency_key"],
           "isUnique": true
         },
         "messages_direction_received": {
           "name": "messages_direction_received",
-          "columns": [
-            "direction",
-            "trashed",
-            "\"received_at\" DESC",
-            "\"id\" DESC"
-          ],
+          "columns": ["direction", "trashed", "\"received_at\" DESC", "\"id\" DESC"],
           "isUnique": false
         },
         "messages_address_received": {
           "name": "messages_address_received",
-          "columns": [
-            "address_id",
-            "\"received_at\" DESC"
-          ],
+          "columns": ["address_id", "\"received_at\" DESC"],
           "isUnique": false
         },
         "messages_status_received": {
           "name": "messages_status_received",
-          "columns": [
-            "status",
-            "received_at"
-          ],
+          "columns": ["status", "received_at"],
           "isUnique": false
         },
         "messages_thread_key": {
           "name": "messages_thread_key",
-          "columns": [
-            "thread_key"
-          ],
+          "columns": ["thread_key"],
           "isUnique": false
         },
         "messages_folder_received": {
           "name": "messages_folder_received",
-          "columns": [
-            "trashed",
-            "archived",
-            "\"received_at\" DESC",
-            "\"id\" DESC"
-          ],
+          "columns": ["trashed", "archived", "spam", "\"received_at\" DESC", "\"id\" DESC"],
           "isUnique": false
         },
         "messages_starred_received": {
           "name": "messages_starred_received",
-          "columns": [
-            "starred",
-            "trashed",
-            "\"received_at\" DESC",
-            "\"id\" DESC"
-          ],
+          "columns": ["starred", "trashed", "spam", "\"received_at\" DESC", "\"id\" DESC"],
           "isUnique": false
         },
         "messages_unread": {
           "name": "messages_unread",
-          "columns": [
-            "trashed",
-            "archived",
-            "starred",
-            "address_id"
-          ],
+          "columns": ["trashed", "archived", "spam", "starred", "address_id"],
           "isUnique": false,
           "where": "\"messages\".\"read\" = 0"
         },
         "messages_trashed_at": {
           "name": "messages_trashed_at",
-          "columns": [
-            "trashed_at"
-          ],
+          "columns": ["trashed_at"],
           "isUnique": false,
           "where": "\"messages\".\"trashed\" = 1"
         },
         "messages_spam_received": {
           "name": "messages_spam_received",
-          "columns": [
-            "spam",
-            "\"received_at\" DESC",
-            "\"id\" DESC"
-          ],
+          "columns": ["spam", "\"received_at\" DESC", "\"id\" DESC"],
           "isUnique": false
         },
         "messages_spam_at": {
           "name": "messages_spam_at",
-          "columns": [
-            "spam_at"
-          ],
+          "columns": ["spam_at"],
+          "isUnique": false,
+          "where": "\"messages\".\"spam\" = 1"
+        },
+        "messages_address_trashed_at": {
+          "name": "messages_address_trashed_at",
+          "columns": ["address_id", "trashed_at"],
+          "isUnique": false,
+          "where": "\"messages\".\"trashed\" = 1"
+        },
+        "messages_address_spam_at": {
+          "name": "messages_address_spam_at",
+          "columns": ["address_id", "spam_at"],
           "isUnique": false,
           "where": "\"messages\".\"spam\" = 1"
         },
         "messages_seq": {
           "name": "messages_seq",
-          "columns": [
-            "seq"
-          ],
+          "columns": ["seq"],
           "isUnique": false
         }
       },
@@ -1302,16 +1236,12 @@
       "indexes": {
         "push_subscriptions_endpoint": {
           "name": "push_subscriptions_endpoint",
-          "columns": [
-            "endpoint"
-          ],
+          "columns": ["endpoint"],
           "isUnique": true
         },
         "push_subscriptions_session": {
           "name": "push_subscriptions_session",
-          "columns": [
-            "session_id"
-          ],
+          "columns": ["session_id"],
           "isUnique": false
         }
       },
@@ -1320,12 +1250,8 @@
           "name": "push_subscriptions_session_id_sessions_id_fk",
           "tableFrom": "push_subscriptions",
           "tableTo": "sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["session_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1355,9 +1281,7 @@
       "indexes": {
         "rule_forwards_target_id": {
           "name": "rule_forwards_target_id",
-          "columns": [
-            "target_id"
-          ],
+          "columns": ["target_id"],
           "isUnique": false
         }
       },
@@ -1366,12 +1290,8 @@
           "name": "rule_forwards_rule_id_rules_id_fk",
           "tableFrom": "rule_forwards",
           "tableTo": "rules",
-          "columnsFrom": [
-            "rule_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["rule_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1379,22 +1299,15 @@
           "name": "rule_forwards_target_id_forward_targets_id_fk",
           "tableFrom": "rule_forwards",
           "tableTo": "forward_targets",
-          "columnsFrom": [
-            "target_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["target_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "rule_forwards_rule_id_target_id_pk": {
-          "columns": [
-            "rule_id",
-            "target_id"
-          ],
+          "columns": ["rule_id", "target_id"],
           "name": "rule_forwards_rule_id_target_id_pk"
         }
       },
@@ -1513,10 +1426,7 @@
       "indexes": {
         "rules_enabled_position": {
           "name": "rules_enabled_position",
-          "columns": [
-            "enabled",
-            "position"
-          ],
+          "columns": ["enabled", "position"],
           "isUnique": false
         }
       },
@@ -1672,9 +1582,7 @@
       "indexes": {
         "sessions_expires_at": {
           "name": "sessions_expires_at",
-          "columns": [
-            "expires_at"
-          ],
+          "columns": ["expires_at"],
           "isUnique": false
         }
       },
@@ -1885,10 +1793,7 @@
       "indexes": {
         "telegram_cards_chat_message": {
           "name": "telegram_cards_chat_message",
-          "columns": [
-            "chat_id",
-            "tg_message_id"
-          ],
+          "columns": ["chat_id", "tg_message_id"],
           "isUnique": true
         }
       },
@@ -1897,12 +1802,8 @@
           "name": "telegram_cards_message_id_messages_id_fk",
           "tableFrom": "telegram_cards",
           "tableTo": "messages",
-          "columnsFrom": [
-            "message_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["message_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1974,23 +1875,17 @@
       "indexes": {
         "uploads_draft": {
           "name": "uploads_draft",
-          "columns": [
-            "draft_id"
-          ],
+          "columns": ["draft_id"],
           "isUnique": false
         },
         "uploads_message": {
           "name": "uploads_message",
-          "columns": [
-            "message_id"
-          ],
+          "columns": ["message_id"],
           "isUnique": false
         },
         "uploads_created": {
           "name": "uploads_created",
-          "columns": [
-            "created_at"
-          ],
+          "columns": ["created_at"],
           "isUnique": false
         }
       },
@@ -2020,9 +1915,7 @@
       "indexes": {
         "webhook_events_received": {
           "name": "webhook_events_received",
-          "columns": [
-            "received_at"
-          ],
+          "columns": ["received_at"],
           "isUnique": false
         }
       },

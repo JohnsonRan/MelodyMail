@@ -246,28 +246,34 @@ export const messages = sqliteTable(
     // The cron step finds messages still waiting for the parser.
     index("messages_status_received").on(t.status, t.receivedAt),
     index("messages_thread_key").on(t.threadKey),
-    // M4 folder lists: keyset pagination on (received_at DESC, id DESC) inside one folder.
+    // M4 folder lists: keyset pagination on (received_at DESC, id DESC) inside one folder. M8 added
+    // spam, so a page of the Inbox or Starred does not walk over Spam rows.
     index("messages_folder_received").on(
       t.trashed,
       t.archived,
+      t.spam,
       sql`${t.receivedAt} DESC`,
       sql`${t.id} DESC`,
     ),
     index("messages_starred_received").on(
       t.starred,
       t.trashed,
+      t.spam,
       sql`${t.receivedAt} DESC`,
       sql`${t.id} DESC`,
     ),
-    // Unread counts read only unread rows.
+    // Unread counts read only unread rows. M8 added spam.
     index("messages_unread")
-      .on(t.trashed, t.archived, t.starred, t.addressId)
+      .on(t.trashed, t.archived, t.spam, t.starred, t.addressId)
       .where(sql`${t.read} = 0`),
     // M7: the cron finds messages that have been in Trash for 30 days.
     index("messages_trashed_at").on(t.trashedAt).where(sql`${t.trashed} = 1`),
     // M8: the Spam list, the Spam clean-up, and the folder-wide continuation by seq.
     index("messages_spam_received").on(t.spam, sql`${t.receivedAt} DESC`, sql`${t.id} DESC`),
     index("messages_spam_at").on(t.spamAt).where(sql`${t.spam} = 1`),
+    // M8: an address-scoped purge reads only that address's Trash or Spam rows.
+    index("messages_address_trashed_at").on(t.addressId, t.trashedAt).where(sql`${t.trashed} = 1`),
+    index("messages_address_spam_at").on(t.addressId, t.spamAt).where(sql`${t.spam} = 1`),
     index("messages_seq").on(t.seq),
   ],
 );
