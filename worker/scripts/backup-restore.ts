@@ -74,10 +74,14 @@ function wrangler(args: string[], config: string | undefined): string {
   return run.stdout.toString();
 }
 
-/** The distinct INSERT column lists of a part's text. */
-function insertColumns(table: string, text: string): Set<string> {
-  const head = new RegExp(`^INSERT INTO "${table}" \\(([^)]*)\\) VALUES \\(`, "gm");
-  return new Set([...text.matchAll(head)].map((m) => m[1] ?? ""));
+/**
+ * The column list of a part's first INSERT. A part is written by one Worker version in one run
+ * and starts with an INSERT head, so only its first line is read: a stored text value may hold a
+ * line that looks like another head.
+ */
+function insertColumns(table: string, text: string): string | undefined {
+  const head = new RegExp(`^INSERT INTO "${table}" \\(([^)]*)\\) VALUES \\(`);
+  return head.exec(text)?.[1];
 }
 
 /**
@@ -102,9 +106,8 @@ export function partProblems(manifest: Manifest, dir: string): string[] {
       if (bytes.byteLength !== part.bytes) problems.push(`${part.key}: ${bytes.byteLength} bytes`);
       const md5 = createHash("md5").update(bytes).digest("hex");
       if (md5 !== part.md5) problems.push(`${part.key}: MD5 differs`);
-      for (const list of insertColumns(table.name, bytes.toString("utf8"))) {
-        if (!columns.has(list)) columns.set(list, basename(part.key));
-      }
+      const list = insertColumns(table.name, bytes.toString("utf8"));
+      if (list !== undefined && !columns.has(list)) columns.set(list, basename(part.key));
     });
     if (columns.size > 1) {
       const seen = [...columns].map(([list, file]) => `${file}: ${list.split(",").length}`);

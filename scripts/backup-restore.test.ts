@@ -62,6 +62,15 @@ describe("partProblems", () => {
     expect(partProblems(...withDir(exportOf({ messages: [M7, split, ""] })))).toEqual([]);
     expect(partProblems(...withDir(exportOf({ messages: [M8, M8] })))).toEqual([]);
   });
+
+  test("reads only the first INSERT of a part, not a stored value that looks like one", () => {
+    const part = [
+      `INSERT INTO "drafts" ("id","body") VALUES ('a','hi`,
+      `INSERT INTO "drafts" (x) VALUES (');`,
+      "",
+    ].join("\n");
+    expect(partProblems(...withDir(exportOf({ drafts: [part, part] })))).toEqual([]);
+  });
 });
 
 const withDir = ({ manifest, dir }: { manifest: Manifest; dir: string }) =>
