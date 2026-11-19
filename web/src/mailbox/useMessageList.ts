@@ -161,31 +161,38 @@ export function useMessageList(
   }, [list.next, loadMore]);
 
   /** Drops a message that no longer belongs to the view, or takes its new flags. */
-  const reconcile = useCallback(async (id: string) => {
-    const started = view.current;
-    let fresh: MessageItem | null = null;
-    for (let retry = 0; ; retry++) {
-      try {
-        fresh = (await getMessage(id)).message;
-        break;
-      } catch (err) {
-        if (err instanceof ApiError && err.code === "not_found") break;
-        // After the last retry the row stays; the next event or a reload settles it.
-        const wait = RETRY_MS[retry];
-        if (wait === undefined) return;
-        await new Promise((done) => setTimeout(done, wait));
-        if (started !== view.current) return;
+  const reconcile = useCallback(
+    async (id: string) => {
+      const started = view.current;
+      let fresh: MessageItem | null = null;
+      for (let retry = 0; ; retry++) {
+        try {
+          fresh = (await getMessage(id)).message;
+          break;
+        } catch (err) {
+          if (err instanceof ApiError && err.code === "not_found") break;
+          // After the last retry the view loads again: a refreshed first page keeps rows it does
+          // not hold, so only a reload drops the filed row.
+          const wait = RETRY_MS[retry];
+          if (wait === undefined) {
+            if (started === view.current) void reload();
+            return;
+          }
+          await new Promise((done) => setTimeout(done, wait));
+          if (started !== view.current) return;
+        }
       }
-    }
-    if (started !== view.current) return;
-    setList((prev) => ({
-      ...prev,
-      items: prev.items.flatMap((m) => {
-        if (m.id !== id) return [m];
-        return fresh && belongs(fresh, queryRef.current) ? [{ ...m, ...fresh }] : [];
-      }),
-    }));
-  }, []);
+      if (started !== view.current) return;
+      setList((prev) => ({
+        ...prev,
+        items: prev.items.flatMap((m) => {
+          if (m.id !== id) return [m];
+          return fresh && belongs(fresh, queryRef.current) ? [{ ...m, ...fresh }] : [];
+        }),
+      }));
+    },
+    [reload],
+  );
 
   // New mail or a changed sent message: the first page is fetched again, its new messages go on
   // top and the ones already shown take their new status. "filed" (the consumer moved new mail

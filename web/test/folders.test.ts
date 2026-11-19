@@ -418,15 +418,16 @@ describe("Spam", () => {
     expect(detail.requests).toBe(2);
   });
 
-  test("gives up after three retries and leaves the row", async () => {
+  test("reloads the view after three failed retries, so the filed row leaves", async () => {
     const page = await open("/", `[data-message-row="note1"]`);
     const detail = await failingReread(page, Number.POSITIVE_INFINITY);
     (app.store.get("note1")?.item as Record<string, unknown>).spam = true;
     for (const ws of app.sockets) ws.send(JSON.stringify({ type: "filed", id: "note1" }));
     await until(() => detail.requests === 4, 9000);
-    await Bun.sleep(1500);
+    await row(page, "note1").waitFor({ state: "detached", timeout: 5000 });
+    await Bun.sleep(500);
     expect(detail.requests).toBe(4);
-    expect(await row(page, "note1").count()).toBe(1);
+    expect(await row(page, "note2").count()).toBe(1);
   });
 
   test("starts no retry once a refresh has moved the view", async () => {
