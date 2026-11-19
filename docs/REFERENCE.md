@@ -113,20 +113,32 @@ is chosen for that message, and attachments are always downloaded, never opened 
 the dark theme, "Dark reading" in the reader shows one HTML message inverted; it is off for every
 message you open.
 
+When every loaded message of a folder is selected and the folder holds more, the list offers
+"Select all N in" the folder. In that mode an action applies to every message that was in the
+folder when the offer appeared; mail that arrives later is shown but left out. Unchecking a row,
+another folder, address or search, or a reload leaves the mode. A change over the whole folder
+shows its progress and can be stopped; what was changed stays changed. Search results have no
+"select all".
+
+While Delete forever, Empty or a whole-folder change runs, the list loads nothing else and
+reloads once at the end. If a request gets no answer, the run stops, the list and counts reload,
+and a message says the result of the last request is unknown.
+
 The language and theme buttons open menus of their choices: in the app bar, and on a phone at the
 end of the navigation drawer. The theme button's
 icon shows the current mode: system, light or dark.
 
 On a phone (narrower than 768 px):
 
-- the reader shows Back, Reply, Archive and Move to Trash as icons, and the other actions,
-  Dark reading included, under "More actions";
+- the reader shows Back, Reply, Archive and Move to Trash as icons (in Spam: Not spam), and the
+  other actions, Report spam and Dark reading included, under "More actions";
 - the list title row holds Refresh and Select, and Compose floats at the bottom right; the
-  actions on selected messages (Archive and Move to Trash, with star and read state under "More
-  actions") show in selection mode, which Select or a long press on a row starts and Done ends;
-- with a finger, a row swipes right to Archive (Move to Inbox in Archive, Restore in Trash) and
-  left to Move to Trash; Trash has no left swipe;
-- Trash shows its 30-day note above the list;
+  actions on selected messages (Archive and Move to Trash, with star, read state and Report spam
+  under "More actions") show in selection mode, which Select or a long press on a row starts and
+  Done ends; the "Message / Date" header row shows only in selection mode;
+- with a finger, a row swipes right to Archive (Move to Inbox in Archive, Restore in Trash, Not
+  spam in Spam) and left to Move to Trash; Trash and Spam have no left swipe;
+- Trash and Spam show their 30-day note and Empty above the list;
 - Settings opens a list of its sections; wider screens open Domains.
 
 Compose opened as a page (narrower than 1280 px) keeps Close and Send in its title row, so both
@@ -152,6 +164,9 @@ requires), which the deploy creates.
   meanwhile is kept. Empty Trash deletes, 100 per request, exactly what was in Trash when the
   confirmation opened: mail that arrives or is moved to Trash after that stays. Each request
   writes one audit row (`messages_deleted` or `trash_emptied`, with the count).
+- Both ask for confirmation with the count, show progress while they run, and can be stopped
+  between requests; what was deleted stays deleted. On a desktop, Empty Trash sits at the end of
+  the action bar next to the 30-day note; on a phone, in the row above the list.
 
 ### Spam
 
@@ -159,8 +174,15 @@ requires), which the deploy creates.
   header, lowercased. Later mail from a remembered sender is moved to Spam when it is parsed,
   shortly after it arrives, unless a rule archived it or moved it to Trash. Only received messages
   that enter Spam add a sender; mail you sent never does.
+- Report spam is in the action bar (on a phone under "More actions") and in the reader of every
+  folder except Sent, Trash and Spam. Spam lists Not spam, Delete forever, star and read state.
 - Not spam moves a message back to the Inbox and forgets its sender. Moving a whole folder to Spam
-  ("select all") remembers no sender.
+  ("select all") remembers no sender, so the action is labelled Move to Spam there.
+- Settings > Spam senders lists the remembered senders with Remove. Removing one stops filing its
+  later mail; mail already in Spam stays there.
+- The reader loads no remote images for a message in Spam, even one you allowed before it was
+  moved there. A message the consumer files into Spam leaves an open list at once, and an open
+  reader switches to the Spam actions.
 - A forged `From` can make Report spam remember a real sender. Their later mail then lands in
   Spam, not lost: Not spam on it forgets the sender again.
 - Mail in Spam is in no other folder, not in search, not in recipient suggestions, and counts as
@@ -170,7 +192,8 @@ requires), which the deploy creates.
 - Mail in Spam for 30 days is deleted for good, as in Trash: the 30 days start when it entered
   Spam, and the cron logs `spam_expired` with a count. Delete forever and Empty Spam work as in
   Trash (audit `messages_deleted`, `spam_emptied`).
-- There is no content scoring: only reported senders and rules file mail into Spam.
+- There is no content scoring: only reported senders and rules file mail into Spam. The rule
+  editor's "Move to Spam" action sits beside "Move to Trash".
 
 ## Install and offline
 

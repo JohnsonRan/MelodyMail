@@ -4322,7 +4322,7 @@ and chose four items: bulk delete and Empty Trash, select all matching, phone sw
 | --- | --- | --- | --- |
 | A | worker: migration 0016, seq, transitions, routes, v1, consumer, cron, contacts, backup, measurements | claude-opus-5-5 | done (see "Phase A" below) |
 | C | web: phone layout (section 5) and swipe (section 3), worktree | claude-sonnet-5-5 (served, read from the run record) | done, merged |
-| B | web: Spam, Delete forever, Empty, select all, filed event, reader refresh, i18n | claude-opus-5-5 | running |
+| B | web: Spam, Delete forever, Empty, select all, filed event, reader refresh, i18n | claude-opus-5-5 | done (see "Phase B" below) |
 | R | cross-family code review, ablation check, owner screenshots | after B and C | waiting |
 
 ### Phase A progress (worker, branch `mailbox-ux`)
@@ -4512,3 +4512,174 @@ The first run of the drill found the restart defect fixed in `d2772b1` (deviatio
   identical to `useRowGestures.ts` at `9e0bdab` and was deleted after that check.
 - Screenshot review (coordinator): phones still show the table header "Message / Date"; the armed
   swipe colour in the light theme is the near-black accent. Both go to phase B / the owner.
+
+### Phase B (web, branch `mailbox-ux`, done 2026-11-19, not reviewed)
+
+Agent: claude-opus-5-5. Commits:
+
+- `04d817d` web: teach the mailbox stand-in the M8 routes
+- `490819e` web: add Spam, Delete forever, Empty and select all matching
+- `1e7ca48` web: hide the list header row on phones outside selection mode
+- `02541b4` web: offer Move to Spam as a rule action
+- `62d0012` web: add Settings > Spam senders with Remove
+
+Built (docs/M8-mailbox-ux.md, sections 1, 2 and 4, and the coordinator's header finding):
+
+- Spam below Archive with its unread count, `/spam`, Not spam, Delete forever, star and read
+  state, the 30-day note and Empty Spam; Report spam in the bulk bar (phone: More), and in the
+  reader for received mail outside Trash and Spam; Move to Spam in whole-folder mode; the Spam
+  swipe entry `{ right: "notSpam" }`. The reader in Spam loads no remote images, even ones allowed
+  before a `filed` event, and shows Not spam and Delete forever.
+- Delete forever on the selection (DELETE /api/messages, 100 ids per call) and Empty Trash /
+  Empty Spam (POST /api/messages/purge with the count route's watermark and asOf, unchanged on
+  every call) behind the AlertDialog: count, "This cannot be undone", progress, Stop between
+  calls. The list drops the ids each call returned and the toast counts them. A call with no
+  answer, or a 5xx answer, stops the run, reloads list and counts, and an error toast says the
+  result is unknown.
+- Select all N (folders only): the offer appears when every loaded row is selected and
+  `nextCursor` is set, with the count route's total; whole-folder actions loop the folder-form
+  PATCH with `after`/`next`, with progress and Stop in the banner; whole-folder Delete forever
+  purges with the mode's count. Unchecking a row, a view change or a reload leaves the mode.
+- `useMessageList`: a generation counter; `exclusive` pauses scroll paging, Hub refreshes and
+  reloads during a loop and reloads once at its end; answers of fetches begun before or during
+  the loop are dropped. `filed` moves the generation, re-reads the message
+  (`GET /api/messages/:id`) and drops it from a view it left; a dropped scroll page is fetched
+  again from its cursor (the sentinel asks again). The open reader takes the new flags.
+- Settings > Spam senders (Mail group, after Rules): GET /api/spam-senders, Remove with
+  DELETE /api/spam-senders. Rule editor: Move to Spam beside Move to Trash (`spam`).
+- Phones hide the "Message / Date" row outside selection mode (`visibility: collapse`, which
+  keeps the fixed table's column widths; `display: none` lost them and pushed every row about
+  130 px right, seen in the first screenshots). Swipe colours unchanged (owner decides).
+- Strings in en, zh-CN, ja-JP; zh-CN uses the file's terms (“垃圾邮件”, “已删除”, 永久删除).
+  Search's empty text now says Spam is not searched either.
+
+Frontend–backend mapping: every new call has its route (`worker/src/mail/bulk.ts`, `spam.ts`,
+`routes.ts`). Error levels: refusals (4xx) go through `errorMessage` as error toasts, as before;
+an unknown result is an error toast (Astryx has info and error only, and it must stay until read).
+
+### Phase B proof (browser suites, API stand-in `web/test/stub-mailbox.ts`)
+
+`web/test/folders.test.ts` (new, 17 tests, `bun run test:browser`): Spam list, nav order and
+count, toolbar, note, no offer without more rows; Report spam from the Inbox (ids PATCH, sender
+learned, toast), none in Sent, Not spam (sender forgotten, lands in the Inbox); Report spam from
+the reader; sent mail stays in Starred; a Spam message without remote images and with Spam
+actions; a `filed` event dropping an Inbox row and switching the open reader (allowed images off);
+a dropped scroll page fetched again from the same cursor; Empty Trash with confirmation,
+progress, three calls with identical watermark and asOf; Stop between calls (200 of 250 kept
+deleted, 50 rows shown); an unanswered call (stop, toast, list reloaded); no list fetch during
+the loop, Refresh off, an answer begun before the loop and landing mid-loop discarded; selection
+Delete forever dropping only returned ids; whole-folder Delete forever in Spam with the mode's
+count, later mail kept; select all then Archive over three folder-form calls with `after`, later
+mail not included; Move to Spam label and no sender learned; leaving the mode on uncheck, folder
+change, and an address change mid-loop (no list fetch while the call is held, one reload after).
+`web/test/mobile.test.ts` (+2 tests, +3 checks): Spam swipe right is Not spam, left does nothing;
+header row hidden outside selection mode with column widths kept; Empty Trash in the folder row,
+label whole; Report spam last in the reader's More menu; settings list with Spam senders.
+`web/test/rules.test.ts` (+2 tests, `bun run test:settings`): Move to Spam after Move to Trash,
+saved as `spam: true`, in the summary; Spam senders newest first, Remove, empty state.
+
+### Phase B ablation
+
+`ablate.ts` (scratchpad, not committed) applied each mutation alone, rebuilt `web/dist`, ran the
+named test and restored the file from a scratchpad backup. All 47 went red:
+
+| Hunk removed | Red test |
+| --- | --- |
+| list: generation check on answers; no Hub refresh while paused; exclusive's start bump; no scroll page while paused; Refresh off during a loop | "starts no list fetch during the loop ..." |
+| list: no reload fetch while paused; page: reset leaves whole mode | "leaves whole-folder mode when the address view changes" |
+| list: reload at the end of a loop; runs: stop between calls; dialog: Stop label | "stops between calls when cancelled ..." |
+| list: filed reconcile; reader: filed refresh; reader: allowed images off in Spam | "drops an Inbox row the consumer files into Spam ..." |
+| list: filed bumps generation | "fetches a scroll page again from its cursor ..." |
+| reader: no Show remote images in Spam; Spam note; toolbar: Not spam, Delete forever in Spam | "opens a Spam message without remote images ..." |
+| toolbar: Report spam | "reports spam from the reader" |
+| bulk: no Report spam in Sent; actions: Inbox excludes Spam; page: Report spam toast | "reports spam from the Inbox, never offers it in Sent ..." |
+| bulk: Not spam button | same test (Not spam part) |
+| bulk: Delete forever button | "deletes the selection forever ..." |
+| bulk: Move to Spam label | "labels Report spam Move to Spam in whole-folder mode ..." |
+| actions: sent mail never enters Spam | "keeps sent mail in Starred ..." |
+| actions: Spam swipe | mobile "marks a row in Spam not spam ..." |
+| page: unchecking leaves whole mode | "leaves whole-folder mode when a row is unchecked ..." |
+| page: whole-mode actions use the folder form; runs: folder PATCH continuation; runs: offer count | "offers all N, then archives the whole folder ..." |
+| page: offer only with more rows; Spam 30-day note; shell: Spam in navigation | "lists Spam below Archive ..." |
+| page: Empty button; runs: drop deleted ids per call; api: purge sends the dialog's asOf; dialog: progress | "empties Trash after confirmation ..." |
+| runs: unanswered call toast | "stops and refreshes the list when a call gets no answer" |
+| runs: whole Delete forever uses the mode's count | "purges all of Spam selected with select all ..." |
+| page: phone header hidden; css: collapse keeps column widths | mobile "hides the Message and Date header row ..." |
+| folder row: button keeps its width | mobile "shows the Trash note as a folder row ..." |
+| shell: Spam senders in settings; senders: Remove | rules "lists the remembered senders ..." |
+| rules: spam action; spam in the body | rules "saves a rule that moves mail to Spam ..." |
+
+Not ablated, with the reason: the locale strings, the `filed` member of the event type and the
+Spam swipe icon (no behaviour of their own; a missing string fails `check:i18n` and the tests
+that read the text); `eligible` requiring a folder view (search has no route in the stand-in, and
+the Worker's count route refuses a search); the stand-in itself (test code).
+
+### Phase B numbers (2026-11-19, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
+
+The host was loaded by other programs; CPU load is the mean of 2-second samples during each run.
+Limits are not changed.
+
+| Tier | 3 runs (wall, including the web build) | CPU load | Limit |
+| --- | --- | --- | --- |
+| `bun run test:browser` (106 tests) | 80.5, 78.5, 76.9 s (`bun test` 77.7, 77.0, 74.6 s) | 54%, 47%, 48% | 42 s |
+| base `80ab322`, same host and hour (87 tests) | `bun test` 50.6, 48.9 s (2 runs) | 50%, 59% at start | |
+| `bun run test:settings` (19 tests) | 11.5, 11.2, 11.4 s | 31%, 29%, 17% | 13 s |
+| `bun run test:send` (10 tests, stand-in changed) | 16.6, 16.6, 16.6 s | 18%, 24%, 20% | 18 s |
+| `bun run test:pwa` (11 tests, stand-in changed) | 13.4, 13.4, 13.5 s | 38%, 57%, 61% | 15 s |
+| `bun run check` | 20.6, 18.4, 18.3 s, all passed | 70%, 69%, 73% | 18 s |
+
+Bundle (vite build, gzip -6 by `size.cjs` in the scratchpad, both builds on this host): total JS
+and CSS 745.1 kB at `80ab322`, 750.0 kB now (limit 770 kB); everything `index.html` references
+359.7 kB and 359.8 kB. This script counts more than the "first paint" row of `REQUIREMENTS.md`,
+so only the difference is meaningful.
+
+Files above the p90 (242 lines): `web/src/pages/MailboxPage.tsx` 473 (370 before; the loops,
+dialog and banner moved to `useFolderRuns.ts`, `DeleteDialog.tsx`, `SelectAllBanner.tsx`, and what
+is left is wiring of the page's state); `web/src/reader/Reader.tsx` 280 (245 before);
+`web/src/reader/ReaderToolbar.tsx` 259 (one list of actions); tests `folders.test.ts` 484,
+`mobile.test.ts` 774, `stub-mailbox.ts` 306 (one route set per file, as the other stubs).
+
+### Deviations (phase B)
+
+1. The phone header row shows in selection mode: it holds the select-all checkbox, the only way
+   to reach "select all N" on a phone. Outside selection mode it is hidden.
+2. Report spam is not offered in Trash (Trash keeps Restore and Delete forever) nor on mail you
+   sent. The keyboard shortcuts are unchanged: `e` in Spam archives, which leaves Spam.
+3. A 5xx answer counts as "result unknown" as a network failure does: the Worker's batch may have
+   committed before an error was returned. Only a 4xx answer is a known refusal.
+4. Empty reads the count when the button is pressed; whole-folder Delete forever uses the count
+   read when the mode was entered, so mail filed later is not deleted.
+5. Stop (the dialog's Cancel during a run) closes the dialog at once; the call in flight finishes
+   and the toast counts it. Refresh is disabled while a run lasts.
+6. A failed request also marks the app offline; when the next request succeeds the mailbox
+   remounts (M4b behaviour), so after an unanswered call the list loads twice.
+7. Spam, Delete forever, Empty and select all are one commit: `BulkBar.tsx` and `MailboxPage.tsx`
+   carry all of them and do not split into working steps.
+8. Remove in Spam senders asks no confirmation: it is undone by reporting the sender again.
+9. The stand-in now answers unread counts and pages of 50 like the Worker; the earlier suites
+   pass unchanged except the settings lists (Spam senders added) and the reader's More menu
+   (Report spam added).
+
+### Open questions for the owner (phase B)
+
+1. **Browser tier time**: 74.6–77.7 s of `bun test` against 48.9–50.6 s at the base under the
+   same load; `folders.test.ts` adds most of it. The 42 s limit was already exceeded after phase
+   C. Options: raise the limit, or give `folders.test.ts` its own scheduled tier as
+   `test:send` and `test:pwa` have. Not changed here. The merge gate also ran 18.3–20.6 s at
+   69–73% load against its 18 s limit (phase A's open question 2).
+2. Should Report spam also be offered in Trash (Gmail offers it there)?
+3. Is the "Message / Date" row in phone selection mode acceptable (deviation 1)?
+4. Swipe colours (coordinator finding b) are untouched and wait for your decision.
+
+### Not verified (phase B)
+
+- The Worker behind these screens: the browser suites run against `stub-mailbox.ts`, written
+  from `worker/src/mail` and checked by reading, not against workerd.
+- Real iOS Safari and a real phone; touch gestures are Chromium's.
+- zh-CN and ja-JP wording by a native reader; screenshots are English only.
+- The `filed` event from a real consumer to a real page (tests send it over the stand-in socket).
+- Search exclusion from "select all" (no search route in the stand-in).
+
+Screenshots (402x874 touch and 1440x900, light and dark; 32 PNGs, outside the repository):
+Spam folder, Spam reader, Empty Trash confirm and progress, select-all offer and whole mode,
+Inbox, Settings > Spam senders.
