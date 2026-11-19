@@ -236,6 +236,16 @@ database that holds rows; it also adds `seq`, `counters` and the trigger (decisi
   it sets the flag and adds no senders, and the label says so (review 6, finding 4).
 - **Not spam** mirrors it: first a DELETE of the keys of the listed rows with `spam = 1`, then the
   UPDATE, so only rows that actually leave Spam forget their sender.
+- Session API (decided in phase A). The ids form is the one that learns; the folder form changes
+  flags only. Session routes only; v1 refuses `spam` (decision 5).
+
+  | Route | Body | Effect |
+  | --- | --- | --- |
+  | `PATCH /api/messages/:id`, `PATCH /api/messages` with `ids` | `{ spam: true }` | Report spam: senders of inbound rows entering Spam are added, then the flag, in one batch. A request that also sets `trashed: true` goes to Trash and adds nothing. |
+  | the same | `{ spam: false }` | Not spam: senders of rows leaving Spam are removed, then the flag, in one batch. |
+  | `PATCH /api/messages` folder form | `{ folder, address?, watermark, after?, spam: true }` | Move to Spam: the flag only, no sender added. |
+  | `GET /api/spam-senders` | | `{ senders: [{ address, createdAt }] }`, newest first, at most 1,000. |
+  | `DELETE /api/spam-senders` | `{ address }` | Removes that sender; `{ removed: true \| false }`. Mail already in Spam stays there. |
 - **Inbound**: `email()` does not look senders up; it has no parsed `From`. The consumer computes
   the `From` key; when it is listed and the message is in the Inbox, the UPDATE that saves the
   parse also sets `spam = 1` and `spam_at`. A message waits in the Inbox, unnotified, until the

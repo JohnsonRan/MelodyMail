@@ -4320,7 +4320,167 @@ and chose four items: bulk delete and Empty Trash, select all matching, phone sw
 
 | Phase | Scope | Agent | Status |
 | --- | --- | --- | --- |
-| A | worker: migration 0016, seq, transitions, routes, v1, consumer, cron, contacts, backup, measurements | claude-opus-5-5 | running |
+| A | worker: migration 0016, seq, transitions, routes, v1, consumer, cron, contacts, backup, measurements | claude-opus-5-5 | done (see "Phase A" below) |
 | C | web: phone layout (section 5) and swipe (section 3), worktree | claude-sonnet-5-5 | running |
 | B | web: Spam, Delete forever, Empty, select all, filed event, reader refresh, i18n | after A | waiting |
 | R | cross-family code review, ablation check, owner screenshots | after B and C | waiting |
+
+### Phase A progress (worker, branch `mailbox-ux`)
+
+- Migration 0016 done (`891aae2`): seq, counters, trigger, backfill, spam, spam_at, from_key,
+  spam_senders, rules.spam, backup_exports.columns; tested on a database holding rows
+  (`worker/test/migration-0016.spec.ts`).
+- Measurement done before the routes (`worker/bench/folders.d1.ts`, `bun run bench:folders`,
+  local D1 in workerd). The first pass found, on the plan's statements and the M7 indexes:
+  - every statement of the delete batch walked the whole folder through
+    `messages_folder_received` instead of the primary key (dense Trash: up to 25,403 rows read
+    per purge call, 657,649 for a complete Empty of 5,000);
+  - purge candidates and the hasMore probe sorted the folder instead of reading the clock index;
+  - address-scoped calls read the whole folder for an address with one row or none (folder
+    PATCH 4,009 rows, purge 6,410);
+  - the skewed Inbox list page read 2,058 rows (it walked the 2,000 newest Spam rows);
+  - unread counts moved onto the new folder index (6,340 rows instead of 4,175).
+  Fixes, all in 0016 or the statements: spam added to `messages_folder_received`,
+  `messages_starred_received` and `messages_unread`; partial indexes
+  `messages_address_trashed_at` and `messages_address_spam_at`; candidates and probe name the
+  clock index (`INDEXED BY`); the delete statements keep the folder test behind a unary plus so
+  the planner stays on the primary key; an address-scoped folder PATCH names
+  `messages_address_received`; a purge with nothing left writes nothing. After the fixes every
+  call is within the budget (numbers in `REQUIREMENTS.md`); no table scan of `messages`.
+  The FTS delete (`message_id` UNINDEXED, M4) still reads every search row per call: 5,300 rows
+  per purge call on 5,000 messages, 142,500 for a complete Empty. Deferred (see Deferred below).
+- Routes done (`19891ac`): transition policy, Report spam / Not spam, folders and counts, bulk
+  delete, purge, count route, folder-form PATCH, Spam senders routes, v1, OpenAPI.
+- Consumer done (`afec005`): `from_key`, filing listed senders, flags from the last write,
+  `filed` Hub event, Spam expiry in the cron.
+- Backup done (`d2772b1`): export restart on changed column lists, counter recomputed on restore;
+  local restore drill passed (below).
+- Benchmark committed (`7264407`) with the budget in `REQUIREMENTS.md`, "Numbers".
+
+### Phase A proof (worker suite, real D1 and R2 in workerd)
+
+- `test/migration-0016.spec.ts` (1): 0016 on a database holding rows; seq in (received_at, id)
+  order, counter, trigger numbering later rows (an older received_at included), an explicit seq
+  kept, defaults, indexes and trigger present.
+- `test/spam.spec.ts` (14): decision 6 (entering Spam, leaving for Trash or Archive, precedence,
+  Not spam on a stale archived flag, outbound never Spam); Spam out of Inbox, Starred, Archive,
+  search, contacts and their counts, a both-flags row in Trash, threads by folder; the contact
+  window; Report spam stores the key with `created_at`, Not spam removes it, a repeated report,
+  a sent message and a Trash-and-Spam request add nothing, Not spam outside Spam removes nothing;
+  the folder form learns nothing; Spam senders list and Remove; rules with Move to Spam (save,
+  update, list, test); v1 reads Spam, cannot change it, refuses `spam` and the folder form; the
+  OpenAPI folder enum equals the folders.
+- `test/filing.spec.ts` (6): the consumer files a listed sender (`email()` does not), `filed` and
+  no push; a long display name keeps the key; a rule-archived message stays; a failed parse
+  notifies as before and an archived one as `changed`; a write that changed no row notifies
+  nothing and acks; Move to Spam rule on arrival, Trash beats it, Spam beats Archive.
+- `test/bulk.spec.ts` (13): seq on both INSERT sites and the count route; 1,200 Inbox rows read in
+  three calls; the continuation moves when rows leave; folder, address and watermark bounds;
+  malformed folder forms; bulk delete in Trash and Spam with FTS rows, R2 objects and audit, 101
+  ids and other folders refused, a moved row kept, a both-flags row skipped by a Spam delete;
+  single delete in Spam; purge 100 per call with hasMore and audit, nothing after the last call;
+  watermark, address and strict asOf bounds; new mail after a full purge numbered above the
+  watermark and kept; malformed purges.
+- `test/trash.spec.ts` (+1): Spam expiry after 30 days, a row moved out or into Trash kept.
+- `test/backup.spec.ts` (+1 and the round trip): new columns, `spam_senders` and the rule action
+  round-trip; the first INSERT after a restore gets max seq + 1; an export started without the
+  current column lists is discarded, gets no new part, and the next run starts a new one that
+  completes; a running export with the same lists continues.
+
+### Phase A ablation
+
+`m8a/ablate.ts` (scratchpad, not committed) applied 67 mutations one at a time and ran the named
+specs (1.8–8.0 s each), restoring the file after each run. 65 went red at once; 2 survived and got
+tests, both red on the rerun: the "no row changed" guard in the consumer (the test now also
+requires the job to be acked, not retried) and the OpenAPI folder enum (a test compares it with
+the folders). Five hunks added later were ablated by hand, all red: the export restart's early
+return, the day check skipping a discarded export, and three hunks of the Spam senders routes
+(delete, order, audit).
+
+Groups ablated: migration (backfill, counter seed, trigger condition, trigger increment); folder
+tests (Inbox, Starred, Archive, Spam); delete condition (Spam test by id, address, watermark,
+clock); folder PATCH (watermark, after, next); decision 6 (11 hunks); sender learning (8 hunks);
+lists, search, threads, counts, single delete in Spam, contacts; delete audit and hasMore probe;
+consumer (from_key, filing, spam_at, Inbox only, `filed`, no push, no-row guard, lowercase key);
+rules (7 hunks) and the inbound INSERT (2); v1 (3); backup (restart, column record, restore
+counter, exported column and table); OpenAPI enum.
+
+Not ablated, with the reason: `FOLDERS.sent` gaining `spam = 0` and the count route's
+`seq <= counter` (no reachable row differs: outbound never enters Spam, and every row has a seq
+at or below the counter); the `INDEXED BY` choices, the unary plus in the delete statements and
+the skipped batch of an empty purge (plans and rows read only, shown by the benchmark, not by
+results); `RESTORE_COUNTER` inside `restoreSql` of `worker/scripts/backup-restore.ts` (a Bun
+script with no test; the local drill below ran it and showed counter 17 = max seq).
+
+### Local restore drill (2026-11-19, wrangler 4.162 local)
+
+`m8a/drill.ts` (scratchpad, not committed), the RUNBOOK steps with M8 checks: migrations on a
+scratch database, `wrangler dev --test-scheduled` on port 8799 with an empty env file and metrics
+and the cf fetch off, the 15 fixtures through `/cdn-cgi/local/email`, then a listed sender and a
+Move to Spam rule (filed by the real consumer and `email()`), one message reported by SQL. The
+first cron run started an export; its column lists were then cleared (as if M7 code had started
+it); the next run discarded it (`columns_changed`) and the one after started
+`2026-11-19T1000Z`, complete after 34 runs. `backup-restore fetch` 6.9 s (38 rows, restore.sql
+20,483 bytes), import into a freshly migrated database 0.9 s, `verify` passed. messages (id, seq,
+spam, spam_at, from_key, trashed, trashed_at), `spam_senders` and the rules' actions compared
+equal; restored max seq 17, counter 17, the first INSERT afterwards got seq 18. Total 89.7 s.
+The first run of the drill found the restart defect fixed in `d2772b1` (deviation 4).
+
+### Phase A numbers (2026-11-19, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
+
+| Item | Result | CPU load |
+| --- | --- | --- |
+| `bun run --cwd worker bench:folders`, 3 runs | rows identical in each run (`REQUIREMENTS.md`); purge call 31–50 ms, cron run 165–178 ms wall locally; vitest Duration 12.6–13.0 s | 30%, 100%, 96% |
+| `bun run check` at `7264407` plus these docs, in a clean worktree, 4 runs | all passed (514 worker tests); 26.6 s (cold transform cache), then 18.0, 16.4, 17.8 s | 73%, 4%, 3%, 2% |
+| Worker suite in those runs (vitest Duration) | 23.82 s, then 16.80, 15.24, 16.69 s | as above |
+
+### Deviations (phase A)
+
+1. Indexes beyond the plan's three, from the measurement (the plan asks for an index where a
+   query scans or passes the budget): spam added to `messages_folder_received`,
+   `messages_starred_received` and `messages_unread`; `messages_address_trashed_at` and
+   `messages_address_spam_at` added. Statements name the index (`INDEXED BY`) where the planner,
+   without statistics, chose a worse one.
+2. A folder PATCH call reads its index range once and sorts it by seq (one pass over the Inbox,
+   or over the address's rows), not a page's worth: "highest seq first" needs seq order, and an
+   index ordered by seq per folder would add four indexes. The budget is written that way.
+3. `GET /api/spam-senders` and `DELETE /api/spam-senders` added (not in the phase A list): the
+   plan's Settings list with Remove needs them. Recorded in the plan's session API table.
+4. The export restart: `backup_exports.columns` records the lists (the plan did not say where).
+   The discarding run does not start the new export; the next run does, so the new id (the start
+   minute) cannot equal the discarded one, and a discarded export does not count as the day's.
+   The first drill run showed the collision: discarded and restarted in one minute, no export
+   for the rest of the day.
+5. A From address longer than 254 characters gets no `from_key`.
+6. Folder-form Not spam forgets no sender, mirroring folder-form Move to Spam.
+7. The single delete answers `409 not_in_trash` for a message outside Trash and Spam (code kept
+   for the web client); its audit row moved into the delete batch.
+8. The count route reads the counter and the total in one statement rather than a batch.
+9. Spam expiry is its own cron job, `expire_spam`, logging `spam_expired`.
+
+### Open questions for the owner (phase A)
+
+1. **FTS delete**: every permanent delete reads the whole `messages_fts` (5,300 rows per purge
+   call at 5,000 messages; 142,500 to empty 5,000). Recommended: defer, as the plan says, and
+   revisit with production rows read; a fix needs the FTS rowid stored on `messages`.
+2. **Gate limits**: with 514 worker tests (463 at M7) the merge gate ran 18.0, 16.4 and 17.8 s at
+   2–4% load (limit 18 s) and the worker suite 16.80, 15.24 and 16.69 s (limit 16 s, "Slowest test
+   package"), over in two of three runs. Recommended: raise them by the file's method (baseline
+   plus 20%): merge gate 21 s, slowest test package 20 s. Not changed without the owner's approval.
+
+### Deferred (phase A)
+
+- The FTS delete scan above (source: the M8 measurement; reason: predates M8, within the free
+  quota at this size).
+- Rows written by a folder PATCH: about 5 per changed message (the row and its index entries);
+  marking 4,000 messages read writes about 20,000 rows of the 100,000 a day Workers Free allows
+  (source: the M8 measurement; reason: inherent to a bulk change, not a defect).
+
+### Not verified (phase A)
+
+- Anything on Cloudflare: plans and `rows_read` in production D1, CPU time of the cron and of a
+  purge call (local wall time includes I/O), `migrate:prod` of 0016 on the production database
+  (backfill and three index rebuilds), the trigger under a `--remote` import.
+- The web side of every route (phase B), the `filed` event on a real open page (tests record the
+  Hub call only).
+- `bun run test:browser` and the other browser tiers were not run (no web change in phase A).

@@ -269,6 +269,12 @@ curl https://mail.example.com/api/health
   data.
 - `migrate:prod` reports that nothing is to be done when there is no new migration.
 - Open pages show "A new version is available" with a Reload action.
+- Run `migrate:prod` before `deploy:prod`, always. M8 (migration 0016) depends on it: the M8
+  Worker reads the new columns, `counters` and the `messages_seq_insert` trigger. 0016 numbers every
+  stored message once and rebuilds three indexes of `messages`, so it takes longer than the earlier
+  migrations on a large mailbox. Between the two commands the M7 Worker keeps running; mail it
+  stores gets its `seq` from the trigger, and an export it is writing is started again by the M8
+  Worker ("Backups").
 
 ## Roll back
 
@@ -307,6 +313,15 @@ bun run wrangler d1 execute melodymail --remote --config .wrangler-production.js
 
 Every message in Trash then gets a full 30 days from now.
 
+### Spam after a rollback across M8
+
+Code from before M8 ignores `spam`, `spam_at`, `seq` and `spam_senders`; the columns stay. Mail in
+Spam then shows in the Inbox or Archive as ordinary mail, mail from reported senders is no longer
+filed, and that code's flag changes follow its own rules. Nothing is lost. Folder lists sort more
+slowly, because 0016 added `spam` to the folder indexes. Once M8 code runs again, every flag
+combination falls in one folder: a message with both `trashed` and `spam` shows in Trash and
+expires on Trash's clock. No clean-up step is needed.
+
 ## Backups
 
 ### What is backed up
@@ -333,7 +348,9 @@ Every message in Trash then gets a full 30 days from now.
 
 ### Before any restore
 
-1. Choose the restore point (a time, or an export id) from the logs and Settings > Security.
+1. Close every open MelodyMail tab and installed app window. A confirm dialog of Empty Trash or
+   "select all" holds a position in the message sequence, and a restore moves the sequence back.
+   Choose the restore point (a time, or an export id) from the logs and Settings > Security.
 2. Record the current bookmark, so the restore can be undone:
 
 ```sh
@@ -378,7 +395,8 @@ bun run backup-restore fetch 2026-11-18T0300Z ~/melodymail-restore --remote --co
 
    It checks every part's size, MD5 and sequence against the manifest. It writes
    `~/melodymail-restore/restore.sql`: the parts in order with foreign keys deferred, then the
-   removal of rows whose parent the export lacks.
+   removal of rows whose parent the export lacks, then the message sequence counter moved past
+   every restored message (M8).
 
 2. Create the new database and note its id:
 
@@ -406,7 +424,7 @@ grep database_id .wrangler-production.jsonc
 bun run migrate:prod
 ```
 
-   `migrate:prod` must list all 16 migrations (`0000_auth.sql` to `0015_backups.sql` at M7) as
+   `migrate:prod` must list all 17 migrations (`0000_auth.sql` to `0016_mailbox_ux.sql` at M8) as
    unapplied. If it reports nothing to apply, stop: the config points at a database already in
    use. `main` always holds the export's migration or a later one, so the import fits the schema.
 
@@ -690,10 +708,11 @@ Errors (each needs a cause):
 Warnings (look when they repeat): `mail_store_failed`, `mail_parse_gave_up`, `mail_raw_missing`,
 `mail_forward_failed`, `mail_enqueue_failed`, `mail_raw_delete_failed`, `send_failed`,
 `push_failed`, `push_new_mail_failed`, `telegram_call_failed`, `telegram_new_mail_failed`,
-`backup_prune_failed`, `upload_delete_failed`, `hub_notify_failed`.
+`backup_prune_failed`, `upload_delete_failed`, `hub_notify_failed`. `backup_export_restarted` once
+after the M8 deploy is expected: an export started by older code was discarded and started again.
 
 Information worth knowing: `backup_export_started`, `backup_export_complete`, `backup_pruned`,
-`trash_expired` (with a count), `mail_requeued`, `uploads_removed`.
+`trash_expired` and `spam_expired` (with a count), `mail_requeued`, `uploads_removed`.
 
 ### Free quotas
 

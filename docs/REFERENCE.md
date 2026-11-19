@@ -82,18 +82,18 @@ The enabled rules can name at most 20 different headers in their header conditio
   `@example.com`: `example.com` alone also matches `notexample.com`. There are no regular
   expressions.
 - **Actions**: forward to up to 5 addresses from Settings > Forwarding, mark as read, star,
-  archive, move to Trash, and stop processing more rules.
+  archive, move to Trash, move to Spam, and stop processing more rules.
 - **Order**: rules run top to bottom; every matching rule adds its actions, and a matching rule
-  with "Stop processing more rules" ends the run. Trash wins over archive. Move up and Move
-  down change the order.
+  with "Stop processing more rules" ends the run. Trash wins over Spam, and Spam over archive.
+  Move up and Move down change the order.
 - **Forwarding**: a message goes to the address's own forwarding addresses first, then to the
   rule targets, each once and at most 10 in all; over 10, the audit log records
   `mail_forward_capped`. A message that already carries `X-MelodyMail-Forwarded` is not
   forwarded by a rule either. A forward-only address forwards to the rule targets as well.
 - **New mail only**: a rule applies to mail that arrives after it is saved. Creating, editing,
   reordering or deleting a rule never changes stored mail.
-- **Notifications**: mail that a rule marks as read, archives or moves to Trash sends no push
-  and no Telegram card; open pages still refresh. Starred mail notifies as usual.
+- **Notifications**: mail that a rule marks as read, archives, or moves to Trash or Spam sends
+  no push and no Telegram card; open pages still refresh. Starred mail notifies as usual.
 - **Test**: in the rule dialog, "Test rule" checks the rule against one of the 20 newest Inbox
   messages and shows which conditions match and what would happen. A test changes nothing.
 
@@ -142,6 +142,29 @@ requires), which the deploy creates.
 - An open Trash list keeps showing an expired message until it refreshes.
 - Time Travel can bring back the rows of deleted mail for 7 days, but not the raw object, so such a
   message cannot be opened (`docs/RUNBOOK.md`, "Backups").
+- Delete forever removes the selected messages that are still in Trash; a message moved out
+  meanwhile is kept. Empty Trash deletes, 100 per request, exactly what was in Trash when the
+  confirmation opened: mail that arrives or is moved to Trash after that stays. Each request
+  writes one audit row (`messages_deleted` or `trash_emptied`, with the count).
+
+### Spam
+
+- Report spam moves a message to Spam and remembers its sender: the address in its `From`
+  header, lowercased. Later mail from a remembered sender is moved to Spam when it is parsed,
+  shortly after it arrives, unless a rule archived it or moved it to Trash. Only received messages
+  that enter Spam add a sender; mail you sent never does.
+- Not spam moves a message back to the Inbox and forgets its sender. Moving a whole folder to Spam
+  ("select all") remembers no sender.
+- A forged `From` can make Report spam remember a real sender. Their later mail then lands in
+  Spam, not lost: Not spam on it forgets the sender again.
+- Mail in Spam is in no other folder, not in search, not in recipient suggestions, and counts as
+  unread only in Spam. It sends no push and no Telegram card. A message with both Trash and Spam
+  set (written by older code after a rollback) shows in Trash.
+- Moving a message to Trash or Archive takes it out of Spam. Mail you sent never enters Spam.
+- Mail in Spam for 30 days is deleted for good, as in Trash: the 30 days start when it entered
+  Spam, and the cron logs `spam_expired` with a count. Delete forever and Empty Spam work as in
+  Trash (audit `messages_deleted`, `spam_emptied`).
+- There is no content scoring: only reported senders and rules file mail into Spam.
 
 ## Install and offline
 
@@ -230,8 +253,8 @@ set-up is in `docs/RUNBOOK.md`, "Sending through Resend".
 
 While you type in To, Cc or Bcc, compose suggests addresses you sent to or received mail from,
 newest first, matching the address or the display name (`GET /api/contacts`). It reads the newest
-1,000 sent and 1,000 received messages; mail in Trash does not count, and your own addresses are
-left out. Text that is already a complete address gets no suggestions, and Enter adds it as typed.
+1,000 sent and 1,000 received messages; mail in Trash or Spam does not count, and your own
+addresses are left out. Text that is already a complete address gets no suggestions, and Enter adds it as typed.
 
 Each secret switches on one part: without `UPLOAD_URL_KEY` compose sends without attachments, and
 without `RESEND_WEBHOOK_SECRET` sent mail stays at "Sent" instead of showing delivery. Resend
@@ -256,7 +279,7 @@ and one or more scopes:
 | Scope | Allows |
 | --- | --- |
 | `mail:read` | list, search and read messages and threads, download raw messages, list addresses |
-| `mail:write` | set read, starred, archived and trashed on one message or up to 100 |
+| `mail:write` | set read, starred, archived and trashed on one message or up to 100; a message in Spam cannot be changed |
 | `mail:send` | send without attachments, list addresses |
 
 Send the key as a Bearer token. The session cookie is never read on `/api/v1/`, and a key opens
@@ -276,6 +299,9 @@ curl -X POST -H "Authorization: Bearer mmk_xxxxxxxx_<secret>" \
   (403), `rate_limited` (429, over 120 requests a minute from one IP). A send body with a wrong
   field adds `path`, for example `{ "error": "bad_request", "path": "to.1" }`.
 - Lists page with `nextCursor`; pass it back as `cursor` until it is `null`.
+- `folder=spam` lists Spam, and every message has a `spam` field. A key cannot move mail into
+  or out of Spam: `PATCH` with `spam` answers `bad_request`, and a message in Spam answers
+  `not_found`.
 - Sending needs an `Idempotency-Key` header, one per message: a repeat with the same key sends
   nothing new and returns the first result.
 - Revoke a key in Settings > API keys; it stops working at once. A recovery revokes every key.
@@ -299,7 +325,9 @@ Log events of the export:
 | `backup_prune_failed` | warn | `exportId`, `error` (for example a locked object) |
 | `backup_export_failed` | error | `exportId`, `table`, `seq`, `error`; or `exportId` with `error: "timeout"` after 48 hours |
 | `backup_stale` | error | `lastComplete`; no export completed in 48 hours, logged once a day |
+| `backup_export_restarted` | warn | `exportId` of an export started by code with other column lists (once after the M8 deploy); a new export starts |
 | `trash_expired` | info | `count` of messages deleted after 30 days in Trash |
+| `spam_expired` | info | `count` of messages deleted after 30 days in Spam |
 
 With Telegram connected, a failed or stale export also sends one plain message a day at most, in
 the chat's language:
