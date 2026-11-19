@@ -4322,7 +4322,7 @@ and chose four items: bulk delete and Empty Trash, select all matching, phone sw
 | --- | --- | --- | --- |
 | A | worker: migration 0016, seq, transitions, routes, v1, consumer, cron, contacts, backup, measurements | claude-opus-5-5 | done (see "Phase A" below) |
 | C | web: phone layout (section 5) and swipe (section 3), worktree | claude-sonnet-5-5 (served, read from the run record) | done, merged |
-| B | web: Spam, Delete forever, Empty, select all, filed event, reader refresh, i18n | after A | waiting |
+| B | web: Spam, Delete forever, Empty, select all, filed event, reader refresh, i18n | claude-opus-5-5 | running |
 | R | cross-family code review, ablation check, owner screenshots | after B and C | waiting |
 
 ### Phase A progress (worker, branch `mailbox-ux`)
@@ -4500,3 +4500,15 @@ The first run of the drill found the restart defect fixed in `d2772b1` (deviatio
   uses Chromium touch events through the DevTools Protocol.
 - Decided without the owner: swipe is off in search results (the plan lists folders only); a tap
   on a row in selection mode toggles it instead of opening it.
+
+### Coordinator check after merging A and C (`b50e9a3`, 2026-11-19)
+
+- `bun run check` 3 runs: all passed; 17.4, 20.6, 20.5 s (script's own total); worker suite
+  16.05, 19.01, 19.00 s. `bun run test:browser` 3 runs: 87 pass, 0 fail each; `bun test` part
+  58.1, 53.6, 51.6 s (excluding the build). CPU load 34 to 91% from other programs on the host
+  (PBZ, Steam, HWiNFO64), so none of these is a baseline. Re-measure on an idle host before any
+  limit is raised; the browser tier looks over its 42 s limit by more than load explains.
+- Phase C's stray `x.bak` in the main checkout was not empty as reported (4,314 bytes); it was
+  identical to `useRowGestures.ts` at `9e0bdab` and was deleted after that check.
+- Screenshot review (coordinator): phones still show the table header "Message / Date"; the armed
+  swipe colour in the light theme is the near-black accent. Both go to phase B / the owner.
