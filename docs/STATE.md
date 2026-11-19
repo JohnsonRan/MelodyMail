@@ -4294,3 +4294,8 @@ and chose four items: bulk delete and Empty Trash, select all matching, phone sw
   `remaining` in the delete batch; v1 cannot change Spam rows; sender key from the parsed From
   only; markFailed returns flags; contact scan keeps its window; backup tables appended; pull to
   refresh dropped (gesture conflict on iOS), Refresh stays an icon; Trash folder row on phones.
+- Plan review 3: FIX FIRST, five Mediums, one Low; all folded in. Changes: trigger skips an
+  explicit `seq`, restore resets the counter, an export restarts if columns change mid-run;
+  sender key stored as `from_key` from the structured parse, learned in the same batch only for
+  inbound rows that entered Spam; purge returns `hasMore` from an EXISTS probe; list fetches
+  pause during loops; v1 PATCH keeps its own ids-only schema; OpenAPI gains `spam`.

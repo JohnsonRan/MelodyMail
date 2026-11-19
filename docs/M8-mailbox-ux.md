@@ -22,8 +22,9 @@ This plan is reviewed before coding (`AGENTS.md`, "Change risk"). The first cros
    an older time (review 1, finding 2). `rowid` cannot serve either: SQLite reuses the highest
    rowid after the newest rows are deleted, which an Empty loop does (review 2, finding 1).
    - A table `counters (name TEXT PRIMARY KEY, value INTEGER NOT NULL)` holds `messages_seq`.
-   - An `AFTER INSERT ON messages` trigger increments it and writes it to the new row's `seq`.
-     One trigger covers both INSERT sites (`inbound.ts`, `send/send.ts`) and any later one.
+   - An `AFTER INSERT ON messages WHEN NEW.seq IS NULL` trigger increments it and writes it to
+     the new row's `seq`. One trigger covers both INSERT sites (`inbound.ts`, `send/send.ts`) and
+     any later one; a restore that writes `seq` explicitly is left alone (review 3, finding 1).
    - The migration fills `seq` for existing rows in `(received_at, id)` order and sets the
      counter to the maximum. An index `messages_seq` serves the continuation below.
 4. Swipe actions are a phone convenience. Each one duplicates a toolbar action, so nothing is
@@ -32,8 +33,11 @@ This plan is reviewed before coding (`AGENTS.md`, "Change risk"). The first cros
    message, and gains no delete route. Session and v1 PATCH get separate flag parsers; v1 keeps
    its four flags, and its UPDATE adds `AND spam = 0`, so a v1 `archived: true` cannot pull a
    message out of Spam and stop its clock (review 2, finding 4). A Spam id counts as not found
-   in v1 `PATCH /messages/{id}`. A `mail:write` key can still move mail to Trash, which the cron
-   empties after 30 days; that is unchanged from M7.
+   in v1 `PATCH /messages/{id}`. v1 `PATCH /messages` keeps its own handler and request schema:
+   ids only; a body with `folder` or `watermark` answers 400, so a key cannot move a whole folder
+   (review 3, finding 5). A `mail:write` key can still move listed ids to Trash, which the cron
+   empties after 30 days; that is unchanged from M7. The OpenAPI document gains `spam` in the
+   folder enum and the message schema.
 6. One transition policy, shared by `updateMessageFlags`, the rule decision and inbound filing
    (review, finding 5):
    - entering Spam sets `archived = 0`, `trashed = 0`, `trashed_at = NULL`, `spam_at = now`;
@@ -50,7 +54,7 @@ This plan is reviewed before coding (`AGENTS.md`, "Change risk"). The first cros
 | Route | Body | Result |
 | --- | --- | --- |
 | `DELETE /api/messages` | `{ folder: "trash" \| "spam", ids }`, 1 to 100 ids (`BULK_MAX`) | Deletes the listed messages that are in that folder now. Returns `{ deleted: [ids] }`. Ids elsewhere are skipped, not an error. More than 100 ids: 400 `too_many_ids`. |
-| `POST /api/messages/purge` | `{ folder: "trash" \| "spam", address?, watermark }` | Deletes up to `PURGE_MAX` (100) messages of that folder and address with `seq <= watermark`, oldest first. Returns `{ deleted: [ids], remaining }`. The client calls again while `remaining > 0`. |
+| `POST /api/messages/purge` | `{ folder: "trash" \| "spam", address?, watermark }` | Deletes up to `PURGE_MAX` (100) messages of that folder and address with `seq <= watermark`, oldest first. Returns `{ deleted: [ids], hasMore }`. The client calls again while `hasMore`. |
 
 - Both go through `deleteFromTrash`, renamed `deletePermanently(env, folder, ids, opts)`. Both
   DELETE statements of its batch repeat the exact condition: the folder's own test (`trashed = 1`,
@@ -61,8 +65,11 @@ This plan is reviewed before coding (`AGENTS.md`, "Change risk"). The first cros
 - `PURGE_MAX` 100 keeps one call to one D1 batch and one R2 delete, the cron's existing bound
   (`TRASH_EXPIRE_MAX`).
 - The audit row (`messages_deleted`, `trash_emptied` or `spam_emptied`, with the count) and the
-  `remaining` count are statements of the same D1 batch as the deletes, so a call either commits
-  all of it or none (review 2, finding 3).
+  `hasMore` probe are statements of the same D1 batch as the deletes, so a call either commits
+  all of it or none (review 2, finding 3). `hasMore` is `EXISTS (... LIMIT 1)` on the same
+  condition, not a count, so a call reads a bounded number of rows however full the folder is
+  (review 3, finding 3). The progress shown is the deleted total against the count from the
+  confirm dialog.
 - When a call fails without an answer (network error, timeout), the client cannot know whether
   the batch committed. It stops the loop, reloads the list and the counts, and the toast says
   the result is unknown and the list was refreshed.
@@ -83,9 +90,11 @@ This plan is reviewed before coding (`AGENTS.md`, "Change risk"). The first cros
   progress count while it loops and can be cancelled between calls; what was deleted stays
   deleted.
 - The list drops exactly the ids the server returned, and the toast counts those, after success,
-  a partial failure or a cancel. A list request started before the action is discarded when it
-  answers (a view generation counter in `useMessageList`), so an old page cannot bring deleted
-  rows back (review, finding 6). The counts refresh.
+  a partial failure or a cancel. While a delete or a folder loop runs, `useMessageList` starts no
+  fetch (scroll paging and Hub refreshes wait), and every answer that arrives for a fetch begun
+  before or during the loop is discarded (a generation counter bumped at the start and the end).
+  The list reloads once at the end, so no page can bring deleted rows back (review 1, finding 6;
+  review 3, finding 4). The counts refresh.
 - The reader's single delete keeps `DELETE /api/messages/:id`, now also allowed in Spam.
 
 ## 2. Select all matching messages
@@ -148,7 +157,13 @@ database that holds rows; it also adds `seq`, `counters` and the trigger (decisi
 - The backup table list (`worker/src/backup/tables.ts`) gains the new columns, and `counters`
   and `spam_senders` are appended at the end of the list. Appending keeps the numeric table
   cursor of an export that is in progress during the deploy pointing at the same tables
-  (review 2, finding 7). Restore writes `seq` as stored and the counter last.
+  (review 2, finding 7).
+- An export records the column list of every table when it starts. If a part is written after
+  the columns changed (an export running across the 0016 deploy), the export is discarded and
+  starts again, so one export never mixes rows with and without `seq` (review 3, finding 1).
+- Restore writes `seq` as stored (the trigger skips it), then replaces the counter row with
+  `MAX(value, MAX(seq))`. The restore drill checks that the first INSERT after a restore gets a
+  `seq` above every restored one.
 - Deploy order: `migrate:prod` before `deploy:prod`, as for every migration; the runbook step for
   M8 says so.
 
@@ -161,7 +176,8 @@ database that holds rows; it also adds `seq`, `counters` and the trigger (decisi
   (review 2, finding 7).
 - The 30-day cron covers Spam as it covers Trash, with its own `spam_at` clock and the same
   delete function. The Spam list shows the same "deleted after 30 days" note.
-- Before the routes are coded, a local D1 with 5,000 messages (10% Spam, 10% Trash) records the
+- Before the routes are coded, a local D1 with 5,000 messages (10% Spam, 10% Trash), and a dense
+  one with 5,000 messages all in Trash for a complete Empty, records the
   `EXPLAIN QUERY PLAN`, rows read and written, and latency of: the Inbox and Spam lists, the count
   route, a folder PATCH call, a purge call including the FTS delete, both cron expiry steps
   together with the backup step, and the contact scan. It also records the scheduled handler's
@@ -171,14 +187,20 @@ database that holds rows; it also adds `seq`, `counters` and the trigger (decisi
 
 ### Filing
 
-- The sender key has one input only: the bare addr-spec, lowercased, of the parsed `From` header.
-  The envelope sender is never a key, because a relay or bounce address would then block
-  unrelated mail (review 2, finding 5). One function computes it from the stored `from_hdr` for
-  Report spam, Not spam and the consumer, so the stored key is the key that is looked up and
-  removed. A message that is not parsed, or whose `From` has no address, has no key.
-- **Report spam** (toolbar, reader, bulk with ids) sets the flag and adds the key of each
-  message that has one. In "whole folder" mode it sets the flag and adds no senders.
-- **Not spam** clears the flag (decision 6) and removes the key of each message that has one.
+- The sender key has one input only: the bare addr-spec, lowercased, of the structured address
+  the parser returns for `From`, before it is formatted into `from_hdr` (whose 998-character cut
+  can lose the address after a long display name). The consumer stores it in a new column
+  `from_key` when it saves the parse. The envelope sender is never a key, because a relay or
+  bounce address would then block unrelated mail (review 2, finding 5; review 3, finding 2).
+  A message not parsed, parsed before M8, or whose `From` has no address has no key; the
+  migration does not backfill it.
+- **Report spam** (toolbar, reader, bulk with ids; never offered in Sent) runs one D1 batch: the
+  flag UPDATE, which skips outbound rows, then `INSERT OR IGNORE INTO spam_senders SELECT
+  from_key FROM messages WHERE id IN (...) AND direction = 'in' AND spam = 1 AND from_key IS NOT
+  NULL`. Only rows whose transition succeeded add a key, and the owner's own address can never be
+  learned from a sent message. In "whole folder" mode it sets the flag and adds no senders.
+- **Not spam** runs the same batch in reverse: the UPDATE, then a DELETE of the `from_key` of the
+  rows it moved out.
 - **Inbound**: `email()` does not look senders up; it has no parsed `From`. The consumer computes
   the `From` key; when it is listed and the message is in the Inbox, the UPDATE that saves the
   parse also sets `spam = 1` and `spam_at`. A message waits in the Inbox, unnotified, until the
@@ -242,7 +264,7 @@ Worker suite (real D1 and R2 in workerd):
 - bulk delete: only rows in the named folder; FTS rows and R2 objects removed; 101 ids rejected;
   ids elsewhere skipped; a row moved out of the folder before the batch kept; audit row in the
   same batch;
-- purge: at most 100 per call, `remaining` reported, nothing above the watermark or outside the
+- purge: at most 100 per call, `hasMore` reported, nothing above the watermark or outside the
   folder and address; after the newest rows are deleted, new mail gets a higher `seq` and is
   kept;
 - folder PATCH: only rows at or below the watermark in that folder and address, at most 500 per
@@ -253,11 +275,17 @@ Worker suite (real D1 and R2 in workerd):
   nothing; `folder=spam` lists;
 - consumer: a parse failure notifies as before; a Spam-filed message does not;
 - transitions of decision 6, including Not spam on a stale archived flag landing in the Inbox;
-- spam filing: Report spam adds the key, Not spam removes the same key; inbound from a listed
-  sender is filed by `email()` and by the consumer; no push for spam-filed mail; the cron removes
-  Spam older than 30 days and keeps a row moved out; outbound cannot be spam;
-- migration 0016 on a database holding rows; export and restore keep `spam`, `spam_at`,
-  `spam_senders` and the rule action (local restore drill as in M7).
+- spam filing: Report spam adds the key, Not spam removes the same key; a long display name does
+  not lose the key; Report spam on a sent id adds nothing; `email()` applies rules only; the
+  consumer files mail from a listed sender; no push for spam-filed mail; the cron removes Spam
+  older than 30 days and keeps a row moved out; outbound cannot be spam;
+- v1: a folder-form `PATCH /messages` with a valid `mail:write` key answers 400;
+- purge: `hasMore` without a count; a list fetch begun during the loop does not bring a row back
+  (browser suite);
+- migration 0016 on a database holding rows; export and restore keep `seq`, `from_key`, `spam`,
+  `spam_at`, `spam_senders`, the counter and the rule action; the first INSERT after a restore
+  gets a higher `seq`; an export whose columns change mid-run starts again (local restore drill
+  as in M7).
 
 Browser suite: Empty Trash with confirmation; select all matching then archive; on the 402 px
 project, swipe right archives, swipe left trashes, long press enters selection mode, a vertical
