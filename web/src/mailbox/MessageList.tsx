@@ -260,7 +260,6 @@ export function MessageList({
 
   return (
     <div ref={host} className="mail-swipe-host">
-      {view && <SwipeBackdrop view={view} />}
       <Table<Row>
         data={rows}
         columns={columns}
@@ -271,6 +270,8 @@ export function MessageList({
         hasHover
         verticalAlign="top"
       />
+      {/* After the table: the table's first-child margin must keep applying to the table. */}
+      {view && <SwipeBackdrop view={view} />}
     </div>
   );
 }

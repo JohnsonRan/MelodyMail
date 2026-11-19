@@ -678,6 +678,27 @@ describe("phone swipe", () => {
     expect(await bulkBar().count()).toBe(0);
   });
 
+  test("keeps the list where it is while a row is held mid-swipe", async () => {
+    await withRow("sw8", "/");
+    const list = s.page.locator(".astryx-table-scroll-wrapper");
+    const before = await rect(list);
+    const from = await rowPoint("sw8");
+    const cdp = await s.page.context().newCDPSession(s.page);
+    const send = (type: "touchStart" | "touchMove" | "touchEnd", points: Point[]) =>
+      cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points });
+    await send("touchStart", [{ x: 40, y: from.y }]);
+    for (const x of [60, 100, 160, 240]) await send("touchMove", [{ x, y: from.y }]);
+    await s.page.locator(".mail-swipe-backdrop").waitFor();
+    const during = await rect(list);
+    await send("touchEnd", []);
+    await cdp.detach();
+    expect(during.top).toBe(before.top);
+    await s.page.waitForFunction(
+      (id) => document.querySelector(`[data-message-row="${id}"]`) === null,
+      "sw8",
+    );
+  });
+
   test("slides the row with motion and not at all under reduced motion", async () => {
     await withRow("sw4", "/");
     const row = await swipe("sw4", 280);

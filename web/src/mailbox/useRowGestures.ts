@@ -204,7 +204,7 @@ export function useRowGestures<T>(opts: {
             current.mode = "swipe";
             current.row.setPointerCapture(event.pointerId);
             current.row.style.transition = "none";
-            current.row.style.backgroundColor = "var(--color-background-body)";
+            current.row.style.backgroundColor = "var(--color-background-surface)";
           }
           if (current.mode !== "swipe" || !swipe) return;
           const side: SwipeSide = dx >= 0 ? "right" : "left";
