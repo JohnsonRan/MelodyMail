@@ -639,7 +639,7 @@ from the repository root:
 bun run release 2026-11-18T0300Z
 ```
 
-It runs `bun run check`, the four scheduled browser suites, then the drill on that production
+It runs `bun run check`, the five scheduled browser suites, then the drill on that production
 export (read only) with this checkout's newer migrations applied to the restored copy. Exit codes:
 0 passed, 1 a step failed, 2 could not run.
 

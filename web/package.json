@@ -41,9 +41,10 @@
     "build": "bun --bun vite build",
     "astryx": "bun --bun node_modules/@astryxdesign/cli/clients/cli/bin/astryx.mjs",
     "icons": "bun --bun pwa-assets-generator",
-    "test:browser": "bun --bun vite build && bun test --timeout 20000 --path-ignore-patterns='**/pwa.test.ts' --path-ignore-patterns='**/compose.test.ts' --path-ignore-patterns='**/markdown.test.ts' --path-ignore-patterns='**/sent-status.test.ts' --path-ignore-patterns='**/telegram.test.ts' --path-ignore-patterns='**/telegram-card.test.ts' --path-ignore-patterns='**/rules.test.ts' --path-ignore-patterns='**/api-keys.test.ts' ./test",
+    "test:browser": "bun --bun vite build && bun test --timeout 20000 --path-ignore-patterns='**/pwa.test.ts' --path-ignore-patterns='**/compose.test.ts' --path-ignore-patterns='**/markdown.test.ts' --path-ignore-patterns='**/sent-status.test.ts' --path-ignore-patterns='**/telegram.test.ts' --path-ignore-patterns='**/telegram-card.test.ts' --path-ignore-patterns='**/rules.test.ts' --path-ignore-patterns='**/api-keys.test.ts' --path-ignore-patterns='**/folders.test.ts' ./test",
     "test:pwa": "bun --bun vite build && bun test --timeout 20000 ./test/pwa.test.ts",
     "test:settings": "bun --bun vite build && bun test --timeout 20000 ./test/telegram.test.ts ./test/telegram-card.test.ts ./test/rules.test.ts ./test/api-keys.test.ts",
+    "test:folders": "bun --bun vite build && bun test --timeout 20000 ./test/folders.test.ts",
     "test:send": "bun --bun vite build && bun test --timeout 20000 ./test/compose.test.ts ./test/sent-status.test.ts ./test/markdown.test.ts"
   }
 }

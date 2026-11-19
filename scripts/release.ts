@@ -47,7 +47,7 @@ const dir = mkdtempSync(join(tmpdir(), "melodymail-release-"));
 const local = ["--local", "--persist-to", join(dir, "state")];
 
 step("check", [bun, "run", "check"]);
-for (const suite of ["test:browser", "test:send", "test:pwa", "test:settings"]) {
+for (const suite of ["test:browser", "test:send", "test:pwa", "test:settings", "test:folders"]) {
   step(suite, [bun, "run", suite]);
 }
 step("production config", [bun, "scripts/prod-config.ts"], WORKER);
