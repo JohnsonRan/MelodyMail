@@ -378,6 +378,8 @@ describe("Select all matching", () => {
     fill("bulk", 120);
     app.mailbox.folderPatchMax = 50;
     const page = await open("/", `[data-message-row="note1"]`);
+    // Desktop keeps the column header row, which holds select all.
+    expect(await page.getByRole("columnheader", { name: "Message" }).count()).toBe(1);
     await page.getByRole("checkbox", { name: "Select all rows" }).first().check();
     await text(page, "All 50 loaded messages are selected.").waitFor();
     await page.getByRole("button", { name: "Select all 125 in Inbox" }).click();

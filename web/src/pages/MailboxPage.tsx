@@ -427,6 +427,8 @@ export function MailboxPage({ query, title }: { query: ListQuery; title: string 
           setSelected: select,
           onCursor: setCursor,
           selectable: !compact || selecting,
+          // A phone row needs no "Message / Date" header; in selection mode it holds select all.
+          hasHeader: !compact || phoneSelecting,
           tapSelects: phoneSelecting,
           onLongPress:
             compact && coarse

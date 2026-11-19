@@ -615,6 +615,19 @@ describe("phone list", () => {
     await bulkBar().waitFor();
     app.store.delete("gone");
   });
+
+  test("hides the Message and Date header row outside selection mode", async () => {
+    await go("/", `[data-message-row="note3"]`);
+    const header = s.page.getByRole("columnheader", { name: "Message" });
+    expect(await header.count()).toBe(0);
+    // The columns keep their widths: the sender starts near the left edge, not behind a gap.
+    const sender = await rect(s.page.locator(`[data-message-row="note3"]`).getByText("Sender"));
+    expect(sender.left).toBeLessThan(60);
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
+    await header.waitFor();
+    await s.page.getByRole("button", { name: "Done", exact: true }).tap();
+    await header.waitFor({ state: "detached" });
+  });
 });
 
 describe("phone swipe", () => {

@@ -78,6 +78,7 @@ export function MessageList({
   setSelected,
   onCursor,
   selectable = true,
+  hasHeader = true,
   tapSelects = false,
   onLongPress,
   swipe,
@@ -90,6 +91,8 @@ export function MessageList({
   onCursor: (index: number) => void;
   /** Whether the selection column shows; a phone shows it only in selection mode. */
   selectable?: boolean;
+  /** Whether the column header row shows; a phone hides it outside selection mode. */
+  hasHeader?: boolean;
   /** A tap on a row toggles its selection instead of opening it (phone selection mode). */
   tapSelects?: boolean;
   /** A 500 ms press on a row (phone, coarse pointer); without it the row has no gestures. */
@@ -259,7 +262,7 @@ export function MessageList({
   );
 
   return (
-    <div ref={host} className="mail-swipe-host">
+    <div ref={host} className="mail-swipe-host" data-headless={!hasHeader}>
       <Table<Row>
         data={rows}
         columns={columns}

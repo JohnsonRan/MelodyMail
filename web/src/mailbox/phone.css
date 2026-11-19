@@ -25,6 +25,14 @@
   isolation: isolate;
 }
 
+/*
+ * The column header row a phone list hides outside selection mode (MessageList, hasHeader).
+ * collapse, not display: none: the fixed table layout takes its column widths from this row.
+ */
+.mail-swipe-host[data-headless="true"] thead {
+  visibility: collapse;
+}
+
 .mail-swipe-backdrop {
   position: absolute;
   left: 0;
