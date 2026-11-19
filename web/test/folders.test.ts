@@ -356,6 +356,53 @@ describe("Spam", () => {
   const listAnswer = (page: Page) =>
     page.waitForResponse((r) => isList(new URL(r.url()), r.request().method()));
 
+  /** Answers the re-read of note1 with 503 for the first `failures` requests; counts them all. */
+  async function failingReread(page: Page, failures: number) {
+    const state = { requests: 0 };
+    await page.route(
+      (url) => url.pathname === "/api/messages/note1",
+      (route) => {
+        if (route.request().method() !== "GET") return route.fallback();
+        if (state.requests++ < failures) {
+          return route.fulfill({ status: 503, json: { error: "internal" } });
+        }
+        return route.fallback();
+      },
+    );
+    return state;
+  }
+
+  test("drops a filed row after a failed re-read is retried", async () => {
+    const page = await open("/", `[data-message-row="note1"]`);
+    const detail = await failingReread(page, 1);
+    (app.store.get("note1")?.item as Record<string, unknown>).spam = true;
+    for (const ws of app.sockets) ws.send(JSON.stringify({ type: "filed", id: "note1" }));
+    await row(page, "note1").waitFor({ state: "detached", timeout: 5000 });
+    expect(detail.requests).toBe(2);
+  });
+
+  test("gives up after three retries and leaves the row", async () => {
+    const page = await open("/", `[data-message-row="note1"]`);
+    const detail = await failingReread(page, Number.POSITIVE_INFINITY);
+    (app.store.get("note1")?.item as Record<string, unknown>).spam = true;
+    for (const ws of app.sockets) ws.send(JSON.stringify({ type: "filed", id: "note1" }));
+    await until(() => detail.requests === 4, 9000);
+    await Bun.sleep(1500);
+    expect(detail.requests).toBe(4);
+    expect(await row(page, "note1").count()).toBe(1);
+  });
+
+  test("starts no retry once a refresh has moved the view", async () => {
+    const page = await open("/", `[data-message-row="note1"]`);
+    const detail = await failingReread(page, Number.POSITIVE_INFINITY);
+    (app.store.get("note1")?.item as Record<string, unknown>).spam = true;
+    for (const ws of app.sockets) ws.send(JSON.stringify({ type: "filed", id: "note1" }));
+    await until(() => detail.requests === 1);
+    await page.getByRole("button", { name: "Refresh" }).first().click();
+    await Bun.sleep(1500);
+    expect(detail.requests).toBe(1);
+  });
+
   test("ignores a re-read begun before a refresh", async () => {
     const page = await open("/", `[data-message-row="note1"]`);
     const release = await staleReread(page);
