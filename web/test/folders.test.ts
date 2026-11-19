@@ -280,6 +280,43 @@ describe("Spam", () => {
     expect(await row(page, "note1").count()).toBe(0);
   });
 
+  test("fills the list from an event's page after another event's refresh failed", async () => {
+    let lists = 0;
+    let releaseFirst = () => {};
+    let releaseFiled = () => {};
+    const first = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const filed = new Promise<void>((resolve) => {
+      releaseFiled = resolve;
+    });
+    session = await openSession(app.origin, "/", {
+      prepare: async (page) => {
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await page.route(
+          (url) => url.pathname === "/api/messages",
+          async (route) => {
+            if (route.request().method() !== "GET") return route.fallback();
+            const n = lists++;
+            if (n === 0) await first;
+            if (n === 1) await filed;
+            if (n === 2) return route.fulfill({ status: 503, json: { error: "internal" } });
+            return route.continue();
+          },
+        );
+      },
+    });
+    const page = session.page;
+    await until(() => lists === 1 && app.sockets.size > 0);
+    for (const ws of app.sockets) ws.send(JSON.stringify({ type: "filed", id: "hostile" }));
+    await until(() => lists === 2);
+    for (const ws of app.sockets) ws.send(JSON.stringify({ type: "changed", id: "note2" }));
+    await text(page, "The messages could not be loaded.").waitFor({ timeout: 5000 });
+    releaseFiled();
+    releaseFirst();
+    await row(page, "note1").waitFor({ timeout: 5000 });
+  });
+
   test("keeps a shown list when an event's refresh is refused", async () => {
     const page = await open("/", `[data-message-row="note1"]`);
     let refused = 0;

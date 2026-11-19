@@ -204,7 +204,9 @@ export function useMessageList(
           .then((page) => {
             if (!page) return;
             setList((prev) => {
-              if (prev.status === "loading") {
+              // A load whose first page was discarded, or an error an earlier event's failed
+              // refresh set during that load: this page completes it.
+              if (prev.status !== "ready") {
                 return {
                   items: page.messages,
                   next: page.nextCursor,
@@ -212,7 +214,6 @@ export function useMessageList(
                   loadingMore: false,
                 };
               }
-              if (prev.status !== "ready") return prev;
               const known = new Set(prev.items.map((m) => m.id));
               const byId = new Map(page.messages.map((m) => [m.id, m]));
               const fresh = page.messages.filter((m) => !known.has(m.id));
