@@ -3,13 +3,15 @@ import { Center } from "@astryxdesign/core/Center";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { Icon } from "@astryxdesign/core/Icon";
+import { IconButton } from "@astryxdesign/core/IconButton";
 import { LayoutPanel } from "@astryxdesign/core/Layout";
 import { useToast } from "@astryxdesign/core/Toast";
 import { ArrowPathIcon, EnvelopeOpenIcon, PencilSquareIcon } from "@heroicons/react/24/outline";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { lazy, Suspense, useCallback, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../api";
+import { NARROW } from "../breakpoints";
 import { PageFrame } from "../components/PageFrame";
 import { ComposeSlot, useComposeRoute } from "../compose/route";
 import { errorMessage } from "../errors";
@@ -22,10 +24,12 @@ import {
   setFlags,
 } from "../mailbox/api";
 import { BulkBar } from "../mailbox/BulkBar";
+import { FolderRow } from "../mailbox/FolderRow";
 import { ListBody, ListSkeleton } from "../mailbox/ListBody";
 import { useMailbox } from "../mailbox/MailboxContext";
 import { rowElement } from "../mailbox/MessageList";
 import { useMailShortcuts } from "../mailbox/useMailShortcuts";
+import "../mailbox/phone.css";
 import { useMessageList } from "../mailbox/useMessageList";
 import type { ReaderAction } from "../reader/ReaderToolbar";
 
@@ -35,6 +39,7 @@ const Reader = lazy(() => import("../reader/Reader"));
 // At laptop width and wider the list and the reader sit side by side; below it, one pane at a
 // time (docs/M4-mailbox.md, "Layout by width"; REQUIREMENTS.md, supported widths).
 const SIDE_BY_SIDE = "(min-width: 1280px)";
+const COARSE = "(pointer: coarse)";
 
 const NOTICES: Record<string, string> = {
   archive: "archived",
@@ -58,7 +63,12 @@ export function MailboxPage({ query, title }: { query: ListQuery; title: string 
   const sideBySide = useMediaQuery(SIDE_BY_SIDE);
   const compose = useComposeRoute();
   const { refreshCounts } = useMailbox();
+  const compact = useMediaQuery(NARROW);
+  const coarse = useMediaQuery(COARSE);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Phone selection mode: the bulk bar and the row checkboxes show only while it is on.
+  const [selecting, setSelecting] = useState(false);
+  const hadSelection = useRef(false);
   const [cursor, setCursor] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const running = useRef(false);
@@ -84,8 +94,26 @@ export function MailboxPage({ query, title }: { query: ListQuery; title: string 
 
   const { list, reload, applyLocal, sentinel } = useMessageList(query, failed, () => {
     setSelected(new Set());
+    setSelecting(false);
     setCursor(0);
   });
+
+  // Clearing the last selected row leaves selection mode.
+  useEffect(() => {
+    if (selected.size > 0) hadSelection.current = true;
+    else if (hadSelection.current) {
+      hadSelection.current = false;
+      setSelecting(false);
+    }
+  }, [selected]);
+
+  const leaveSelecting = () => {
+    hadSelection.current = false;
+    setSelecting(false);
+    setSelected(new Set());
+  };
+
+  const phoneSelecting = compact && selecting;
 
   /** Runs one action at a time on `ids`; resolves true when it succeeded. */
   const act = useCallback(
@@ -138,6 +166,11 @@ export function MailboxPage({ query, title }: { query: ListQuery; title: string 
       act(action, [message.id], action === "delete" ? "deleted" : ACTION_FLAGS[action]),
     [act],
   );
+
+  const refresh = () => {
+    void reload();
+    void refreshCounts();
+  };
 
   const inTrash = "folder" in query && query.folder === "trash";
   const inArchive = "folder" in query && query.folder === "archive";
@@ -226,34 +259,51 @@ export function MailboxPage({ query, title }: { query: ListQuery; title: string 
     <PageFrame
       title={title}
       actions={
-        <>
-          <Button
-            label={t("mail.refresh")}
-            icon={<Icon icon={ArrowPathIcon} size="sm" />}
-            variant="ghost"
-            onClick={() => {
-              void reload();
-              void refreshCounts();
-            }}
-          />
-          <Button
-            label={t("mail.compose")}
-            icon={<Icon icon={PencilSquareIcon} size="sm" />}
-            variant="primary"
-            onClick={() => compose.open()}
-          />
-        </>
+        compact ? (
+          <>
+            <IconButton
+              label={t("mail.refresh")}
+              icon={<Icon icon={ArrowPathIcon} />}
+              variant="ghost"
+              onClick={refresh}
+            />
+            <Button
+              label={selecting ? t("mail.selectDone") : t("mail.select")}
+              variant="ghost"
+              onClick={() => (selecting ? leaveSelecting() : setSelecting(true))}
+            />
+          </>
+        ) : (
+          <>
+            <Button
+              label={t("mail.refresh")}
+              icon={<Icon icon={ArrowPathIcon} size="sm" />}
+              variant="ghost"
+              onClick={refresh}
+            />
+            <Button
+              label={t("mail.compose")}
+              icon={<Icon icon={PencilSquareIcon} size="sm" />}
+              variant="primary"
+              onClick={() => compose.open()}
+            />
+          </>
+        )
       }
       toolbar={
-        <BulkBar
-          count={selected.size}
-          inTrash={inTrash}
-          inArchive={inArchive}
-          allStarred={chosen.length > 0 && chosen.every((m) => m.starred)}
-          allRead={chosen.length > 0 && chosen.every((m) => m.read)}
-          busy={busy}
-          onAction={bulk}
-        />
+        !compact || phoneSelecting ? (
+          <BulkBar
+            count={selected.size}
+            inTrash={inTrash}
+            inArchive={inArchive}
+            allStarred={chosen.length > 0 && chosen.every((m) => m.starred)}
+            allRead={chosen.length > 0 && chosen.every((m) => m.read)}
+            busy={busy}
+            onAction={bulk}
+          />
+        ) : (
+          inTrash && <FolderRow note={t("mail.trashNote")} />
+        )
       }
       end={
         sideBySide && (
@@ -275,8 +325,37 @@ export function MailboxPage({ query, title }: { query: ListQuery; title: string 
         list={list}
         sentinel={sentinel}
         onRetry={() => void reload()}
-        rows={{ openId, onOpen: (item) => go(item.id), selected, setSelected, onCursor: setCursor }}
+        rows={{
+          openId,
+          onOpen: (item) => go(item.id),
+          selected,
+          setSelected,
+          onCursor: setCursor,
+          selectable: !compact || selecting,
+          tapSelects: phoneSelecting,
+          onLongPress:
+            compact && coarse
+              ? (item) => {
+                  setSelecting(true);
+                  setSelected(new Set([item.id]));
+                }
+              : undefined,
+        }}
       />
+      {compact && !phoneSelecting && (
+        <>
+          <div className="mail-compose-gap" />
+          <div className="mail-compose-fab">
+            <Button
+              label={t("mail.compose")}
+              icon={<Icon icon={PencilSquareIcon} size="sm" />}
+              variant="primary"
+              size="lg"
+              onClick={() => compose.open()}
+            />
+          </div>
+        </>
+      )}
     </PageFrame>
   );
 }

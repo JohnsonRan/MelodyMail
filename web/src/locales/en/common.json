@@ -46,6 +46,8 @@
     "messageActions": "Message actions",
     "moreActions": "More actions",
     "selected": "Selected: {{count}}",
+    "select": "Select",
+    "selectDone": "Done",
     "trashNote": "Mail in Trash for 30 days is deleted forever.",
     "archive": "Archive",
     "moveToInbox": "Move to Inbox",

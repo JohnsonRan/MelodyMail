@@ -179,7 +179,11 @@ describe("phone end to end", () => {
   test("gives every target at least 44 x 44 px under a coarse pointer", async () => {
     expect(await s.page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
     expect(await smallTargets()).toEqual([]);
-    // A tap beside the 24 px checkbox selects the row and does not open the message.
+    // The checkboxes show in selection mode. A tap beside the 24 px checkbox selects the row and
+    // does not open the message.
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
+    await s.page.locator("[data-select-cell]").first().waitFor();
+    expect(await smallTargets()).toEqual([]);
     const cell = s.page.locator(`[data-message-row="note1"] [data-select-cell]`);
     expect(await cell.count()).toBe(1);
     const box = await rect(cell);
@@ -402,6 +406,8 @@ describe("phone end to end", () => {
   test("puts star and read state in the list's More menu", async () => {
     await go("/", `[data-message-row="note3"]`);
     const bar = s.page.getByRole("toolbar", { name: "Actions on selected messages" });
+    expect(await bar.count()).toBe(0);
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
     expect(await bar.getByRole("button").evaluateAll((b) => b.map((e) => e.ariaLabel))).toEqual([
       "Archive",
       "Move to Trash",
@@ -458,5 +464,139 @@ describe("phone end to end", () => {
       expect([mode, found.html, found.body]).toEqual([mode, found.theme, found.theme]);
     }
     await s.page.evaluate(() => localStorage.removeItem("melodymail.mode"));
+  });
+});
+
+// A real touch through the browser (Chrome DevTools Protocol): it raises pointer events and
+// honours touch-action, which page.touchscreen.tap does not cover for a drag or a hold.
+type Point = { x: number; y: number };
+async function touchGesture(path: Point[], { holdMs = 0, stepMs = 0 } = {}) {
+  const cdp = await s.page.context().newCDPSession(s.page);
+  const send = (type: "touchStart" | "touchMove" | "touchEnd", points: Point[]) =>
+    cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points });
+  const [first, ...rest] = path;
+  if (!first) return;
+  await send("touchStart", [first]);
+  if (holdMs) await s.page.waitForTimeout(holdMs);
+  for (const point of rest) {
+    await send("touchMove", [point]);
+    if (stepMs) await s.page.waitForTimeout(stepMs);
+  }
+  await send("touchEnd", []);
+  await cdp.detach();
+}
+
+/** Points from `from` to `to` in `steps` equal moves. */
+const line = (from: Point, to: Point, steps = 8): Point[] =>
+  Array.from({ length: steps + 1 }, (_, i) => ({
+    x: from.x + ((to.x - from.x) * i) / steps,
+    y: from.y + ((to.y - from.y) * i) / steps,
+  }));
+
+/** The middle of a message row, clear of its selection cell. */
+async function rowPoint(id: string): Promise<Point> {
+  const box = await rect(s.page.locator(`[data-message-row="${id}"]`));
+  return { x: box.left + 200, y: (box.top + box.bottom) / 2 };
+}
+
+describe("phone list", () => {
+  const checkboxes = () => s.page.locator("[data-select-cell]");
+  const bulkBar = () => s.page.getByRole("toolbar", { name: "Actions on selected messages" });
+
+  test("puts Refresh and Select in the title row and floats Compose", async () => {
+    await go("/", `[data-message-row="note3"]`);
+    const title = await rect(s.page.getByRole("heading", { level: 1, name: "Inbox" }));
+    for (const name of ["Refresh", "Select"]) {
+      const box = await rect(s.page.getByRole("button", { name, exact: true }));
+      expect([name, box.top >= title.top - 20 && box.bottom <= title.bottom + 20]).toEqual([
+        name,
+        true,
+      ]);
+    }
+    const compose = s.page.getByRole("button", { name: "Compose", exact: true });
+    expect(await compose.count()).toBe(1);
+    expect(
+      await compose.evaluate((el) => getComputedStyle(el.parentElement as Element).position),
+    ).toBe("fixed");
+    const box = await rect(compose);
+    const view = await s.page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+    expect(view.w - box.right).toBeLessThan(40);
+    expect(view.h - box.bottom).toBeLessThan(40);
+    await compose.tap();
+    await s.page.locator("[data-compose]").waitFor();
+  });
+
+  test("lets the list scroll clear of the floating Compose", async () => {
+    for (let i = 0; i < 14; i++)
+      app.store.set(
+        `fill${i}`,
+        message(`fill${i}`, LONG_MAIL, `Filler ${i}`, Date.now() - 100000 - i),
+      );
+    await s.page.goto(`${app.origin}/`);
+    await s.page.locator(`[data-message-row="fill13"]`).waitFor();
+    await s.page.locator(`[data-message-row="fill13"]`).evaluate((row) => {
+      for (let p = row.parentElement; p; p = p.parentElement) p.scrollTop = p.scrollHeight;
+    });
+    const last = await rect(s.page.locator(`[data-message-row="fill13"]`));
+    const fab = await rect(s.page.getByRole("button", { name: "Compose", exact: true }));
+    expect(last.bottom).toBeLessThanOrEqual(fab.top);
+    for (let i = 0; i < 14; i++) app.store.delete(`fill${i}`);
+  });
+
+  test("enters selection mode with Select and leaves it with Done", async () => {
+    await go("/", `[data-message-row="note3"]`);
+    expect(await checkboxes().count()).toBe(0);
+    expect(await bulkBar().count()).toBe(0);
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
+    await bulkBar().waitFor();
+    expect(await checkboxes().count()).toBeGreaterThan(0);
+    expect(await s.page.getByRole("button", { name: "Compose", exact: true }).count()).toBe(0);
+    // A tap on a row selects it and does not open it; clearing the last one leaves the mode.
+    const point = await rowPoint("note1");
+    await s.page.touchscreen.tap(point.x, point.y);
+    await s.page.getByText("Selected: 1").waitFor();
+    expect(s.page.url()).toBe(`${app.origin}/`);
+    await s.page.touchscreen.tap(point.x, point.y);
+    await bulkBar().waitFor({ state: "detached" });
+    expect(await checkboxes().count()).toBe(0);
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
+    await s.page.getByRole("button", { name: "Done", exact: true }).tap();
+    await bulkBar().waitFor({ state: "detached" });
+  });
+
+  test("enters selection mode on a long press, and a press never opens the row", async () => {
+    await go("/", `[data-message-row="note3"]`);
+    const point = await rowPoint("note1");
+    await touchGesture([point, point], { holdMs: 700 });
+    await s.page.getByText("Selected: 1").waitFor();
+    await bulkBar().waitFor();
+    expect(s.page.url()).toBe(`${app.origin}/`);
+    expect(
+      await s.page.locator(`[data-message-row="note1"] input[type=checkbox]`).isChecked(),
+    ).toBe(true);
+  });
+
+  test("leaves a vertical drag to scrolling: no swipe, no selection", async () => {
+    await go("/", `[data-message-row="note3"]`);
+    const patches = app.patches.length;
+    const from = await rowPoint("note1");
+    // Slower than the long-press time, so only the movement keeps the timer from firing.
+    await touchGesture(line(from, { x: from.x, y: from.y - 120 }, 6), { stepMs: 120 });
+    await s.page.waitForTimeout(200);
+    expect(await bulkBar().count()).toBe(0);
+    expect(await checkboxes().count()).toBe(0);
+    expect(s.page.url()).toBe(`${app.origin}/`);
+    expect(app.patches.length).toBe(patches);
+  });
+
+  test("shows the Trash note as a folder row outside selection mode", async () => {
+    app.store.set("gone", message("gone", LONG_MAIL, "Gone", Date.now(), { trashed: true }));
+    await go("/trash", `[data-message-row="gone"]`);
+    const note = s.page.getByText("Mail in Trash for 30 days is deleted forever.");
+    await note.waitFor();
+    expect(await bulkBar().count()).toBe(0);
+    await s.page.getByRole("button", { name: "Select", exact: true }).tap();
+    await bulkBar().waitFor();
+    app.store.delete("gone");
   });
 });

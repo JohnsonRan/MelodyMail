@@ -1,0 +1,17 @@
+/*
+ * The phone list: Compose floats at the bottom end above the safe area, and the list ends with
+ * a gap as tall as the button, so the last row can scroll clear of it.
+ */
+.mail-compose-fab {
+  position: fixed;
+  right: calc(var(--spacing-4) + env(safe-area-inset-right, 0px));
+  bottom: calc(var(--spacing-4) + env(safe-area-inset-bottom, 0px));
+  z-index: 10;
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-high);
+}
+
+.mail-compose-gap {
+  flex-shrink: 0;
+  height: calc(var(--spacing-12) + var(--spacing-6) + env(safe-area-inset-bottom, 0px));
+}
