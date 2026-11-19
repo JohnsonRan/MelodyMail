@@ -4777,3 +4777,23 @@ CPU load is the mean of samples about every 3 s during each run. Limits are not 
 3. Report spam stays out of Trash.
 4. Merge gate (18 s) and worker suite (16 s) limits stay: idle runs were 15.0 to 15.7 s and
    14.0 to 14.7 s; the earlier overruns were on a loaded host.
+
+### Owner rulings 6: work done (2026-11-19, dev workstation, Ryzen 9 9950X3D, Bun 1.4.4)
+
+Six follow-up changes after the rulings, one commit each (red run first, then every behaviour
+hunk removed once):
+
+| Change | Commit | Red without the fix | Ablated hunk to red test |
+| --- | --- | --- | --- |
+| `restore`: read only a part's first INSERT head | `2843ec2` | `scripts/backup-restore.test.ts` "reads only the first INSERT of a part, not a stored value that looks like one" | first-line anchor: that test; `list !== undefined` guard: "accepts an export written wholly by one version, M7 included" |
+| list: a failed replacement fetch of a discarded first load shows the error | `5455e5e` | "shows the error state when the replacement of a discarded first load fails" | `.catch` swallow: that test; `loading` condition (always fail): "keeps a shown list when an event's refresh is refused" |
+| list: retry the re-read of a filed message | `fdddf53` | "drops a filed row after a failed re-read is retried", "gives up after three retries and leaves the row" | no retry: both; a fourth retry: "gives up ..."; no `view` check after the wait: "starts no retry once a refresh has moved the view" |
+| `test:folders` tier | `0ecef1c` | not a fix; `bun run check:requirements` exits 0 | |
+| swipe colours | `05c7421` | "paints an armed right swipe green and an armed left swipe red, light and dark" (accent before) | `data-tone` in `SwipeBackdrop.tsx`: that test; the `success` rule in `phone.css`: that test |
+
+The folders tier limit is 48 s: the slowest of 3 runs (39.5 s) plus 20%. Swipe icon contrast
+(theme tokens `--color-on-success` on `--color-success`, `--color-on-error` on `--color-error`):
+5.02:1 and 5.29:1 light, 6.99:1 and 6.95:1 dark.
+
+Not verified: the `view` check inside the retry loop is only the early exit (the check after
+the loop also drops a stale answer); real iOS swipe feel.
