@@ -121,3 +121,27 @@ describe("automatic Trash clean-up", () => {
     expect(row?.trashed_at).toBe(row?.received_at);
   });
 });
+
+describe("automatic Spam clean-up", () => {
+  it("deletes mail in Spam for 30 days, and keeps mail moved out", async () => {
+    const now = Date.now();
+    await seedMessage({ id: "old", spam: true, spamAt: now - TRASH_KEEP_MS, body: "old" });
+    await seedMessage({ id: "young", spam: true, spamAt: now - TRASH_KEEP_MS + 1 });
+    // Moved out to the Inbox, or to Trash where Trash's own clock counts.
+    await seedMessage({ id: "out", spamAt: now - TRASH_KEEP_MS });
+    await seedMessage({ id: "trash", spam: true, spamAt: now - TRASH_KEEP_MS, trashed: true });
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    await handleScheduled({ scheduledTime: now } as ScheduledController, env);
+
+    expect((await messageRows()).map((r) => r.id).sort()).toEqual(["out", "trash", "young"]);
+    expect(await env.MAIL.head(rawKey("old"))).toBeNull();
+    expect(info.mock.calls.join(" ")).toContain(
+      '{"level":"info","event":"spam_expired","count":1}',
+    );
+    const audit = await env.DB.prepare(
+      "SELECT detail FROM audit_log WHERE event = 'spam_expired'",
+    ).all();
+    expect(audit.results).toEqual([{ detail: "1" }]);
+  });
+});

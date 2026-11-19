@@ -4,7 +4,7 @@ import { errorText, log } from "../http";
 import { removeOldWebhookEvents, removeStaleUploads } from "../send/cleanup";
 import { notifyHub } from "./hub";
 import { type ParsedHeaders, parseSlice, SLICE_BYTES, threadKey } from "./parse";
-import { expireTrash } from "./trash";
+import { expireSpam, expireTrash } from "./trash";
 
 // The inbound queue consumer and the cron step that feeds it again. Each job is { id } of a
 // messages row; a job for a row that is not "stored" is a duplicate and is dropped.
@@ -19,33 +19,42 @@ type Row = {
   r2_key: string;
   envelope_from: string;
   attempts: number;
-  read: number;
-  archived: number;
-  trashed: number;
+  spam: number;
 };
 
+/** The flags the row has after the consumer's last write; null when that write changed no row. */
+type Flags = { read: number; archived: number; trashed: number; spam: number };
+
+const FLAGS = "RETURNING read, archived, trashed, spam";
+
 /** Marks the row parse_failed; the browser still parses the raw message (M4). */
-function markFailed(env: Env, id: string) {
+function markFailed(env: Env, id: string): Promise<Flags | null> {
   return env.DB.prepare(
-    "UPDATE messages SET status = 'parse_failed' WHERE id = ? AND status = 'stored'",
+    `UPDATE messages SET status = 'parse_failed' WHERE id = ? AND status = 'stored' ${FLAGS}`,
   )
     .bind(id)
-    .run();
+    .first<Flags>();
 }
 
-function saveParsed(env: Env, id: string, row: Row, p: ParsedHeaders) {
+async function saveParsed(env: Env, id: string, row: Row, p: ParsedHeaders) {
   // The FTS row is written only while the message is still "stored", and before the UPDATE
-  // that ends that, so a duplicate delivery adds no second FTS row.
-  return env.DB.batch([
+  // that ends that, so a duplicate delivery adds no second FTS row. A message still in the Inbox
+  // whose sender is listed in spam_senders is filed into Spam by the same UPDATE (decision 6:
+  // entering Spam sets spam_at; it is already neither archived nor trashed).
+  const listed = `?13 IS NOT NULL AND archived = 0 AND trashed = 0 AND spam = 0
+    AND EXISTS (SELECT 1 FROM spam_senders WHERE address = ?13)`;
+  const [, saved] = await env.DB.batch<Flags>([
     env.DB.prepare(
       `INSERT INTO messages_fts (message_id, subject, sender, body)
        SELECT id, ?, ?, ? FROM messages WHERE id = ? AND status = 'stored'`,
     ).bind(p.subject ?? "", p.from ?? row.envelope_from, p.text, id),
     env.DB.prepare(
-      `UPDATE messages SET status = 'parsed', message_id_hdr = ?, in_reply_to = ?,
-         references_hdr = ?, thread_key = ?, subject = ?, from_hdr = ?, to_hdr = ?, cc_hdr = ?,
-         date_hdr = ?, snippet = ?, has_attachments = ?
-       WHERE id = ? AND status = 'stored'`,
+      `UPDATE messages SET status = 'parsed', message_id_hdr = ?1, in_reply_to = ?2,
+         references_hdr = ?3, thread_key = ?4, subject = ?5, from_hdr = ?6, to_hdr = ?7,
+         cc_hdr = ?8, date_hdr = ?9, snippet = ?10, has_attachments = ?11, from_key = ?13,
+         spam = CASE WHEN ${listed} THEN 1 ELSE spam END,
+         spam_at = CASE WHEN ${listed} THEN ?14 ELSE spam_at END
+       WHERE id = ?12 AND status = 'stored' ${FLAGS}`,
     ).bind(
       p.messageId,
       p.inReplyTo,
@@ -59,38 +68,45 @@ function saveParsed(env: Env, id: string, row: Row, p: ParsedHeaders) {
       p.snippet,
       p.hasAttachments ? 1 : 0,
       id,
+      p.fromKey,
+      Date.now(),
     ),
   ]);
+  return saved?.results[0] ?? null;
 }
 
 async function processJob(env: Env, id: string): Promise<void> {
   // Counted before the parse, in its own write, so a try that the CPU limit kills still counts.
   const row = await env.DB.prepare(
     `UPDATE messages SET attempts = attempts + 1 WHERE id = ? AND status = 'stored'
-     RETURNING r2_key, envelope_from, attempts, read, archived, trashed`,
+     RETURNING r2_key, envelope_from, attempts, spam`,
   )
     .bind(id)
     .first<Row>();
   if (!row) return;
-  await parseRow(env, id, row);
-  // Open mailbox pages refetch; a failed notify is logged and never fails the parse. Mail that a
-  // rule marked read, archived or moved to Trash refreshes pages but sends no Web Push and no
-  // Telegram card (docs/M6-rules-api.md, owner ruling 1); a starred message still notifies.
-  const filtered = row.read === 1 || row.archived === 1 || row.trashed === 1;
-  await notifyHub(env, { type: filtered ? "changed" : "message", id });
+  const flags = await parseRow(env, id, row);
+  // A write that changed no row (a duplicate delivery got there first) notifies nothing.
+  if (!flags) return;
+  // Open mailbox pages refetch; a failed notify is logged and never fails the parse. The flags
+  // come from the last write, so a change made since email() counts. Mail that is read, archived,
+  // in Trash or in Spam refreshes pages but sends no Web Push and no Telegram card
+  // (docs/M6-rules-api.md, owner ruling 1; docs/M8-mailbox-ux.md, "Filing"); a starred message
+  // still notifies. Mail this UPDATE filed into Spam sends "filed".
+  const filed = flags.spam === 1 && row.spam === 0;
+  const filtered =
+    flags.read === 1 || flags.archived === 1 || flags.trashed === 1 || flags.spam === 1;
+  await notifyHub(env, { type: filed ? "filed" : filtered ? "changed" : "message", id });
 }
 
-async function parseRow(env: Env, id: string, row: Row): Promise<void> {
+async function parseRow(env: Env, id: string, row: Row): Promise<Flags | null> {
   if (row.attempts > MAX_ATTEMPTS) {
     log("warn", "mail_parse_gave_up", { messageId: id, attempts: row.attempts });
-    await markFailed(env, id);
-    return;
+    return markFailed(env, id);
   }
   const object = await env.MAIL.get(row.r2_key, { range: { offset: 0, length: SLICE_BYTES } });
   if (!object) {
     log("warn", "mail_raw_missing", { messageId: id });
-    await markFailed(env, id);
-    return;
+    return markFailed(env, id);
   }
   const slice = new Uint8Array(await object.arrayBuffer());
   let parsed: ParsedHeaders;
@@ -98,10 +114,9 @@ async function parseRow(env: Env, id: string, row: Row): Promise<void> {
     parsed = await parseSlice(slice);
   } catch (err) {
     log("warn", "mail_parse_failed", { messageId: id, error: errorText(err) });
-    await markFailed(env, id);
-    return;
+    return markFailed(env, id);
   }
-  await saveParsed(env, id, row, parsed);
+  return saveParsed(env, id, row, parsed);
 }
 
 /** Ends a message that has used its last try; true when it did. */
@@ -162,6 +177,7 @@ export async function handleScheduled(controller: ScheduledController, env: Env)
     ["remove_stale_uploads", () => removeStaleUploads(env, controller.scheduledTime)],
     ["remove_old_webhook_events", () => removeOldWebhookEvents(env, controller.scheduledTime)],
     ["expire_trash", () => expireTrash(env, controller.scheduledTime)],
+    ["expire_spam", () => expireSpam(env, controller.scheduledTime)],
     ["backup_export", () => runExport(env, controller.scheduledTime)],
   ];
   let failed = 0;

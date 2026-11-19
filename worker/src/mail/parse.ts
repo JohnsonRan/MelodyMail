@@ -11,6 +11,8 @@ export const TEXT_MAX = 8 * 1024;
 export const SNIPPET_MAX = 200;
 const HEADER_MAX = 998;
 const ADDRESS_LIST_MAX = 2000;
+/** The longest address SMTP carries (RFC 5321, section 4.5.3.1.3); a longer From has no key. */
+const FROM_KEY_MAX = 254;
 
 // Limits on the parser's own work inside the slice (owner ruling 2026-11-16): hundreds of parts
 // or tens of KB of headers cost postal-mime more than the 3 ms budget. A message over them fails
@@ -28,6 +30,12 @@ export type ParsedHeaders = {
   references: string | null;
   subject: string | null;
   from: string | null;
+  /**
+   * The bare addr-spec of From, lowercased: the key spam_senders is matched on (docs/M8-mailbox-ux.md,
+   * "Filing"). Taken from the structured address, not from `from`, whose cut can lose the address
+   * after a long display name. Null for a group, an empty address or one over FROM_KEY_MAX.
+   */
+  fromKey: string | null;
   to: string | null;
   cc: string | null;
   date: string | null;
@@ -116,6 +124,11 @@ function htmlToText(html: string, max: number): string {
     });
 }
 
+function fromKey(from: Address | undefined): string | null {
+  const address = from?.address?.trim().toLowerCase();
+  return address && address.length <= FROM_KEY_MAX ? address : null;
+}
+
 /** The first message id in a References or In-Reply-To value. */
 export function firstMessageId(value: string | null): string | null {
   return value?.match(/<[^<>\s]+>/)?.[0] ?? value?.trim().split(/\s+/)[0] ?? null;
@@ -140,6 +153,7 @@ export async function parseSlice(slice: Uint8Array): Promise<ParsedHeaders> {
     references: cut(email.references, HEADER_MAX * 4),
     subject: cut(email.subject, HEADER_MAX),
     from: email.from ? cut(formatAddress(email.from), HEADER_MAX) : null,
+    fromKey: fromKey(email.from),
     to: addressList(email.to),
     cc: addressList(email.cc),
     date: cut(email.date, 64),
